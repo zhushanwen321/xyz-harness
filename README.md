@@ -348,6 +348,20 @@ AI 展示所有阶段的 summary，你确认最终交付：
 
 ## 安装
 
+### 方式一：一键安装到任意项目（推荐）
+
+```bash
+cd xyz-harness-engineering
+./install-to-project.sh /path/to/your-project
+```
+
+这个脚本会：
+1. 全局安装所有 skill（symlink 到 `~/.pi/agent/skills/` 和 `~/.agents/skills/`）
+2. 为目标项目创建本地 symlink（`.pi/skills/`、`.claude/skills/`、`.agents/skills/`）
+3. 检查目标项目的 CLAUDE.md，引导补全或初始化
+
+### 方式二：只安装 skill（全局）
+
 ```bash
 python3 install.py
 ```
@@ -360,7 +374,7 @@ python3 install.py
 ```
 xyz-harness-engineering/
 ├── skills/
-│   ├── xyz-harness-init/              # 项目初始化
+│   ├── xyz-harness-init/            # 项目初始化
 │   ├── xyz-harness-dev-flow/        # 编排器
 │   │   ├── SKILL.md
 │   │   ├── scripts/gate-script.sh
@@ -386,7 +400,9 @@ xyz-harness-engineering/
 │       ├── spec.md
 │       ├── plan.md
 │       └── stage-execution-detail.md
-└── install.py
+├── install.py                       # 全局 skill 安装
+├── install-to-project.sh            # 一键安装到项目
+└── README.md
 ```
 
 ## 文档索引

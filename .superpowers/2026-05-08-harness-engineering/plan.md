@@ -63,7 +63,7 @@ README.md                           # Task 11
 - Create: `skills/xyz-harness-verification-before-completion/SKILL.md`
 - Create: `skills/xyz-harness-test-driven-development/SKILL.md`
 
-- [ ] **Step 1：读取 superpowers 原始 SKILL.md**
+- [x] **Step 1：读取 superpowers 原始 SKILL.md**
 
 读取以下 5 个文件：
 - `/Users/zhushanwen/.agents/skills/brainstorming/SKILL.md`
@@ -72,7 +72,7 @@ README.md                           # Task 11
 - `/Users/zhushanwen/.agents/skills/verification-before-completion/SKILL.md`
 - `/Users/zhushanwen/.agents/skills/test-driven-development/SKILL.md`
 
-- [ ] **Step 2：复制到目标路径，修改 name 字段和 LOCAL-OVERRIDE**
+- [x] **Step 2：复制到目标路径，修改 name 字段和 LOCAL-OVERRIDE**
 
 对每个文件：
 1. 复制内容到 `skills/xyz-harness-{name}/SKILL.md`
@@ -80,7 +80,7 @@ README.md                           # Task 11
 3. 保留 LOCAL-OVERRIDE 部分（已指向 `.superpowers/`）
 4. 去掉 visual companion 相关内容（brainstorming 中）
 
-- [ ] **Step 3：验证文件内容完整**
+- [x] **Step 3：验证文件内容完整**
 
 确认每个 SKILL.md 可正常读取，frontmatter 格式正确。
 
@@ -93,33 +93,33 @@ README.md                           # Task 11
 - Create: `skills/xyz-harness-subagent-driven-development/spec-reviewer-prompt.md`
 - Modify: `skills/xyz-harness-subagent-driven-development/SKILL.md`（去除 code-quality-reviewer 引用）
 
-- [ ] **Step 1：读取原始 prompt 模板**
+- [x] **Step 1：读取原始 prompt 模板**
 
 读取：
 - `/Users/zhushanwen/.agents/skills/subagent-driven-development/implementer-prompt.md`
 - `/Users/zhushanwen/.agents/skills/subagent-driven-development/spec-reviewer-prompt.md`
 
-- [ ] **Step 2：适配调度语法**
+- [x] **Step 2：适配调度语法**
 
 每个模板中需要修改的内容：
 - `Task tool (general-purpose):` → pi 的 subagent 调用格式
 - 模型名 → `llm-simple-router/glm-5-turbo`（简单任务）/ `llm-simple-router/glm-5.1`（复杂任务）
 - `superpowers:xxx` 引用 → 去掉 `superpowers:` 前缀，改为对应的 `xyz-harness-` 前缀名
 
-- [ ] **Step 3：复制适配后的模板到目标路径**
+- [x] **Step 3：复制适配后的模板到目标路径**
 
 保存到：
 - `skills/xyz-harness-subagent-driven-development/implementer-prompt.md`
 - `skills/xyz-harness-subagent-driven-development/spec-reviewer-prompt.md`
 
-- [ ] **Step 4：修改 SKILL.md，移除 code-quality-reviewer 引用**
+- [x] **Step 4：修改 SKILL.md，移除 code-quality-reviewer 引用**
 
 code-quality-reviewer 的逻辑将并入 expert-reviewer（Task 3）。在 SKILL.md 中：
 - 移除 code-quality-reviewer-prompt.md 的引用和描述
 - 移除两阶段评审的第二阶段（代码质量评审）
 - 只保留 spec 合规检查（task 级）
 
-- [ ] **Step 5：Commit**
+- [x] **Step 5：Commit**
 
 ```bash
 git add skills/xyz-harness-subagent-driven-development/
@@ -133,7 +133,7 @@ git commit -m "feat: adapt subagent-driven-development prompt templates for pi"
 **Files:**
 - Create: `skills/xyz-harness-expert-reviewer/SKILL.md`
 
-- [ ] **Step 1：设计 expert-reviewer SKILL.md**
+- [x] **Step 1：设计 expert-reviewer SKILL.md**
 
 skill 需要支持两种模式：
 
@@ -159,13 +159,13 @@ SKILL.md 需要包含：
 - 输出格式模板
 - 评审循环上限（计划评审 ≤3轮，执行评审 ≤2轮）
 
-- [ ] **Step 2：读取原始 code-quality-reviewer-prompt.md 作为参考**
+- [x] **Step 2：读取原始 code-quality-reviewer-prompt.md 作为参考**
 
 读取 `/Users/zhushanwen/.agents/skills/subagent-driven-development/code-quality-reviewer-prompt.md`，提取代码质量评审的维度和逻辑，融入执行评审模式。
 
-- [ ] **Step 3：写 SKILL.md**
+- [x] **Step 3：写 SKILL.md**
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add skills/xyz-harness-expert-reviewer/
@@ -179,7 +179,7 @@ git commit -m "feat: add expert-reviewer skill with plan and execution review mo
 **Files:**
 - Create: `skills/xyz-harness-coding-skill/SKILL.md`
 
-- [ ] **Step 1：设计 coding-skill SKILL.md**
+- [x] **Step 1：设计 coding-skill SKILL.md**
 
 SKILL.md 需要包含：
 - frontmatter（name: xyz-harness-coding-skill）
@@ -189,9 +189,9 @@ SKILL.md 需要包含：
 - 编码 SOP：读 spec → 确认涉及层 → 加载对应 Spec → 编码 → 自检
 - 与项目 CLAUDE.md 的冲突处理规则：项目规范优先
 
-- [ ] **Step 2：写 SKILL.md**
+- [x] **Step 2：写 SKILL.md**
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add skills/xyz-harness-coding-skill/SKILL.md
@@ -217,31 +217,31 @@ git commit -m "feat: add coding-skill with clean architecture layer overview"
 - 通用编码规范（技术栈无关）
 - 正面/反面示例
 
-- [ ] **Step 1：编写 entry.md（入口层）**
+- [x] **Step 1：编写 entry.md（入口层）**
 
 职责：接收外部请求、参数校验、响应格式化。不包含业务逻辑。
 
-- [ ] **Step 2：编写 orchestration.md（编排层）**
+- [x] **Step 2：编写 orchestration.md（编排层）**
 
 职责：业务流程编排、事务边界管理。协调领域层和集成层。
 
-- [ ] **Step 3：编写 domain.md（领域层）**
+- [x] **Step 3：编写 domain.md（领域层）**
 
 职责：核心业务逻辑、领域模型、业务规则。不依赖任何外部层。
 
-- [ ] **Step 4：编写 data.md（数据层）**
+- [x] **Step 4：编写 data.md（数据层）**
 
 职责：数据存取、ORM/查询映射。不包含业务判断。
 
-- [ ] **Step 5：编写 integration.md（集成层）**
+- [x] **Step 5：编写 integration.md（集成层）**
 
 职责：外部服务调用、超时设置、降级方案。隔离外部依赖。
 
-- [ ] **Step 6：编写 infrastructure.md（基础设施层）**
+- [x] **Step 6：编写 infrastructure.md（基础设施层）**
 
 职责：配置、中间件、工具函数。横切关注点。
 
-- [ ] **Step 7：Commit**
+- [x] **Step 7：Commit**
 
 ```bash
 git add skills/xyz-harness-coding-skill/specs/
@@ -255,7 +255,7 @@ git commit -m "feat: add 6 clean architecture layer specs"
 **Files:**
 - Create: `skills/xyz-harness-unit-test-write/SKILL.md`
 
-- [ ] **Step 1：设计 unit-test-write SKILL.md**
+- [x] **Step 1：设计 unit-test-write SKILL.md**
 
 核心逻辑（Change-driven Testing）：
 1. 分析代码变更（git diff），识别修改的接口/API
@@ -270,9 +270,9 @@ SKILL.md 需要包含：
 - 测试文件命名和目录规范
 - 输出格式
 
-- [ ] **Step 2：写 SKILL.md**
+- [x] **Step 2：写 SKILL.md**
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add skills/xyz-harness-unit-test-write/
@@ -286,7 +286,7 @@ git commit -m "feat: add unit-test-write skill with change-driven testing"
 **Files:**
 - Create: `skills/xyz-harness-deploy-verify/SKILL.md`
 
-- [ ] **Step 1：设计 deploy-verify SKILL.md**
+- [x] **Step 1：设计 deploy-verify SKILL.md**
 
 核心逻辑：
 1. 确认部署目标（从 CLAUDE.md 或项目配置读取）
@@ -300,9 +300,9 @@ SKILL.md 需要包含：
 - 验证通过/失败的判断标准
 - 失败时的回退指导
 
-- [ ] **Step 2：写 SKILL.md**
+- [x] **Step 2：写 SKILL.md**
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add skills/xyz-harness-deploy-verify/
@@ -329,13 +329,13 @@ git commit -m "feat: add deploy-verify skill"
 5. 门禁检查项（gate-checker subagent 检查什么）
 6. 人工确认点（展示内容、用户选项、流转规则）
 
-- [ ] **Step 1：复制参考文档**
+- [x] **Step 1：复制参考文档**
 
 从 `/Users/zhushanwen/Code/chat_project/harness-engineering/dev-flow/references/` 复制：
 - `claude-md-template.md` → `skills/xyz-harness-dev-flow/references/claude-md-template.md`
 - `wiki-structure.md` → `skills/xyz-harness-dev-flow/references/wiki-structure.md`
 
-- [ ] **Step 2：编写 dev-flow SKILL.md**
+- [x] **Step 2：编写 dev-flow SKILL.md**
 
 核心内容：
 - frontmatter（name: xyz-harness-dev-flow, description 含触发词）
@@ -359,7 +359,7 @@ git commit -m "feat: add deploy-verify skill"
 - gate-checker fail → 按回退路由处理
 - 人工确认点暂停等待用户
 
-- [ ] **Step 3：Commit**
+- [x] **Step 3：Commit**
 
 ```bash
 git add skills/xyz-harness-dev-flow/
@@ -375,7 +375,7 @@ git commit -m "feat: add dev-flow orchestrator with 11-stage pipeline"
 
 Task 8 完成 SKILL.md 的骨架，本 task 填充每个阶段的具体调度逻辑。
 
-- [ ] **Step 1：编写阶段 ① 需求分析 的调度描述**
+- [x] **Step 1：编写阶段 ① 需求分析 的调度描述**
 
 详细描述：
 - 派遣执行 subagent，加载 brainstorming + writing-plans skill
@@ -384,7 +384,7 @@ Task 8 完成 SKILL.md 的骨架，本 task 填充每个阶段的具体调度逻
 - gate-checker 检查项：两个文件存在 + spec 包含必要章节 + plan 包含 task 拆分
 - 人工确认点1 的展示内容
 
-- [ ] **Step 2：编写阶段 ② 需求评审 的调度描述**
+- [x] **Step 2：编写阶段 ② 需求评审 的调度描述**
 
 - 派遣评审 subagent（code-reviewer），加载 expert-reviewer skill（计划评审模式）
 - subagent 输入：spec.md + plan.md（不继承阶段①的执行上下文）
@@ -392,27 +392,27 @@ Task 8 完成 SKILL.md 的骨架，本 task 填充每个阶段的具体调度逻
 - 评审循环 ≤3轮
 - 人工确认点2
 
-- [ ] **Step 3：编写阶段 ③ 编码实现 的调度描述**
+- [x] **Step 3：编写阶段 ③ 编码实现 的调度描述**
 
 - 派遣执行 subagent，加载 coding-skill + subagent-driven-development
 - subagent-driven-development 内部再调度 task 级 subagent（code-fixer）
 - 每个 task 内：TDD + spec 合规检查（spec-reviewer-prompt）
 - gate-checker 检查项：代码编译通过 + 所有 spec 合规通过
 
-- [ ] **Step 4：编写阶段 ④⑤⑥⑦ 的调度描述**
+- [x] **Step 4：编写阶段 ④⑤⑥⑦ 的调度描述**
 
 ④ 编码评审：评审 subagent + expert-reviewer（执行评审模式），≤2轮
 ⑤ 测试编写：执行 subagent + unit-test-write（Change-driven），gate-checker 检查测试文件
 ⑥ 测试评审：评审 subagent + expert-reviewer（执行评审模式），≤2轮
 ⑦ 代码推送：执行 subagent + zcommit，gate-checker 检查 push 成功
 
-- [ ] **Step 5：编写阶段 ⑧⑨⑩ 的调度描述**
+- [x] **Step 5：编写阶段 ⑧⑨⑩ 的调度描述**
 
 ⑧ CI 验证：执行 subagent + verification-before-completion，门禁条件硬编码（SUCCESS && tests>0 && passed==total），回退路由（0/0→⑤，编译错→③）
 ⑨ 部署验证：人工确认点4 → 执行 subagent + deploy-verify
 ⑩ 用户确认：人工确认点5，回退路由（需求不符→①，实现问题→③）
 
-- [ ] **Step 5.5：编写阶段 ⑪ 自动复盘 的调度描述**
+- [x] **Step 5.5：编写阶段 ⑪ 自动复盘 的调度描述**
 
 ⑪ 自动复盘：复盘 subagent（code-reviewer, glm-5.1）
   - 输入：summary.md + 各阶段评审报告路径 + 回退记录 + metrics
@@ -423,7 +423,7 @@ Task 8 完成 SKILL.md 的骨架，本 task 填充每个阶段的具体调度逻
   - 完成后：主 agent 展示可改进项，用户决定是否采纳
   - 运行指标记录到 .xyz-harness/metrics/
 
-- [ ] **Step 6：Commit**
+- [x] **Step 6：Commit**
 
 ```bash
 git add skills/xyz-harness-dev-flow/SKILL.md
@@ -437,7 +437,7 @@ git commit -m "feat: add detailed stage descriptions for all 11 stages"
 **Files:**
 - Create: `install.py`
 
-- [ ] **Step 1：设计 install.py**
+- [x] **Step 1：设计 install.py**
 
 功能：
 1. 扫描 `skills/` 目录下所有 `xyz-harness-` 前缀的 skill 目录
@@ -457,9 +457,9 @@ verification-before-completion → xyz-harness-verification-before-completion
 test-driven-development → xyz-harness-test-driven-development
 ```
 
-- [ ] **Step 2：实现 install.py**
+- [x] **Step 2：实现 install.py**
 
-- [ ] **Step 3：测试运行**
+- [x] **Step 3：测试运行**
 
 ```bash
 python3 install.py
@@ -470,7 +470,7 @@ ls -la ~/.agents/skills/ | grep xyz-harness
 ls ~/.agents/skills/dev-flow 2>&1  # 应该不存在
 ```
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add install.py
@@ -484,7 +484,7 @@ git commit -m "feat: add install.py with symlink setup and legacy cleanup"
 **Files:**
 - Create: `README.md`
 
-- [ ] **Step 1：写 README.md**
+- [x] **Step 1：写 README.md**
 
 内容：
 - 项目简介（一句话）
@@ -494,7 +494,7 @@ git commit -m "feat: add install.py with symlink setup and legacy cleanup"
 - 使用方式（在 pi 中触发 dev-flow）
 - 目录结构
 
-- [ ] **Step 2：Commit**
+- [x] **Step 2：Commit**
 
 ```bash
 git add README.md
@@ -508,7 +508,7 @@ git commit -m "docs: add project README"
 **Files:**
 - Create: `skills/xyz-harness-dev-flow/scripts/gate-script.sh`
 
-- [ ] **Step 1：设计 gate-script.sh**
+- [x] **Step 1：设计 gate-script.sh**
 
 脚本功能：接受阶段号和交付物路径作为参数，执行可程序化验证的检查项。
 
@@ -547,13 +547,13 @@ git commit -m "docs: add project README"
 - 所有检查通过 → 创建 `.xyz-harness/gate/stage-{NN}.pass`，内容为时间戳 + 检查项摘要
 - 任一检查失败 → 输出失败项 + 原因，exit code 1
 
-- [ ] **Step 2：实现 gate-script.sh**
+- [x] **Step 2：实现 gate-script.sh**
 
-- [ ] **Step 3：测试**
+- [x] **Step 3：测试**
 
 手动测试各阶段分支的检查逻辑。
 
-- [ ] **Step 4：Commit**
+- [x] **Step 4：Commit**
 
 ```bash
 git add skills/xyz-harness-dev-flow/scripts/

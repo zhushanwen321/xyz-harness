@@ -8,21 +8,38 @@
 
 ### 1.1 执行模型
 
-主 agent（dev-flow skill）是纯调度器，不直接执行任何阶段：
+阶段分为两类，执行方式不同：
+
+| 类型 | 阶段 | 执行方式 | 原因 |
+|------|------|---------|------|
+| **交互阶段** | ① 需求分析 | 主 agent 直接执行 skill | 需要多轮用户对话（brainstorming） |
+| **自动阶段** | ②-⑨ | subagent | 不需要用户交互，上下文隔离 |
+| **确认阶段** | ⑩-⑪ | 主 agent 直接处理 | 用户确认和复盘 |
 
 ```
-主 agent（调度器）
-  ├── 使用 loop_task_tracker 管理阶段状态
-  │     create_tasks(10个阶段) → 每个阶段完成时 complete_task
-  ├── 派遣 subagent 执行每个阶段
-  ├── 派遣 gate-checker subagent 验证门禁
-  ├── 在人工确认点暂停等待用户决策
-  └── 根据门禁结果 + 用户决策决定流转（前进/回退）
+主 agent
+  │
+  ├─ ① 交互阶段：直接执行 brainstorming + writing-plans（多轮对话）
+  │     完成后 compaction 清理上下文
+  │
+  ├─ ②-⑨ 自动阶段：纯调度（不读交付物内容、不修改文件）
+  │     ├── 使用 loop_task_tracker 管理阶段状态
+  │     ├── 派遣 subagent 执行
+  │     ├── 派遣 gate-checker subagent 验证门禁
+  │     ├── 在人工确认点暂停等待用户决策
+  │     └── 根据门禁结果 + 用户决策决定流转（前进/回退）
+  │
+  └─ ⑩-⑪ 确认阶段：主 agent 直接处理
+        透传各阶段 summary，等待用户最终确认
 ```
 
-**阶段追踪机制：** 使用 pi 的 `loop_task_tracker` 工具（即 `/loop` 模式的 task tracker）。dev-flow 启动时 `create_tasks` 注册全部 10 个阶段，每阶段完成后 `complete_task` 标记。主 agent 通过 `list_tasks` 查看当前进度，回退时重新标记对应阶段为未完成。
+**为什么 ① 不用 subagent：** brainstorming 需要逐一向用户提问澄清需求，subagent 是非交互子进程，无法与用户对话。主 agent 直接执行可以保持原生交互体验。
 
-**三层隔离：**
+**为什么 ① 之后要 compaction：** 交互阶段会积累大量对话历史（用户需求讨论）。compaction 后主 agent 上下文干净，后续调度阶段不受干扰。
+
+**阶段追踪机制：** 使用 pi 的 `loop_task_tracker` 工具。dev-flow 启动时 `create_tasks` 注册全部 11 个阶段，每阶段完成后 `complete_task` 标记。回退时重新标记对应阶段为未完成。
+
+**自动阶段的三层隔离：**
 - 执行 subagent：完成阶段工作（编码、测试、推送等）
 - 评审 subagent：独立评审，不继承执行者的上下文
 - 门禁 subagent：独立检查产出物，不继承执行者/评审者的上下文
@@ -326,7 +343,9 @@ xyz-harness-engineering/
 | D5 | 命名前缀 | 全部 xyz-harness- 前缀 | 统一管理 |
 | D6 | 物理位置 | 当前项目仓库，install.py symlink | 独立仓库管理 |
 | D7 | coding_report | 不需要，由评审 agent 产出 review 报告 | 减少冗余产出物 |
-| D8 | 门禁保证 | gate-checker subagent 独立验证 | 硬保证替代 prompt 级软保证 |
+| D8 | 门禁保证 | gate-checker subagent 独立验证 | 硬保证替代 prompt 级软保证
+| D15 | 阶段①交互执行 | 需求分析由主 agent 直接执行（非 subagent） | brainstorming 需要多轮用户对话，subagent 无法交互 |
+| D16 | compaction | 阶段①完成后主 agent 做 compaction | 清理交互阶段的对话历史，保持后续调度上下文干净 | |
 | D9 | 约束层级 | L1脚本（gate-script.sh）+ L2 subagent + L3 人工确认 | AI 倾向于跳过检查，需要硬约束 |
 | D10 | gate 脚本 | 统一定义，放在 xyz-harness-dev-flow/scripts/ 下 | 统一管理 |
 | D11 | 运行时目录 | .xyz-harness/ | harness 系统文件和需求交付物分开 |

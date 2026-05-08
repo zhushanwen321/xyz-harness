@@ -103,11 +103,29 @@ description: >
 
 运行 `git rev-parse --git-common-dir` 和 `git rev-parse --git-dir`,如果两者不同则已在 worktree 中。如果相同,询问用户是否需要创建 worktree(使用 create-worktree skill)。
 
-## 2. CLAUDE.md 是否存在?
+## 2. CLAUDE.md 是否存在且完整?
 
-检查项目根目录是否有 CLAUDE.md。如果没有,读取 `references/claude-md-template.md`,展示给用户并引导填写。告诉用户:
+检查项目根目录是否有 CLAUDE.md。
 
-> 这个项目还没有 CLAUDE.md(项目级规则文档)。建议先花 10 分钟写一份基础版,否则后续所有环节的质量都会打折。是否继续?
+**如果不存在**，告诉用户:
+
+> 这个项目还没有 CLAUDE.md（项目级规则文档）。建议先运行 xyz-harness-init skill 完成初始化，否则后续所有环节的质量都会打折。
+>
+> 是否现在初始化？（说"初始化项目"或"init harness"）
+
+**如果存在但不完整**（缺少必需章节），告诉用户:
+
+> CLAUDE.md 缺少以下必需章节：[列出缺失项]。建议运行 xyz-harness-init 补全。
+>
+> 是否现在补全？（说"初始化项目"或"init harness"）
+
+必需章节检查清单:
+- 项目背景（非空）
+- 架构约束（至少有分层规则）
+- 编码规范（至少有测试目录路径）
+- 质量门禁（至少有编译和测试命令，格式为 `- 标签: \`命令\``）
+
+如果用户选择跳过初始化，允许继续但明确告知风险。
 
 ## 3. 是否有 CI 配置?
 

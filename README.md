@@ -334,6 +334,7 @@ AI 展示所有阶段的 summary，你确认最终交付：
 
 | Skill 名 | 来源 | 触发阶段 | 说明 |
 |---------|------|---------|------|
+| **xyz-harness-init** | 新建 | dev-flow 前置 | 项目初始化，引导填写 CLAUDE.md |
 | xyz-harness-dev-flow | 新建（编排器） | 全程 | 11 阶段纯调度，不直接执行 |
 | xyz-harness-brainstorming | 提取 | ① | 需求探索与澄清 → 下一步: writing-plans |
 | xyz-harness-writing-plans | 提取 | ① | 生成 plan.md → 下一步: 需求评审 |
@@ -359,6 +360,7 @@ python3 install.py
 ```
 xyz-harness-engineering/
 ├── skills/
+│   ├── xyz-harness-init/              # 项目初始化
 │   ├── xyz-harness-dev-flow/        # 编排器
 │   │   ├── SKILL.md
 │   │   ├── scripts/gate-script.sh

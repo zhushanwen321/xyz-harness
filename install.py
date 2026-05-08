@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""xyz-harness-engineering skill 安装脚本。
+"""xyz-harness-engineering 安装脚本。
 
-扫描 skills/ 目录下所有 xyz-harness- 前缀的 skill，
-创建 symlink 到 ~/.pi/agent/skills/ 和 ~/.agents/skills/，
-并清理旧版不带前缀的同名 skill。
+同时安装 skills 和 agents：
+- 扫描 skills/ 下 xyz-harness- 前缀的 skill，symlink 到 ~/.pi/agent/skills/ 和 ~/.agents/skills/
+- 扫描 agents/ 下 harness- 前缀的 agent，symlink 到 ~/.pi/agent/agents/ 和 ~/.agents/agents/
+- 清理旧版不带前缀的同名 skill/agent
 """
 
 import os
@@ -16,7 +17,9 @@ from pathlib import Path
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 SKILLS_DIR = SCRIPT_ROOT / "skills"
+AGENTS_DIR = SCRIPT_ROOT / "agents"
 PREFIX = "xyz-harness-"
+AGENT_PREFIX = "harness-"
 
 # 旧版 skill 清理映射：目标目录 → 需要清理的 skill 名称列表
 CLEANUP_MAP: dict[str, list[str]] = {
@@ -34,6 +37,12 @@ CLEANUP_MAP: dict[str, list[str]] = {
 INSTALL_TARGETS = [
     Path("~/.pi/agent/skills"),
     Path("~/.agents/skills"),
+]
+
+# agent symlink 安装目标目录
+AGENT_INSTALL_TARGETS = [
+    Path("~/.pi/agent/agents"),
+    Path("~/.agents/agents"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -105,6 +114,17 @@ def discover_skills() -> list[Path]:
     )
 
 
+def discover_agents() -> list[Path]:
+    """返回 agents/ 下所有 AGENT_PREFIX 前缀的目录，按名称排序"""
+    if not AGENTS_DIR.is_dir():
+        print(f"{C_YELLOW}警告: agents 目录不存在: {AGENTS_DIR}，跳过 agent 安装{C_RESET}")
+        return []
+    return sorted(
+        p for p in AGENTS_DIR.iterdir()
+        if p.is_dir() and p.name.startswith(AGENT_PREFIX)
+    )
+
+
 def install_one_skill(skill_dir: Path, target_base: Path) -> str:
     """安装单个 skill symlink，返回状态: 'new' / 'updated' / 'skipped'"""
     name = skill_dir.name
@@ -153,32 +173,55 @@ def cleanup_old_skills() -> tuple[int, int]:
 
 def main() -> None:
     skills = discover_skills()
-    if not skills:
-        print(f"{C_YELLOW}未找到 {PREFIX}* skill 目录{C_RESET}")
+    agents = discover_agents()
+
+    if not skills and not agents:
+        print(f"{C_YELLOW}未找到 {PREFIX}* skill 目录和 {AGENT_PREFIX}* agent 目录{C_RESET}")
         sys.exit(0)
 
-    print(f"{C_BOLD}=== 安装 xyz-harness skills ==={C_RESET}\n")
-
-    # ---- 安装 ----
     total_new = 0
     total_updated = 0
     total_skipped = 0
 
-    for skill_dir in skills:
-        name = skill_dir.name
-        print(f"{C_CYAN}{name}{C_RESET}")
-        for target_base in INSTALL_TARGETS:
-            status = install_one_skill(skill_dir, target_base)
-            label = target_base.expanduser()
-            if status == "new":
-                total_new += 1
-                print(f"  {C_GREEN}+ 新增 → {label}{C_RESET}")
-            elif status == "updated":
-                total_updated += 1
-                print(f"  {C_YELLOW}↻ 更新 → {label}{C_RESET}")
-            else:
-                total_skipped += 1
-                print(f"  = 跳过 → {label}")
+    # ---- 安装 skills ----
+    if skills:
+        print(f"{C_BOLD}=== 安装 xyz-harness skills ==={C_RESET}\n")
+
+        for skill_dir in skills:
+            name = skill_dir.name
+            print(f"{C_CYAN}{name}{C_RESET}")
+            for target_base in INSTALL_TARGETS:
+                status = install_one_skill(skill_dir, target_base)
+                label = target_base.expanduser()
+                if status == "new":
+                    total_new += 1
+                    print(f"  {C_GREEN}+ 新增 → {label}{C_RESET}")
+                elif status == "updated":
+                    total_updated += 1
+                    print(f"  {C_YELLOW}↻ 更新 → {label}{C_RESET}")
+                else:
+                    total_skipped += 1
+                    print(f"  = 跳过 → {label}")
+
+    # ---- 安装 agents ----
+    if agents:
+        print(f"\n{C_BOLD}=== 安装 harness agents ==={C_RESET}\n")
+
+        for agent_dir in agents:
+            name = agent_dir.name
+            print(f"{C_CYAN}{name}{C_RESET}")
+            for target_base in AGENT_INSTALL_TARGETS:
+                status = install_one_skill(agent_dir, target_base)
+                label = target_base.expanduser()
+                if status == "new":
+                    total_new += 1
+                    print(f"  {C_GREEN}+ 新增 → {label}{C_RESET}")
+                elif status == "updated":
+                    total_updated += 1
+                    print(f"  {C_YELLOW}↻ 更新 → {label}{C_RESET}")
+                else:
+                    total_skipped += 1
+                    print(f"  = 跳过 → {label}")
 
     # ---- 清理旧版 ----
     print(f"\n{C_BOLD}=== 清理旧版 skill ==={C_RESET}\n")

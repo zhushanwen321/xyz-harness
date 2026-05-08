@@ -339,12 +339,23 @@ AI 展示所有阶段的 summary，你确认最终交付：
 | xyz-harness-brainstorming | 提取 | ① | 需求探索与澄清 → 下一步: writing-plans |
 | xyz-harness-writing-plans | 提取 | ① | 生成 plan.md → 下一步: 需求评审 |
 | xyz-harness-expert-reviewer | 新建 | ②④⑥ | 统一评审（计划/编码/测试三种模式） |
-| xyz-harness-subagent-driven-development | 提取+适配 | ③ | Task 级编码编排 → 下一步: 编码评审 |
+| xyz-harness-subagent-driven-development | 提取+适配 | ③ | Task 级编码编排，含 TDD 两阶段 |
 | xyz-harness-coding-skill | 新建 | ③ | Clean Architecture 分层编码规范（被 subagent 加载） |
 | xyz-harness-test-driven-development | 提取 | ③ | TDD 方法论（被 subagent 加载） |
 | xyz-harness-unit-test-write | 新建 | ⑤ | Change-driven Testing（接口级） |
 | xyz-harness-verification-before-completion | 提取 | ⑧ | 编译、测试、lint 验证 |
 | xyz-harness-deploy-verify | 新建 | ⑨ | 部署验证 |
+
+## Agent 清单
+
+| Agent 名 | 角色 | 使用阶段 | 说明 |
+|---------|------|---------|------|
+| **harness-tdd-coder** | TDD 测试编写 | ③ task 级 | 只写测试不写实现，确保测试先行 |
+| harness-executor | 通用执行 | ③ ⑤ ⑦ ⑧ ⑨ | 编码、测试编写、推送、部署 |
+| harness-reviewer | 独立评审 | ② ④ ⑥ ⑪ | 计划评审 / 编码评审 / 测试评审 |
+| harness-gate-checker | 门禁检查 | 每阶段完成后 | 独立验证交付物和门禁条件 |
+
+Agent 文件位于 `agents/` 目录，通过 CLAUDE.md 的「Harness Agent 覆盖」章节可覆盖默认配置。
 
 ## 安装
 
@@ -395,6 +406,11 @@ xyz-harness-engineering/
 │   ├── xyz-harness-verification-before-completion/
 │   ├── xyz-harness-deploy-verify/
 │   └── xyz-harness-test-driven-development/
+├── agents/                               # Agent 定义
+│   ├── harness-tdd-coder/agent.md         # TDD 测试编写 agent
+│   ├── harness-executor/agent.md          # 通用执行 agent
+│   ├── harness-reviewer/agent.md          # 独立评审 agent
+│   └── harness-gate-checker/agent.md      # 门禁检查 agent
 ├── .superpowers/                    # 设计文档
 │   └── 2026-05-08-harness-engineering/
 │       ├── spec.md

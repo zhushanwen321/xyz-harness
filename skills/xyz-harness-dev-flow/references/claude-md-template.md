@@ -202,3 +202,30 @@ def create_order(req):
 - **现象：** [Agent 做错了什么]
 - **根因：** [为什么会出错]
 - **规则：** [新增/修改了什么规则来防止]
+
+## Harness Agent 覆盖 **[可选]**
+
+> 项目可以覆盖 harness 默认的 agent 配置。
+> 语法：
+> ```
+> ## Harness Agent 覆盖
+> - agent: <agent名>
+>   模型: <模型>
+>   规则: <覆盖规则>
+> ```
+
+<!-- 示例：
+## Harness Agent 覆盖
+
+- agent: harness-executor
+  模型: llm-simple-router/glm-5.1
+  规则: 所有 export 的函数必须加 JSDoc 注释
+
+- agent: harness-tdd-coder
+  模型: llm-simple-router/glm-5-turbo
+  规则: 测试文件放在 src/__tests__/ 下，使用 vitest
+
+- agent: harness-gate-checker
+  模型: llm-simple-router/glm-5.1
+  规则: 增加安全性检查：扫描代码中的 secret key 硬编码
+-->

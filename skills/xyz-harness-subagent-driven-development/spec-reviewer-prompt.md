@@ -5,7 +5,7 @@ Use this template when dispatching a spec compliance reviewer subagent.
 **Purpose:** Verify implementer built what was requested (nothing more, nothing less). This review focuses exclusively on spec compliance — whether the implementation matches the requirements. Code quality review is handled separately by the expert-reviewer skill.
 
 ```
-使用 pi 的 subagent tool 调度：
+使用 pi 的 subagent tool 调度，agent 选择 harness-reviewer：
   description: "Review spec compliance for Task N"
   prompt: |
     You are reviewing whether an implementation matches its specification.

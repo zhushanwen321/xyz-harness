@@ -15,11 +15,11 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by dispatching fresh subagent per task, with spec compliance review after each.
+Execute plan by dispatching fresh subagent per task: TDD coder (writes failing tests) → implementer (writes code to pass tests) → spec compliance review.
 
 **Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
 
-**Core principle:** Fresh subagent per task + spec compliance review = high quality, fast iteration
+**Core principle:** Fresh subagent per task: TDD coder (tests first) → executor (code to pass tests) → spec compliance review = high quality, fast iteration
 
 **Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
@@ -45,6 +45,7 @@ digraph when_to_use {
 **vs. manual execution:**
 - Same session (no context switch)
 - Fresh subagent per task (no context pollution)
+- TDD coder writes tests first, implementer writes code to pass them
 - Spec compliance review after each task
 - Faster iteration (no human-in-loop between tasks)
 
@@ -56,10 +57,12 @@ digraph process {
 
     subgraph cluster_per_task {
         label="Per Task";
+        "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" [shape=box];
+        "TDD coder writes failing tests" [shape=box];
         "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
         "Implementer subagent asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
-        "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
+        "Implementer writes code to pass tests, commits, self-reviews" [shape=box];
         "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [shape=box];
         "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
         "Implementer subagent fixes spec gaps" [shape=box];
@@ -70,18 +73,20 @@ digraph process {
     "More tasks remain?" [shape=diamond];
     "Use merge-worktree skill" [shape=box style=filled fillcolor=lightgreen];
 
-    "Read plan, extract all tasks with full text, note context, create_tasks" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Read plan, extract all tasks with full text, note context, create_tasks" -> "Dispatch TDD coder subagent (./tdd-coder-prompt.md)";
+    "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" -> "TDD coder writes failing tests";
+    "TDD coder writes failing tests" -> "Dispatch implementer subagent (./implementer-prompt.md)";
     "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
     "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
-    "Implementer subagent implements, tests, commits, self-reviews" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)";
+    "Implementer subagent asks questions?" -> "Implementer writes code to pass tests, commits, self-reviews" [label="no"];
+    "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)";
     "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" -> "Spec reviewer subagent confirms code matches spec?";
     "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
     "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [label="re-review"];
     "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via complete_task" [label="yes"];
     "Mark task complete via complete_task" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
+    "More tasks remain?" -> "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" [label="yes"];
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
@@ -100,6 +105,21 @@ Use the least powerful model that can handle each role to conserve cost and incr
 - Touches 1-2 files with a complete spec → `llm-simple-router/glm-5-turbo`
 - Touches multiple files with integration concerns → `llm-simple-router/glm-5.1`
 - Requires design judgment or broad codebase understanding → `llm-simple-router/glm-5.1`
+
+## Handling TDD Coder Status
+
+TDD coder subagents report one of three statuses. Handle each appropriately:
+
+**DONE:** TDD coder wrote failing tests, all tests FAIL as expected → proceed to dispatch implementer subagent.
+
+**NEEDS_CONTEXT:** TDD coder needs information that wasn't provided. Provide the missing context and re-dispatch.
+
+**BLOCKED:** TDD coder cannot write tests. Assess the blocker:
+1. If it's a context problem, provide more context and re-dispatch
+2. If the spec is unclear, clarify with the human
+3. If the task design is fundamentally flawed, escalate to the human
+
+**Never** skip the TDD coder step. Tests-first is a hard requirement.
 
 ## Handling Implementer Status
 
@@ -121,7 +141,8 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 ## Prompt Templates
 
-- `./implementer-prompt.md` - Dispatch implementer subagent
+- `./tdd-coder-prompt.md` - Dispatch TDD coder subagent (writes failing tests only)
+- `./implementer-prompt.md` - Dispatch implementer subagent (writes code to pass tests)
 - `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
 
 ## Example Workflow
@@ -136,7 +157,16 @@ You: I'm using Subagent-Driven Development to execute this plan.
 Task 1: Hook installation script
 
 [Get Task 1 text and context (already extracted)]
-[Dispatch implementer subagent via pi subagent tool, agent: code-fixer]
+[Dispatch TDD coder subagent via pi subagent tool, agent: harness-tdd-coder]
+
+TDD coder: [No questions, proceeds]
+TDD coder:
+  - Wrote failing tests for install-hook command
+  - Tests cover: user-level install, --force flag, error cases
+  - All 3 tests FAIL as expected
+  - Committed test file
+
+[Dispatch implementer subagent via pi subagent tool, agent: harness-executor]
 
 Implementer: "Before I begin - should the hook be installed at user or system level?"
 
@@ -144,9 +174,9 @@ You: "User level (~/.config/superpowers/hooks/)"
 
 Implementer: "Got it. Implementing now..."
 [Later] Implementer:
-  - Implemented install-hook command
-  - Added tests, 5/5 passing
-  - Self-review: Found I missed --force flag, added it
+  - Implemented install-hook command to pass all tests
+  - All 3 tests now PASS
+  - Self-review: All good
   - Committed
 
 [Dispatch spec compliance reviewer]
@@ -157,12 +187,21 @@ Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
 Task 2: Recovery modes
 
 [Get Task 2 text and context (already extracted)]
-[Dispatch implementer subagent]
+[Dispatch TDD coder subagent, agent: harness-tdd-coder]
+
+TDD coder: [No questions, proceeds]
+TDD coder:
+  - Wrote failing tests for verify/repair modes
+  - Tests cover: mode switching, progress reporting, error handling
+  - All 4 tests FAIL as expected
+  - Committed test file
+
+[Dispatch implementer subagent, agent: harness-executor]
 
 Implementer: [No questions, proceeds]
 Implementer:
-  - Added verify/repair modes
-  - 8/8 tests passing
+  - Added verify/repair modes to pass all tests
+  - 4/4 tests passing
   - Self-review: All good
   - Committed
 
@@ -208,7 +247,7 @@ Done!
 - Code quality review is handled separately by dev-flow 阶段④的 expert-reviewer skill
 
 **Cost:**
-- Fewer subagent invocations per task (implementer + 1 reviewer)
+- Three subagent invocations per task (TDD coder + implementer + reviewer)
 - Controller does more prep work (extracting all tasks upfront)
 - Review loops add iterations but only for spec compliance
 - Catches issues early (cheaper than debugging later)
@@ -251,7 +290,8 @@ Done!
 - **merge-worktree** - Complete development after all tasks
 
 **Subagents should use:**
-- **xyz-harness-test-driven-development** - Subagents follow TDD for each task
+- **TDD coder** uses harness-tdd-coder agent - writes failing tests only
+- **Implementer** uses harness-executor agent - writes code to pass tests
 
 **Code quality review:**
 - Code quality review is handled by dev-flow 阶段④的 expert-reviewer skill，不在此流程中执行

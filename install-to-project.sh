@@ -87,11 +87,16 @@ fi
 echo ""
 
 # ── Step 2: 项目本地 symlink ────────────────────────────────────
-info "Step 2/3: 项目本地 symlink ..."
+info "Step 2/3: 项目本地 symlink (skills + agents) ..."
 
 PI_SKILLS="$PROJECT_PATH/.pi/skills"
 CLAUDE_SKILLS="$PROJECT_PATH/.claude/skills"
-AGENTS_SKILLS="$PROJECT_PATH/.agents/skills"
+AGENTS_SKILLS_DIR="$PROJECT_PATH/.agents/skills"
+
+# agent 目录
+PI_AGENTS="$PROJECT_PATH/.pi/agents"
+CLAUDE_AGENTS="$PROJECT_PATH/.claude/agents"
+AGENTS_AGENTS_DIR="$PROJECT_PATH/.agents/agents"
 
 project_new=0
 project_updated=0
@@ -133,7 +138,42 @@ install_to_dir() {
 
 install_to_dir "$PI_SKILLS" ".pi/skills/"
 install_to_dir "$CLAUDE_SKILLS" ".claude/skills/"
-install_to_dir "$AGENTS_SKILLS" ".agents/skills/"
+install_to_dir "$AGENTS_SKILLS_DIR" ".agents/skills/"
+
+# ── 安装项目本地 agents ──
+AGENTS_SRC="$HARNESS_ROOT/agents"
+if [[ -d "$AGENTS_SRC" ]]; then
+    install_agents_to_dir() {
+        local target_dir="$1"
+        local label="$2"
+        mkdir -p "$target_dir"
+        for agent_dir in "$AGENTS_SRC"/*/; do
+            local name
+            name="$(basename "$agent_dir")"
+            if [[ ! "$name" =~ ^harness- ]]; then
+                continue
+            fi
+            local link="$target_dir/$name"
+            local src
+            src="$(cd "$agent_dir" && pwd)"
+            if [[ -L "$link" ]] && [[ "$(readlink "$link")" == "$src" ]]; then
+                ((project_skipped++))
+                continue
+            fi
+            if [[ -L "$link" ]] || [[ -e "$link" ]]; then
+                rm -rf "$link"
+                ((project_updated++))
+            else
+                ((project_new++))
+            fi
+            ln -s "$src" "$link"
+        done
+        ok "项目本地 agents: ${label}"
+    }
+    install_agents_to_dir "$PI_AGENTS" ".pi/agents/"
+    install_agents_to_dir "$CLAUDE_AGENTS" ".claude/agents/"
+    install_agents_to_dir "$AGENTS_AGENTS_DIR" ".agents/agents/"
+fi
 echo ""
 
 # ── Step 3: CLAUDE.md 检查 ─────────────────────────────────────

@@ -1,12 +1,14 @@
 # CLAUDE.md 模板
 
 > 使用方式：复制到项目根目录，按提示填空。控制在 100-200 行。每条规则都标注「为什么」。
+>
+> 本模板覆盖 xyz-harness 全部 skill 期望从项目读取的上下文。标注了 **[必需]** 的章节如果不填，harness 对应阶段会跳过或降级。
 
 ---
 
 # CLAUDE.md
 
-## 项目背景
+## 项目背景 **[必需]**
 
 <!-- 一句话说清项目是什么 -->
 本项目是 [项目名称]，用于 [解决什么问题]。
@@ -30,9 +32,10 @@
 └── tests/         # 测试
 ```
 
-## 架构约束
+## 架构约束 **[必需]**
 
 > 这些是不可违反的硬规则。每条规则对应一个历史踩坑案例。
+> 编码评审（阶段④）和编码实现（阶段③）都会读取此章节。
 
 ### 分层规则
 
@@ -86,7 +89,7 @@ def create_order(req):
 
 <!-- 按需添加，每条都来自真实踩坑 -->
 
-## 编码规范
+## 编码规范 **[必需]**
 
 ### [表现层 / Controller / Handler]
 
@@ -106,63 +109,67 @@ def create_order(req):
 - [SQL 写法约定]
 - [其他约定]
 
-### 测试规范
+### 测试规范 **[必需]**
+
+<!-- 测试编写（阶段⑤）和测试评审（阶段⑥）会读取此章节 -->
 
 - 测试目录：[tests/ / src/__tests__/ / ...]
 - 命名：`test_[被测函数]_[场景]_[预期结果]`
 - Mock 策略：[什么 mock、什么不 mock]
 - 每个 [接口/函数] 至少覆盖：正常路径 + 边界条件 + 异常路径
+- 数据构造：[fixture 路径 / 工厂方法 / 硬编码]
 
-## 质量门禁
+## 质量门禁 **[必需]**
 
 > 所有条件必须可程序化验证。不能出现「看起来没问题」这种判断。
+> gate-script.sh 会解析此章节中的命令行，格式必须为 `- 标签: \`命令\``。
+
+<!-- gate-script.sh 按标签名自动归类：含"编译/build"→compile，含"测试/test"→test，含"lint/clippy/eslint"→lint -->
 
 ### 编译/类型检查
 
-```bash
-# [命令]
-[具体命令，如 tsc --noEmit / mypy src/ / cargo check]
-```
-通过条件：exit code == 0
+- 编译: `[具体命令，如 tsc --noEmit / mypy src/ / cargo check]`
 
 ### 测试
 
-```bash
-# [命令]
-[具体命令，如 pytest tests/ -v / npm test / cargo test]
-```
-通过条件：exit code == 0 **且** test count > 0 **且** failures == 0
+- 测试: `[具体命令，如 pytest tests/ -v / npm test / cargo test]`
 
 ### Lint
 
-```bash
-# [命令]
-[具体命令，如 ruff check . / eslint . / cargo clippy]
-```
-通过条件：exit code == 0
+- lint: `[具体命令，如 ruff check . / eslint . / cargo clippy]`
 
-### 构建
+### 构建（如有）
 
-```bash
-# [命令]
-[具体命令，如 npm run build / cargo build --release / ...]
-```
-通过条件：exit code == 0
+- 构建: `[具体命令，如 npm run build / cargo build --release]`
+
+## 部署 **[可选]**
+
+> 部署验证（阶段⑨）会读取此章节。如果不配置，阶段⑨会跳过或要求手动确认。
+
+- 部署命令: `[具体命令，如 deploy.sh staging / kubectl apply -f k8s/ / make deploy]`
+- 目标环境: [staging / production / 开发环境]
+- 部署超时: [10 分钟]（默认 10 分钟）
+- 健康检查: `[URL，如 http://localhost:8080/health]`
+- 验证接口: `[1-2 个核心接口 URL，如 http://localhost:8080/api/v1/ping]`
+- 日志检查: [是/否]（设为"是"时，部署后检查无 ERROR 级别日志）
 
 ## 开发流程
 
-本项目使用 dev-flow skill 进行需求开发。标准流程：
+本项目使用 xyz-harness-dev-flow skill 进行需求开发。标准流程：
 
 ```
-需求分析(braintorming) → 实现规划(writing-plans) → 编码实现(subagent-driven)
-→ 两阶段评审(spec review → quality review) → 验证 → 提交 → PR → 合并
+① 需求分析 → ② 需求评审 → ③ 编码实现 → ④ 编码评审 → ⑤ 测试编写
+→ ⑥ 测试评审 → ⑦ 代码推送 → ⑧ CI 验证 → ⑨ 部署验证 → ⑩ 用户确认
+→ ⑪ 自动复盘
 ```
 
-### 人工确认点
+### 人工确认点（5 个）
 
-1. 需求设计确认（brainstorming 后）
-2. 实现计划确认（writing-plans 后）
-3. PR Code Review + CI 确认
+1. 需求设计确认（阶段①后）
+2. 计划评审确认（阶段②后）
+3. 编码评审确认（阶段④后）
+4. 部署目标确认（阶段⑧后）
+5. 最终交付确认（阶段⑩）
 
 ### 文档产出目录
 
@@ -171,11 +178,11 @@ def create_order(req):
 └── {yyyy-MM-dd}-{主题}/
     ├── spec.md          # 需求设计文档
     ├── plan.md          # 实现计划
-    ├── changes/         # 变更追溯（由 dev-flow 自动维护）
-    │   ├── summary.md
-    │   ├── reviews/
-    │   └── evidence/
-    └── wiki-notes/      # 本次需求涉及的 wiki 更新
+    └── changes/         # 变更追溯（由 dev-flow 自动维护）
+        ├── summary.md
+        ├── reviews/
+        ├── evidence/
+        └── retrospective.md
 ```
 
 ## 高频变更区
@@ -189,7 +196,7 @@ def create_order(req):
 
 ## 已知陷阱
 
-> 每次 Agent 犯错后在这里补一条。按时间倒序排列。
+> 每次 Agent 犯错后在这里补一条（阶段⑪复盘会建议更新）。按时间倒序排列。
 
 ### [yyyy-MM-dd] [问题描述]
 - **现象：** [Agent 做错了什么]

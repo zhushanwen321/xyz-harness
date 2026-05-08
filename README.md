@@ -12,9 +12,7 @@ Harness Engineering 是一种用工程化约束替代 prompt 软指导的 AI 编
 
 ## 使用指南：从零开发一个需求
 
-### 前置条件
-
-1. **安装本项目的 skill**
+### 第一步：安装 harness skill
 
 ```bash
 cd xyz-harness-engineering
@@ -25,14 +23,49 @@ python3 install.py
 - 将 `skills/xyz-harness-*` 目录 symlink 到 `~/.pi/agent/skills/` 和 `~/.agents/skills/`
 - 清理旧版不带 `xyz-harness-` 前缀的同名 skill
 
-2. **目标项目有 CLAUDE.md**
+### 第二步：初始化目标项目
 
-目标项目（你要开发需求的项目）根目录必须有 `CLAUDE.md` 文件，且包含**质量门禁**章节。
+目标项目（你要开发需求的项目）需要配置好 CLAUDE.md，harness 的 skill 在运行时会从中读取项目上下文。
 
-如果目标项目没有 CLAUDE.md，dev-flow 会自动提示你。也可以参考模板：
-`skills/xyz-harness-dev-flow/references/claude-md-template.md`
+#### 必须配置（不配置则对应阶段会失败）
 
-质量门禁章节示例（CLAUDE.md 中必须有）：
+| 章节 | 读取方 | 缺失影响 |
+|------|--------|----------|
+| **项目背景 + 技术栈** | 阶段① brainstorming | AI 无法理解项目，需求分析质量差 |
+| **模块结构** | 阶段① brainstorming、writing-plans | AI 无法规划文件变更 |
+| **架构约束**（分层规则、禁止事项） | 阶段②④⑥ expert-reviewer、阶段③ coding-skill | 编码和评审无规范依据 |
+| **编码规范** | 阶段③④ coding-skill、expert-reviewer | AI 按自己的风格编码 |
+| **测试规范**（目录路径、命名、mock 策略） | 阶段⑤⑥ unit-test-write、expert-reviewer | 测试文件放错位置或风格不统一 |
+| **质量门禁**（编译/测试/lint 命令） | 阶段③⑤⑦⑧ gate-script.sh | **gate 脚本会跳过检查直接通过，形同虚设** |
+
+#### 可选配置（不配置则对应阶段会降级或跳过）
+
+| 章节 | 读取方 | 缺失影响 |
+|------|--------|----------|
+| **部署**（命令、环境、超时） | 阶段⑨ deploy-verify | 部署阶段跳过 |
+| **健康检查 URL** | 阶段⑨ gate-script.sh | 无法自动验证部署成功 |
+| **验证接口** | 阶段⑨ deploy-verify | 无法自动验证服务可用 |
+| **数据规范**（金额/时间/ID 的类型约定） | 阶段③ coding-skill | AI 可能选错类型 |
+| **外部调用规范**（超时、重试、降级） | 阶段③④ coding-skill、expert-reviewer | AI 可能写无超时的调用 |
+| **高频变更区** | 阶段① writing-plans | AI 不清楚哪些文件改起来要格外小心 |
+
+#### 渐进积累（每次需求完成后自动建议更新）
+
+| 章节 | 积累方式 |
+|------|----------|
+| **已知陷阱** | 阶段⑪复盘后建议新增规则 |
+| **wiki/ 知识库** | 阶段⑪复盘后建议补充领域文档 |
+
+#### 快速初始化
+
+如果目标项目没有 CLAUDE.md，dev-flow 启动时会自动提示。也可以手动创建：
+
+```bash
+# 复制模板到目标项目根目录
+cp skills/xyz-harness-dev-flow/references/claude-md-template.md /path/to/your-project/CLAUDE.md
+```
+
+然后按模板提示填空。**至少填写「质量门禁」章节**，否则 gate 脚本无法执行编译/测试/lint 检查：
 
 ```markdown
 ## 质量门禁
@@ -42,13 +75,11 @@ python3 install.py
 - lint: `cargo clippy`
 ```
 
-这些命令会被 `gate-script.sh` 读取并执行，作为 L1 强制门禁。
+格式要求：`- 标签: \`命令\``。gate-script.sh 按标签名自动归类（含"编译/build"→compile，含"测试/test"→test，含"lint/clippy/eslint"→lint）。
 
-3. **在 worktree 中工作（推荐）**
+### 第三步：启动需求开发
 
 建议使用 `create-worktree` skill 为每个需求创建独立分支和工作目录。如果你已在 worktree 中，dev-flow 会自动检测。
-
-### 开始开发
 
 在 pi 中打开目标项目，输入：
 

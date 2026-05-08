@@ -3,6 +3,16 @@ name: xyz-harness-verification-before-completion
 description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ⑧ CI 验证 |
+| 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
+| 上游 | ⑦ 代码推送通过 |
+| 下游（完成后进入） | 验证通过 → 确认点4（部署目标确认）→ ⑨ 部署验证 |
+| 回退目标 | 测试数=0 → ⑤；编译错误 → ③；测试失败 → ③ 或 ⑤ |
+
 # Verification Before Completion
 
 ## Overview

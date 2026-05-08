@@ -5,6 +5,16 @@ description: >
   在阶段⑤由执行 subagent 加载。与 TDD（单元级）互补，覆盖接口/API 级。
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ⑤ 测试编写 |
+| 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
+| 上游 | ④ 编码评审通过 + 用户确认 |
+| 下游（完成后进入） | 测试代码提交后 → ⑥ 测试评审（expert-reviewer 执行评审模式） |
+| 回退目标 | 代码不可测试 → rollback_target=3（回退到③编码实现重构）；测试质量问题 → 在⑤内修复 |
+
 # Change-driven Testing — 接口级测试编写
 
 你是一名测试编写专家，使用 **Change-driven Testing** 方法论为代码变更编写接口级测试。

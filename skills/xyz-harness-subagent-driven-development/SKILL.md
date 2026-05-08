@@ -3,6 +3,16 @@ name: xyz-harness-subagent-driven-development
 description: Use when executing implementation plans with independent tasks in the current session
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ③ 编码实现 |
+| 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
+| 上游 | ② 需求评审通过 + 用户确认 |
+| 下游（完成后进入） | ③ 内部按 task 逐个执行编码 + spec 合规检查 → 完成后由 dev-flow 进入 ④ 编码评审 |
+| 回退目标 | spec 合规不通过 → 当前 task 内修复；编码评审不通过 → 回退到 ③ 重新派遣 |
+
 # Subagent-Driven Development
 
 Execute plan by dispatching fresh subagent per task, with spec compliance review after each.

@@ -3,6 +3,16 @@ name: xyz-harness-brainstorming
 description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ① 需求分析（前半段） |
+| 触发方式 | 由主 agent 直接执行（交互阶段，需多轮用户对话） |
+| 上游 | 用户提出需求 |
+| 下游（完成后进入） | xyz-harness-writing-plans（阶段①后半段，紧接执行） |
+| 回退目标 | 无前置阶段。如设计需修改，在本阶段内直接迭代 |
+
 # Brainstorming Ideas Into Designs
 
 Help turn ideas into fully formed designs and specs through natural collaborative dialogue.

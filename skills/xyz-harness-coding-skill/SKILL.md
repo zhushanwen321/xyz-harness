@@ -5,6 +5,16 @@ description: >
   提供各层的编码规范和约束。作为 L2 阶段常驻上下文，项目 CLAUDE.md 的规范优先级更高。
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ③ 编码实现（L2 阶段常驻上下文） |
+| 触发方式 | 被执行 subagent 加载为编码规范参考，不独立运行 |
+| 上游 | 由 subagent-driven-development 内部的 task 级 subagent 加载 |
+| 下游（完成后进入） | 无（纯参考文档，不触发下一步 skill） |
+| 回退目标 | 无（不参与流程流转） |
+
 # 编码规范指南
 
 你是编码规范指南。你提供 Clean Architecture 的分层编码规范，帮助编码 subagent 按层正确实现代码。

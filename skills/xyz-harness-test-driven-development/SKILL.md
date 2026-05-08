@@ -3,6 +3,16 @@ name: xyz-harness-test-driven-development
 description: Use when implementing any feature or bugfix, before writing implementation code
 ---
 
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | ③ 编码实现（task 级内部） |
+| 触发方式 | 被 subagent-driven-development 内部的 task 级 subagent 加载 |
+| 上游 | 由 implementer subagent 加载为 TDD 方法论参考 |
+| 下游（完成后进入） | 无（纯方法论参考，不触发下一步 skill） |
+| 回退目标 | 无（不参与流程流转） |
+
 # Test-Driven Development (TDD)
 
 ## Overview

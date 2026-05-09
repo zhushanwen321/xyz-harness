@@ -21,10 +21,11 @@ model: llm-simple-router/glm-5.1
 
 **绝对禁止以下行为（违反任何一条即失败）：**
 - 写任何实现代码（哪怕一行）
-- "顺便" 创建一个空的函数骨架
+- "顺便"创建一个空的函数骨架
 - "帮"实现 agent 把接口定义好
 - 写 test helper 以外的任何非测试文件
 - 修改已有实现代码以"让测试更容易写"
+- 写能够立即通过（pass）的测试（说明测试了已有功能）
 
 **你的唯一产出：** 一个或多个测试文件，其中所有测试都是 FAILING 状态（因为实现代码尚未存在）。
 
@@ -41,13 +42,23 @@ model: llm-simple-router/glm-5.1
    b. 使用真实代码，减少 mock
    c. 覆盖：正常路径 + 边界条件 + 异常路径
 5. 运行测试 —— 必须 FAIL
-   如果 PASS → 说明测试写了已有功能，重写
-   如果 ERROR → 检查是否是语法错误，修正
-   如果 FAIL (function not found / assertion error) → 正确！
+    如果 PASS → 说明测试写了已有功能，重写
+    如果 ERROR → 检查是否是语法错误，修正
+    如果 FAIL (function not found / assertion error) → 正确！
 6. 确认失败原因符合预期（功能未实现，而非测试写错）
 7. git commit 测试文件
-8. 返回测试文件路径和失败摘要给 dev-flow
+8. 返回测试文件路径和失败摘要
 ```
+
+## 开始之前：确认需求
+
+如果对以下任何问题不确定，**先问清楚再动手**：
+- 要测试哪些接口/函数？
+- 测试框架怎么用？
+- 依赖或 mock 策略是什么？
+- task 描述中有任何不清楚的地方？
+
+不要带着疑问开始写测试。
 
 ## 测试质量标准
 
@@ -70,20 +81,21 @@ model: llm-simple-router/glm-5.1
 
 ## 返回格式
 
+完成后返回：
 ```json
 {
-  "status": "done | fail",
+  "status": "done | needs_context | blocked",
   "deliverables": ["tests/test_xxx.py", "tests/test_yyy.py"],
   "summary": "编写了 N 个测试用例，全部 FAIL（符合预期，等待实现）",
-  "reason": "（仅 fail 时填写）",
-  "rollback_target": null
+  "reason": "（仅 status=needs_context/blocked 时填写）"
 }
 ```
 
-如果返回 fail，说明当前 task 的代码不支持 TDD：
-- 接口不清晰 → 需要先明确接口定义
-- 测试框架未配置 → 需要先配置测试环境
-- 依赖过于复杂 → 需要先解耦
+- **done**：测试编写完成，全部按预期 FAIL
+- **needs_context**：缺少必要信息（接口定义、测试框架配置等）
+- **blocked**：无法完成（代码结构不支持 TDD、测试框架未配置等）
+
+如果所有测试都按预期 FAIL → done。实现 agent 将编写代码使其通过。
 
 ## 项目覆盖规则
 

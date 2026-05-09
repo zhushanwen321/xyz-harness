@@ -189,7 +189,31 @@ if 项目根目录/CLAUDE.md 不存在:
 3. 问: "是否需要修改什么？"
 4. 确认后，建议用户提交: `git add CLAUDE.md && git commit -m "chore: add CLAUDE.md for harness"`
 
-### Step 4：初始化完成
+### Step 4：检查 Loop 模式可用性
+
+在启动需求开发前，必须确保会话支持 `/loop` 模式（由 force-loop 扩展提供）。
+
+```
+检查步骤:
+1. 确认 ~/.pi/agent/extensions/force-loop/ 存在
+2. 确认 loop_task_tracker 工具可用（force-loop 注册的）
+3. 确认 /loop 命令可识别
+
+if 任一检查不通过:
+  向用户展示:
+  "需要安装 force-loop 扩展。请运行：
+  cd /Users/zhushanwen/Code/useful-dev-tools/.pi/extensions/force-loop/
+  # 然后参照 pi 扩展文档安装"
+```
+
+> **为什么需要 /loop 模式：** 后续的开发流水线包含自动执行阶段（③-⑪），
+> `/loop` 模式提供：
+> - **自动继续：** 上下文中断后自动重试
+> - **防卡死检测：** 连续无进展后自动停止
+> - **任务跟踪：** loop_task_tracker 管理阶段进度
+> - **预算保护：** 接近 token 上限时自动收尾
+
+### Step 5：初始化完成
 
 向用户展示：
 
@@ -205,8 +229,11 @@ CLAUDE.md 已配置以下章节：
 - 部署配置：[✅ / ⬜ 跳过]
 - 高频变更区：[✅ / ⬜ 跳过]
 - 已知陷阱：[✅ / ⬜ 跳过]
+- Loop 模式：✅（force-loop 扩展可用）
 
-现在可以说"开发需求 xxx"启动需求开发了。
+使用方式：
+1. 输入 `/loop --max 20 开发需求 xxx` 激活循环模式
+2. 流水线会自动执行，你只需要在 5 个确认点回复
 ```
 
 ---

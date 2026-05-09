@@ -42,9 +42,26 @@
 
 ### M3：安装与测试 ⬜
 
-- [ ] 运行 `python3 install.py` 安装到全局
+- [x] skills + agents symlink 安装验证通过
+- [x] 所有技能文件完整性检查通过
+- [x] 所有引用的相对路径可解析
 - [ ] 在真实项目上测试 dev-flow 全流程
 - [ ] 根据测试结果迭代修正
+
+---
+
+### 已知修复（2026-05-09）
+
+| 修复项 | 说明 |
+|--------|------|
+| subagent 嵌套调用 | subagent-driven-development SKILL.md 改为主 agent 参考模式，不再由 executor 加载后内部调度 |
+| dev-flow 阶段 ③ 重写 | 从「派 executor → executor 内部调度 subagent」改为「主 agent 直接按 task 迭代派遣 TDD coder → executor → reviewer」 |
+| gate-checker rollback_target | 每阶段检查清单增加了明确的回退目标说明 |
+| executor summary.md 更新 | executor 工作流程增加了 summary.md 更新步骤 |
+| prompt 模板澄清 | implementer/tdd-coder/spec-reviewer 模板加了 header 说明使用方为主 agent |
+| subagent-driven-development description | 改为中文 |
+| troubleshooting 文档 | TROUBLESHOOTING.md 已创建 |
+| symlink 验证 | 所有 11 skills + 4 agents symlink 在 pi 和 Claude Code 目录均有效 |
 
 ---
 
@@ -55,6 +72,7 @@
 | Skill 源文件 | 21 个 |
 | Skill 总行数 | ~5675 行 |
 | 设计文档 | 3 个（~1711 行） |
+| Troubleshooting | 1 个（~280 行） |
 | Git commit | 68e4e92 |
 | 分支 | xyz-harness-engineering |
 

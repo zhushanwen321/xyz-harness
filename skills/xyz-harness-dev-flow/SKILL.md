@@ -132,6 +132,25 @@ description: >
 
 检查是否有 `.github/workflows/` 或 `.gitlab-ci.yml` 等。如果没有,提醒用户后续验证环节需要手动运行。
 
+## 4. /loop 模式是否已激活?
+
+检查当前会话是否在 `/loop` 模式下运行。如果 loop_task_tracker 工具不可用或 `/loop` 命令未注册,说明 force-loop 扩展未安装或 `/loop` 未激活。
+
+**如果未激活：** 告诉用户:
+
+> 后续自动执行阶段（③-⑪）需要 `/loop` 模式支持。请先输入以下命令激活循环模式：
+> ` /loop --max 20 开发需求：{需求简述}`
+>
+> 激活后我会自动继续。
+
+**为什么需要 /loop 模式：**
+- **自动继续：** 自动化阶段③-⑪可能在长时间执行后上下文耗尽。`/loop` 模式会在每轮结束后自动重试，确保不中断
+- **防卡死检测：** 连续 3 轮无进展时自动停止，防止无限循环
+- **任务追踪：** loop_task_tracker 管理阶段进度，中断后可恢复
+- **预算保护：** 上下文使用超过 80% 时触发收尾流程，防止丢失工作
+
+> **注意：** 阶段①和②可以不在 `/loop` 模式下执行（需要用户交互），但**必须在进入阶段③前激活 `/loop`**。阶段②完成后会再次确认。
+
 ## 前置检查通过后
 
 1. **`create_tasks`** 注册 11 个阶段:
@@ -165,16 +184,38 @@ description: >
 
 ---
 
-# 第四部分:loop_task_tracker 使用说明
+# 第四部分:loop_task_tracker 与 /loop 模式使用说明
 
-dev-flow 使用 pi 的 `loop_task_tracker` 管理阶段流转。
+## 关系说明
+
+`loop_task_tracker` 由 force-loop 扩展提供，是 `/loop` 模式的组成部分。两者关系：
+
+| 概念 | 角色 |
+|------|------|
+| `/loop` 命令 | 由 force-loop 扩展注册，激活循环模式（`/loop --max N <prompt>`） |
+| `loop_task_tracker` tool | 在 `/loop` 模式下可用，管理任务清单（create/complete/list） |
+| 自动继续 | `/loop` 模式在每轮 agent 结束后检查剩余任务，自动发送下一轮 prompt |
+| 防卡死 | `/loop` 模式检测连续 3 轮无进展时自动停止 |
+| 预算保护 | `/loop` 模式在上下文使用超过 80% 时触发收尾流程 |
+
+> 必须先在 Pi 中运行 `/loop --max <N> 开发需求：xxx` 激活循环模式，
+> 然后 `loop_task_tracker` 工具才能用于阶段任务管理。
+
+## 使用方式
 
 | tracker 操作 | 时机 | 说明 |
 |-------------|------|------|
 | `create_tasks(11个阶段)` | 前置检查通过后 | 注册全部阶段名称 |
 | `list_tasks` | 每个阶段开始前 | 查看当前进度和剩余阶段 |
-| `complete_task(N)` | gate-checker 返回 pass 后 | 标记阶段完成 |
+| `complete_task(N)` | gate-checker 返回 pass 后 | 标记阶段完成，`/loop` 自动进入下一轮 |
 | 重置为未完成 | 回退发生时 | 回退目标阶段及后续所有阶段重置 |
+
+## 进入阶段③时的建议
+
+如果当前尚未在 `/loop` 模式下运行，阶段②用户确认后应提示用户激活 `/loop`：
+
+> 接下来进入自动执行阶段（③-⑪）。建议现在输入 `/loop --max 20 继续开发需求` 激活循环模式，
+> 确保后续执行不中断。
 
 ## 回退时的 tracker 处理
 
@@ -343,13 +384,9 @@ dev-flow 使用 pi 的 `loop_task_tracker` 管理阶段流转。
   - plan.md 包含至少 1 个 "Task" 标题
 - 失败 → 回退到 ①，主 agent 直接修复
 
-### 3. 执行 compaction
+### 3. 人工确认点 1：需求待决议确认
 
-**交互阶段完成后，必须执行 compaction。** 清理交互阶段的对话历史（用户需求讨论），保持后续调度阶段的上下文干净。
-
-### 4. complete_task(1)
-
-### 5. 人工确认点 1：需求待决议确认
+**⚠️ 强制暂停。必须在此处等待用户回复后才能继续。绝对禁止跳过此确认点直接进入阶段 ②。**
 
 **确认点展示（主 agent 基于交互结果）：**
 
@@ -373,9 +410,17 @@ dev-flow 使用 pi 的 `loop_task_tracker` 管理阶段流转。
 ```
 
 **流转规则：**
-- 确认 → 进入阶段 ②（自动阶段，开始 subagent 模式）
+- 确认 → 执行 compaction（步骤 4），然后进入阶段 ②（自动阶段，开始 subagent 模式）
 - 有修改意见 → 直接修改 spec/plan → 重新展示
 - 方向不对 → 回到提问环节
+
+### 4. 执行 compaction
+
+**确认通过后，必须执行 compaction。** 清理交互阶段的对话历史（用户需求讨论），保持后续调度阶段的上下文干净。
+
+**注意：compaction 必须在确认点 1 通过之后执行，不能在确认之前执行。** 否则主 agent 会丢失交互上下文，导致确认点被跳过。
+
+### 5. complete_task(1)
 
 ---
 
@@ -446,52 +491,72 @@ dev-flow 使用 pi 的 `loop_task_tracker` 管理阶段流转。
 - 有修改意见 → 将用户意见作为输入,重新派遣执行 subagent 修改 spec/plan,修改后再派遣评审 subagent,重新走 L2 + 确认点
 - 计划不合理 → 回退到阶段 1
 
+> **进入阶段③前的重要步骤：** 如果当前尚未激活 `/loop` 模式（阶段①-②可以不在 loop 下执行），
+> 建议输入 `/loop --max 20 继续开发需求` 激活循环模式，确保后续自动化阶段在上下文耗尽后能自动继续。
+
 ---
 
 ## 阶段 3:编码实现
 
 **调度流程:**
 
-### 1. 派遣执行 subagent
+### 1. 主 agent 按 task 迭代调度
 
-| 项目 | 值 |
-|------|---|
-| Agent | harness-executor |
-| 加载 Skill | xyz-harness-subagent-driven-development, xyz-harness-coding-skill, xyz-harness-test-driven-development |
-| 模型 | glm-5.1(阶段级调度) |
-| 输入 | spec.md 路径 + plan.md 路径 + 项目根目录 |
+**重要限制：** subagent 内部不能嵌套调用 subagent。阶段 ③ 的编码实现由**主 agent 直接按 plan.md 的 task 逐个派遣 subagent**，而非通过一个执行 subagent 内部调度。
 
-**subagent 入口条件:**
-- spec.md + plan.md 存在
-- 阶段 2 已通过且用户已确认
+**主 agent 执行流程：**
 
-**subagent 执行逻辑(概述):**
+1. 读取 plan.md，提取所有 task（含完整描述和上下文）
+2. 使用 `loop_task_tracker` 创建 task 级 tracker（将每个 task 作为一个独立步骤）
+3. 逐一派遣 subagent 执行每个 task，遵循以下模式：
 
-subagent-driven-development 内部按 plan.md 中的 task 逐个执行。对每个 task:
+**每个 task 的三步调度模式：**
 
-1. **派遣 TDD coder subagent**(harness-tdd-coder, glm-5.1)
-   - 加载 tdd-coder-prompt 模板
-   - 输入:task 描述 + spec 相关章节 + CLAUDE.md
-   - 执行:编写失败测试 → 确认失败 → 提交测试
+```
+  ┌─ Step 1: 派遣 TDD coder (harness-tdd-coder, glm-5.1)
+  │   task = "实现 Task N：{task 描述}
+  │           spec 相关章节：{spec 章节}
+  │           要测试的接口/函数：{提取自 task 描述}"
+  │   职责：编写失败测试 → 确认测试 FAIL → 提交测试文件
+  │   返回：DONE / NEEDS_CONTEXT / BLOCKED
+  │
+  ├─ Step 2: 派遣执行 subagent (harness-executor, 模型按复杂度选择)
+  │   task = "实现 Task N：{task 描述}
+  │           spec 相关章节：{spec 章节}
+  │           CLAUDE.md 编码规范：{相关规则摘要}
+  │           测试文件路径：{TDD coder 提交的测试文件}
+  │           分层规范参考：coding-skill"
+  │   职责：写最小实现代码 → 确认所有测试通过 → 更新 summary.md → git commit
+  │   返回：DONE / DONE_WITH_CONCERNS / BLOCKED
+  │
+  └─ Step 3: 派遣 spec 合规检查 (harness-reviewer, glm-5.1)
+       task = "验证 Task N 的实现是否符合 spec：{task 的 spec 要求}
+               代码 diff：{当前 task 的变更}"
+       职责：验证代码是否实现 spec 要求
+       通过 → complete_task(task-id)，进入下一个 task
+       不通过 → 将问题传给 Step 2 重新派遣，修复后重审
+```
 
-2. **派遣 task 级编码 subagent**(harness-executor, 模型按任务复杂度选择)
-   - 加载 coding-skill(Clean Architecture 分层规范)
-   - 加载 implementer-prompt 模板
-   - 输入:task 描述 + spec 相关章节 + CLAUDE.md + 已有测试文件路径
-   - 执行:写最小实现代码 → 确认测试通过 → 提交
+**task 间流转规则：**
+- Step 1 返回 DONE → 进入 Step 2
+- Step 1 返回 NEEDS_CONTEXT → 提供缺失上下文后重新派遣
+- Step 1 返回 BLOCKED → 暂停，向用户展示原因，等待决策
+- Step 2 返回 DONE → 进入 Step 3
+- Step 2 返回 DONE_WITH_CONCERNS → 评估问题，进入 Step 3 或回退
+- Step 2 返回 BLOCKED → 暂停，向用户展示原因
+- Step 3 不通过 → 将 problem list 传给 Step 2 重新派遣修复
+- Step 3 通过 → complete_task(task-id)→ 下一个 task
 
-3. **派遣 task 级 spec 合规检查 subagent**(harness-reviewer, glm-5.1)
-   - 加载 spec-reviewer-prompt 模板
-   - 输入:spec 相关章节 + 当前 task 的代码 diff
-   - 检查:代码是否实现了 spec 要求
-   - 不通过 → 编码 subagent 修复 → 重审
+**每个 agent 自带完整的执行指令（在 agent.md 中），主 agent 只需传入 task 上下文即可。**
 
-4. **所有 task 完成后** → 产出完成报告
+**参考文档：**
+- `xyz-harness-subagent-driven-development/SKILL.md` — task 调度模式和异常处理逻辑参考
+- `xyz-harness-coding-skill/SKILL.md` + `specs/` — Clean Architecture 分层编码规范（如需要可加载到 executor 上）
 
-**交付物:**
-- TDD coder 产出的失败测试文件(已 git commit)
-- 代码变更(已 git commit)
-- TDD 单元测试(函数/类级)
+**交付物：**
+- TDD coder 产出的失败测试文件（每个 task 独立，已 git commit）
+- 代码变更（已 git commit，含 summary.md 更新）
+- TDD 单元测试（函数/类级）
 
 ### 2. L1 脚本检查
 
@@ -1164,8 +1229,8 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
             产出:plan_review_v{N}.md
             L2: gate-checker(≤3轮)
   → ✋ 确认点2:计划评审确认
-  → [自动] 3 编码实现(subagent-driven-development)
-            内含 task 级 TDD + spec 合规检查
+  → [自动] 3 编码实现(主 agent 按 task 迭代调度)
+            每个 task: TDD coder → 编码实现 → spec 合规检查
             产出:代码 + 单元测试
             L1: gate-script.sh 03 + L2: gate-checker
   → [自动] 4 编码评审

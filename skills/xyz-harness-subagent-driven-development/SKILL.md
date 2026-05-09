@@ -1,16 +1,26 @@
 ---
 name: xyz-harness-subagent-driven-development
-description: Use when executing implementation plans with independent tasks in the current session
+description: Subagent-driven-development 编码模式参考。主 agent 按 plan.md 的 task 逐个派遣独立的执行/评审 subagent，实现上下文隔离和 TDD 质量保障。不作为 skill 加载到 subagent 上下文中，仅由主 agent 参考使用。
 ---
+
+## 架构说明
+
+**本 skill 是参考模式文档，不作为 skill 加载到任何 subagent 的上下文中。**
+
+由 dev-flow 主 agent（纯调度器）在阶段 ③ 开始时读取，理解分 task 迭代调度的流程后，直接使用 subagent tool 派遣 subagent。
+
+**不允许的调用链：** 主 agent → 派 executor → executor 加载本文档 → executor 再派 subagent ❌
+
+**正确的调用链：** 主 agent 读取本文档 → 主 agent 按本文档模式直接派遣 subagent ✅
 
 ## Dev-flow 上下文
 
 | 项目 | 值 |
 |------|---|
 | 所在阶段 | ③ 编码实现 |
-| 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
+| 触发方式 | 由 dev-flow 主 agent 在阶段 ③ 开始时读取（作为调度参考，不加载到 subagent 上下文） |
 | 上游 | ② 需求评审通过 + 用户确认 |
-| 下游（完成后进入） | ③ 内部按 task 逐个执行编码 + spec 合规检查 → 完成后由 dev-flow 进入 ④ 编码评审 |
+| 下游（完成后进入） | 所有 task 完成后由主 agent 进入 ④ 编码评审 |
 | 回退目标 | spec 合规不通过 → 当前 task 内修复；编码评审不通过 → 回退到 ③ 重新派遣 |
 
 # Subagent-Driven Development
@@ -57,13 +67,13 @@ digraph process {
 
     subgraph cluster_per_task {
         label="Per Task";
-        "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" [shape=box];
+        "Dispatch TDD coder (harness-tdd-coder)" [shape=box];
         "TDD coder writes failing tests" [shape=box];
-        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
+        "Dispatch implementer (harness-executor)" [shape=box];
         "Implementer subagent asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
         "Implementer writes code to pass tests, commits, self-reviews" [shape=box];
-        "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [shape=box];
+        "Dispatch spec reviewer (harness-reviewer)" [shape=box];
         "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
         "Implementer subagent fixes spec gaps" [shape=box];
         "Mark task complete via complete_task" [shape=box];
@@ -73,38 +83,38 @@ digraph process {
     "More tasks remain?" [shape=diamond];
     "Use merge-worktree skill" [shape=box style=filled fillcolor=lightgreen];
 
-    "Read plan, extract all tasks with full text, note context, create_tasks" -> "Dispatch TDD coder subagent (./tdd-coder-prompt.md)";
-    "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" -> "TDD coder writes failing tests";
-    "TDD coder writes failing tests" -> "Dispatch implementer subagent (./implementer-prompt.md)";
-    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
+    "Read plan, extract all tasks with full text, note context, create_tasks" -> "Dispatch TDD coder (harness-tdd-coder)";
+    "Dispatch TDD coder (harness-tdd-coder)" -> "TDD coder writes failing tests";
+    "TDD coder writes failing tests" -> "Dispatch implementer (harness-executor)";
+    "Dispatch implementer (harness-executor)" -> "Implementer subagent asks questions?";
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Answer questions, provide context" -> "Dispatch implementer (harness-executor)";
     "Implementer subagent asks questions?" -> "Implementer writes code to pass tests, commits, self-reviews" [label="no"];
-    "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)";
-    "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" -> "Spec reviewer subagent confirms code matches spec?";
+    "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer (harness-reviewer)";
+    "Dispatch spec reviewer (harness-reviewer)" -> "Spec reviewer subagent confirms code matches spec?";
     "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
-    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer subagent (./spec-reviewer-prompt.md)" [label="re-review"];
+    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer (harness-reviewer)" [label="re-review"];
     "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via complete_task" [label="yes"];
     "Mark task complete via complete_task" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch TDD coder subagent (./tdd-coder-prompt.md)" [label="yes"];
+    "More tasks remain?" -> "Dispatch TDD coder (harness-tdd-coder)" [label="yes"];
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
 
 ## Model Selection
 
-Use the least powerful model that can handle each role to conserve cost and increase speed.在 pi 环境中使用 `provider/model` 格式指定模型。
+使用能满足任务要求的最经济模型以节省成本和提升速度。在 pi 环境中使用 `provider/model` 格式指定模型。
 
-**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): `llm-simple-router/glm-5-turbo`. Most implementation tasks are mechanical when the plan is well-specified.
+**机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`llm-simple-router/glm-5-turbo`。plan 足够清晰时大部分任务都属于此类。
 
-**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): `llm-simple-router/glm-5.1`.
+**集成和判断型任务**（跨文件协调、模式匹配、调试）：`llm-simple-router/glm-5.1`。
 
-**Architecture, design, and review tasks**: `llm-simple-router/glm-5.1`.
+**架构、设计和评审任务**：`llm-simple-router/glm-5.1`。
 
-**Task complexity signals:**
-- Touches 1-2 files with a complete spec → `llm-simple-router/glm-5-turbo`
-- Touches multiple files with integration concerns → `llm-simple-router/glm-5.1`
-- Requires design judgment or broad codebase understanding → `llm-simple-router/glm-5.1`
+**任务复杂度信号：**
+- 涉及 1-2 个文件，spec 完整 → `llm-simple-router/glm-5-turbo`
+- 涉及多个文件，有集成关注点 → `llm-simple-router/glm-5.1`
+- 需要设计判断或广泛的代码库理解 → `llm-simple-router/glm-5.1`
 
 ## Handling TDD Coder Status
 
@@ -139,11 +149,15 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
 
-## Prompt Templates
+## Agent 角色
 
-- `./tdd-coder-prompt.md` - Dispatch TDD coder subagent (writes failing tests only)
-- `./implementer-prompt.md` - Dispatch implementer subagent (writes code to pass tests)
-- `./spec-reviewer-prompt.md` - Dispatch spec compliance reviewer subagent
+每个 agent 自带完整的执行指令（在 agent.md 中），主 agent 只需传入 task 上下文即可，无需额外加载 prompt 模板。
+
+| 角色 | Agent | 职责 |
+|------|-------|------|
+| TDD coder | harness-tdd-coder | 写失败测试（不写实现代码） |
+| 实现者 | harness-executor | 写代码使测试通过 |
+| Spec 合规检查 | harness-reviewer | 验证代码是否实现 spec 要求 |
 
 ## Example Workflow
 

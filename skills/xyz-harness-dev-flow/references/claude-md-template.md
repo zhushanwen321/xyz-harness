@@ -174,7 +174,7 @@ def create_order(req):
 ### 文档产出目录
 
 ```
-.superpowers/
+.xyz-harness/
 └── {yyyy-MM-dd}-{主题}/
     ├── spec.md          # 需求设计文档
     ├── plan.md          # 实现计划

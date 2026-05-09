@@ -164,7 +164,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 ```
 You: I'm using Subagent-Driven Development to execute this plan.
 
-[Read plan file once: .superpowers/${topic}/plan.md]
+[Read plan file once: .xyz-harness/${topic}/plan.md]
 [Extract all 5 tasks with full text and context]
 [Call create_tasks with all tasks]
 
@@ -313,14 +313,14 @@ Done!
 <!-- LOCAL-OVERRIDE:START -->
 ## 本地目录覆盖规则
 
-**以下规则覆盖本文档中所有关于输出目录的路径指定**（如 `docs/superpowers/specs/`、`docs/superpowers/plans/` 等）：
+**以下规则覆盖本文档中所有关于输出目录的路径指定**（如 `.xyz-harness/${主题}/` 下）：
 
-- **主目录：** `.superpowers/`（项目根目录下）
+- **主目录：** `.xyz-harness/`（项目根目录下）
 - **子目录命名：** `${yyyy-MM-dd}-${主题简短标题}`（例：`2026-04-14-core-proxy`）
 - **路径映射：**
-  - `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` → `.superpowers/${主题}/spec.md`
-  - `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` → `.superpowers/${主题}/plan.md`
-  - 其他文档按需拆分到 `.superpowers/${主题}/` 下
+  - （原始路径）→ `.xyz-harness/${主题}/spec.md`
+  - （原始路径）→ `.xyz-harness/${主题}/plan.md`
+  - 其他文档按需拆分到 `.xyz-harness/${主题}/` 下
 - **不同主题使用不同子目录，禁止混放**
 
 **文档精简：** 单次写入超过 1000 字时优先拆分子文档，主文档保留概述和索引。使用 agent 并行编写各模块文档（并发度 ≤ 2），最后合成精简主文档。

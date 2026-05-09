@@ -236,12 +236,12 @@ description: >
 
 # 第五部分:变更管理目录和 summary.md 格式
 
-每个需求的所有产出物保存在 `.superpowers/{yyyy-MM-dd}-{主题}/` 下,形成完整的 Audit Trail。
+每个需求的所有产出物保存在 `.xyz-harness/{yyyy-MM-dd}-{主题}/` 下,形成完整的 Audit Trail。
 
 ## 目录结构
 
 ```
-.superpowers/{yyyy-MM-dd}-{主题}/
+.xyz-harness/{yyyy-MM-dd}-{主题}/
 ├── spec.md                        # 需求设计文档
 ├── plan.md                        # 实现计划
 └── changes/
@@ -366,18 +366,18 @@ description: >
    - 基于 spec.md 规划文件结构
    - 拆分为 bite-sized task
    - 产出 plan.md
-5. 将 spec.md 和 plan.md 写入 `.superpowers/{主题}/`
+5. 将 spec.md 和 plan.md 写入 `.xyz-harness/{主题}/`
 6. 初始化 `changes/summary.md`，阶段 ① 标记为进行中
 7. 创建 `.xyz-harness/gate/` 目录
 
 **交付物：**
-- `.superpowers/{主题}/spec.md` — 需求设计文档
-- `.superpowers/{主题}/plan.md` — 实现计划
-- `.superpowers/{主题}/changes/summary.md` — 初始化的追溯文件
+- `.xyz-harness/{主题}/spec.md` — 需求设计文档
+- `.xyz-harness/{主题}/plan.md` — 实现计划
+- `.xyz-harness/{主题}/changes/summary.md` — 初始化的追溯文件
 
 ### 2. L1 脚本检查
 
-- 运行：`gate-script.sh 01 {project_root} .superpowers/{主题}/spec.md .superpowers/{主题}/plan.md`
+- 运行：`gate-script.sh 01 {project_root} .xyz-harness/{主题}/spec.md .xyz-harness/{主题}/plan.md`
 - 检查项：
   - spec.md 存在且非空
   - plan.md 存在且非空
@@ -393,8 +393,8 @@ description: >
 ```
 阶段 ① 需求分析完成。
 
-设计文档：.superpowers/{主题}/spec.md
-实现计划：.superpowers/{主题}/plan.md
+设计文档：.xyz-harness/{主题}/spec.md
+实现计划：.xyz-harness/{主题}/plan.md
 
 摘要：
 - 目标：[spec.md 中的一句话目标]
@@ -453,7 +453,7 @@ description: >
 5. 写入 `changes/reviews/plan_review_v1.md`(版本递增,旧版不删)
 
 **交付物:**
-- `.superpowers/{主题}/changes/reviews/plan_review_v{N}.md` - 评审报告
+- `.xyz-harness/{主题}/changes/reviews/plan_review_v{N}.md` - 评审报告
 
 ### 2. L1 脚本检查
 
@@ -614,7 +614,7 @@ description: >
 6. 写入 `changes/reviews/code_review_v1.md`
 
 **交付物:**
-- `.superpowers/{主题}/changes/reviews/code_review_v{N}.md` - 编码评审报告
+- `.xyz-harness/{主题}/changes/reviews/code_review_v{N}.md` - 编码评审报告
 
 ### 2. L1 脚本检查
 
@@ -737,7 +737,7 @@ description: >
 5. 写入 `changes/reviews/test_review_v1.md`
 
 **交付物:**
-- `.superpowers/{主题}/changes/reviews/test_review_v{N}.md` - 测试评审报告
+- `.xyz-harness/{主题}/changes/reviews/test_review_v{N}.md` - 测试评审报告
 
 ### 2. L1 脚本检查
 
@@ -840,8 +840,8 @@ description: >
 - Lint:exit code == 0
 
 **交付物:**
-- `.superpowers/{主题}/changes/evidence/verification_output.md` - 本地验证输出
-- `.superpowers/{主题}/changes/evidence/ci_result.md` - CI 结果(如有)
+- `.xyz-harness/{主题}/changes/evidence/verification_output.md` - 本地验证输出
+- `.xyz-harness/{主题}/changes/evidence/ci_result.md` - CI 结果(如有)
 
 ### 2. L1 脚本检查
 
@@ -926,7 +926,7 @@ CI 结果:{deliverables[1]}
 
 **交付物:**
 - 部署成功
-- `.superpowers/{主题}/changes/evidence/deploy_result.md` - 部署结果
+- `.xyz-harness/{主题}/changes/evidence/deploy_result.md` - 部署结果
 
 ### 2. L1 脚本检查
 
@@ -966,7 +966,7 @@ CI 结果:{deliverables[1]}
 全部 11 阶段完成。
 
 需求:[用户原始需求描述]
-变更追溯:.superpowers/{主题}/changes/summary.md
+变更追溯:.xyz-harness/{主题}/changes/summary.md
 
 阶段完成情况(基于各阶段 subagent.summary):
 1 {阶段 1 summary}
@@ -1024,7 +1024,7 @@ CI 结果:{deliverables[1]}
 5. 产出 retrospective.md
 
 **交付物:**
-- `.superpowers/{主题}/changes/retrospective.md` - 复盘报告
+- `.xyz-harness/{主题}/changes/retrospective.md` - 复盘报告
 
 ### 2. 无 L1/L2 门禁检查
 
@@ -1149,7 +1149,7 @@ CI 结果:{deliverables[1]}
 一次完整的 dev-flow 执行后,项目中有以下产出物:
 
 ```
-.superpowers/{yyyy-MM-dd}-{主题}/
+.xyz-harness/{yyyy-MM-dd}-{主题}/
 ├── spec.md                              # 需求设计文档
 ├── plan.md                              # 实现计划
 └── changes/

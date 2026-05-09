@@ -82,6 +82,6 @@
 
 | 文档 | 位置 | 说明 |
 |------|------|------|
-| spec.md | `.superpowers/2026-05-08-harness-engineering/spec.md` | 完整架构设计、决策记录 |
-| plan.md | `.superpowers/2026-05-08-harness-engineering/plan.md` | 实施计划（12 个 Task） |
-| stage-execution-detail.md | `.superpowers/2026-05-08-harness-engineering/stage-execution-detail.md` | 11 阶段执行逻辑详细设计 |
+| spec.md | `.xyz-harness/2026-05-08-harness-engineering/spec.md` | 完整架构设计、决策记录 |
+| plan.md | `.xyz-harness/2026-05-08-harness-engineering/plan.md` | 实施计划（12 个 Task） |
+| stage-execution-detail.md | `.xyz-harness/2026-05-08-harness-engineering/stage-execution-detail.md` | 11 阶段执行逻辑详细设计 |

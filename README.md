@@ -282,7 +282,7 @@ AI 展示所有阶段的 summary，你确认最终交付：
 一次完整的 dev-flow 执行后，目标项目中有以下产出物：
 
 ```
-.superpowers/{yyyy-MM-dd}-{主题}/
+.xyz-harness/{yyyy-MM-dd}-{主题}/
 ├── spec.md                        # 需求设计文档
 ├── plan.md                        # 实现计划
 └── changes/
@@ -411,7 +411,7 @@ xyz-harness-engineering/
 │   ├── harness-executor/agent.md          # 通用执行 agent
 │   ├── harness-reviewer/agent.md          # 独立评审 agent
 │   └── harness-gate-checker/agent.md      # 门禁检查 agent
-├── .superpowers/                    # 设计文档
+├── .xyz-harness/                   # 运行时目录（需求交付物）
 │   └── 2026-05-08-harness-engineering/
 │       ├── spec.md
 │       ├── plan.md
@@ -425,6 +425,6 @@ xyz-harness-engineering/
 
 | 文档 | 说明 |
 |------|------|
-| [spec.md](.superpowers/2026-05-08-harness-engineering/spec.md) | 完整架构设计 |
-| [plan.md](.superpowers/2026-05-08-harness-engineering/plan.md) | 实施计划 |
-| [stage-execution-detail.md](.superpowers/2026-05-08-harness-engineering/stage-execution-detail.md) | 各阶段详细执行逻辑 |
+| [spec.md](.xyz-harness/2026-05-08-harness-engineering/spec.md) | 完整架构设计 |
+| [plan.md](.xyz-harness/2026-05-08-harness-engineering/plan.md) | 实施计划 |
+| [stage-execution-detail.md](.xyz-harness/2026-05-08-harness-engineering/stage-execution-detail.md) | 各阶段详细执行逻辑 |

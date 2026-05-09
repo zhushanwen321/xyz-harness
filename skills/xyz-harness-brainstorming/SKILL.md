@@ -35,7 +35,7 @@ You MUST create a task for each of these items and complete them in order:
 2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` and commit
+5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit
 6. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
 7. **User reviews written spec** — ask user to review the spec file before proceeding
 8. **Transition to implementation** — invoke writing-plans skill to create implementation plan
@@ -112,7 +112,7 @@ digraph brainstorming {
 
 **Documentation:**
 
-- Write the validated design (spec) to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`
+- Write the validated design (spec) to `.xyz-harness/${主题}/spec.md`
   - (User preferences for spec location override this default)
 - Use elements-of-style:writing-clearly-and-concisely skill if available
 - Commit the design document to git
@@ -151,14 +151,14 @@ Wait for the user's response. If they request changes, make them and re-run the 
 <!-- LOCAL-OVERRIDE:START -->
 ## 本地目录覆盖规则
 
-**以下规则覆盖本文档中所有关于输出目录的路径指定**（如 `docs/superpowers/specs/`、`docs/superpowers/plans/` 等）：
+**以下规则覆盖本文档中所有关于输出目录的路径指定**（如 `.xyz-harness/${主题}/` 子目录）：
 
-- **主目录：** `.superpowers/`（项目根目录下）
+- **主目录：** `.xyz-harness/`（项目根目录下）
 - **子目录命名：** `${yyyy-MM-dd}-${主题简短标题}`（例：`2026-04-14-core-proxy`）
 - **路径映射：**
-  - `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` → `.superpowers/${主题}/spec.md`
-  - `docs/superpowers/plans/YYYY-MM-DD-<feature>.md` → `.superpowers/${主题}/plan.md`
-  - 其他文档按需拆分到 `.superpowers/${主题}/` 下
+  - `.xyz-harness/${主题}/spec.md` → `.xyz-harness/${主题}/spec.md`
+  - （原始路径）→ `.xyz-harness/${主题}/plan.md`
+  - 其他文档按需拆分到 `.xyz-harness/${主题}/` 下
 - **不同主题使用不同子目录，禁止混放**
 
 **文档精简：** 单次写入超过 1000 字时优先拆分子文档，主文档保留概述和索引。使用 agent 并行编写各模块文档（并发度 ≤ 2），最后合成精简主文档。

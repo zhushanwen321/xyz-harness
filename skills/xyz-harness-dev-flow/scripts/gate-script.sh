@@ -583,14 +583,14 @@ gate_stage_09() {
 
         # 在多个可能的位置查找
         local search_dirs=(
-            "$PROJECT_ROOT/.superpowers"
+            "$PROJECT_ROOT/.xyz-harness"
             "$PROJECT_ROOT"
         )
-        # 也搜索 .superpowers 的子目录
-        if [[ -d "$PROJECT_ROOT/.superpowers" ]]; then
+        # 也搜索 .xyz-harness 的子目录
+        if [[ -d "$PROJECT_ROOT/.xyz-harness" ]]; then
             while IFS= read -r d; do
                 search_dirs+=("$d")
-            done < <(find "$PROJECT_ROOT/.superpowers" -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
+            done < <(find "$PROJECT_ROOT/.xyz-harness" -mindepth 1 -maxdepth 2 -type d 2>/dev/null)
         fi
 
         for d in "${search_dirs[@]}"; do

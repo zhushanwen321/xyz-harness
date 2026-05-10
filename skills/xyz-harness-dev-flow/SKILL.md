@@ -248,40 +248,35 @@ description: >
 ## 目录结构
 
 ```
-.xyz-harness/{yyyy-MM-dd}-{主题}/
-├── spec.md                        # 需求设计文档
-├── plan.md                        # 实现计划
-└── changes/
-    ├── summary.md                 # 全流程追溯(每阶段实时更新)
-    ├── reviews/                   # 评审记录(版本递增,永不删除)
-    │   ├── plan_review_v1.md      # 阶段 2
-    │   ├── code_review_v1.md      # 阶段 4(可能有 v2, v3)
-    │   └── test_review_v1.md      # 阶段 6
-    ├── evidence/                  # 验证证据
-    │   ├── verification_output.md # 本地验证
-    │   ├── ci_result.md           # CI 结果
-    │   └── deploy_result.md       # 部署结果
-    └── retrospective.md           # 复盘记录(阶段 11 产出)
-```
-
-## .xyz-harness/ 运行时目录
-
-使用 Harness 的目标项目中,系统运行时文件统一放在 `.xyz-harness/` 下:
-
-```
 .xyz-harness/
-├── gate/                         # L1 门禁标记文件
-│   ├── stage-01.pass             # 阶段 1 脚本检查通过
-│   ├── stage-03.pass             # 阶段 3 脚本检查通过
-│   └── ...                       # 每个阶段一个
-├── metrics/                      # 运行指标
-│   └── {yyyy-MM-dd}-{需求名}.json  # token 消耗 + 各阶段耗时
-└── harness-health.md             # 跨需求聚合健康报告(手动触发更新)
+├── gate/                             # gitignore，运行时临时状态
+│   ├── stage-01.pass                  # 阶段 1 脚本检查通过
+│   ├── stage-03.pass                  # 阶段 3 脚本检查通过
+│   └── ...                            # 每个阶段一个
+└── {yyyy-MM-dd}-{主题}/
+    ├── spec.md                        # 需求设计文档
+    ├── plan.md                        # 实现计划
+    ├── ... (其他设计文档，如拆分的子 spec)
+    ├── metrics.json                   # 运行指标(token 消耗、耗时、回退)
+    └── changes/                       # dev-flow 运行时输出
+        ├── summary.md                 # 全流程追溯(每阶段实时更新)
+        ├── reviews/                   # 评审记录(版本递增,永不删除)
+        │   ├── plan_review_v1.md      # 阶段 2
+        │   ├── code_review_v1.md      # 阶段 4(可能有 v2, v3)
+        │   └── test_review_v1.md      # 阶段 6
+        ├── evidence/                  # 验证证据
+        │   ├── verification_output.md # 本地验证
+        │   ├── ci_result.md           # CI 结果
+        │   └── deploy_result.md       # 部署结果
+        └── retrospective.md           # 复盘记录(阶段 11 产出)
 ```
 
-- `gate/` 目录:每个新需求开始时清空旧标记。gate-script.sh 通过后生成 `{stage-N}.pass`
-- `metrics/` 目录:每个需求一个 JSON 文件,记录总 token 消耗、总耗时、各阶段 subagent 的 token/耗时、回退次数
-- `harness-health.md`:跨需求聚合健康报告,手动触发更新(非自动)
+### 说明
+
+- `gate/` 目录:gitignore,不入库。每个新需求开始时清空旧标记。gate-script.sh 通过后生成 `{stage-N}.pass`
+- `metrics.json`:每个需求的运行指标,与需求产出物自包含在同一目录下。记录总 token 消耗、总耗时、各阶段 subagent 的 token/耗时、回退次数
+- `changes/` 目录:区分设计文档(spec/plan)和执行记录(summary/reviews/evidence/retrospective),避免文件平铺
+- 轻量需求(只做设计不跑 dev-flow)可以只有 spec.md + plan.md,不需要 changes/ 子目录
 
 ## summary.md 格式
 
@@ -1039,7 +1034,7 @@ CI 结果:{deliverables[1]}
 | Agent | harness-reviewer |
 | 加载 Skill | 无(通用分析能力) |
 | 模型 | glm-5.1 |
-| 输入 | summary.md + 各阶段评审报告路径 + 回退记录 + .xyz-harness/metrics/ |
+| 输入 | summary.md + 各阶段评审报告路径 + 回退记录 + .xyz-harness/{需求}/metrics.json |
 
 **subagent 入口条件:**
 - 阶段 10 用户已确认完成
@@ -1048,7 +1043,7 @@ CI 结果:{deliverables[1]}
 **subagent 执行逻辑(概述):**
 1. 读取 summary.md,了解完整流程状态
 2. 读取各阶段评审报告(reviews/ 目录)
-3. 读取 .xyz-harness/metrics/ 中的指标数据
+3. 读取需求目录下的 metrics.json
 4. 分析:
    - 哪些阶段发生了回退?根因分类(需求不清/代码问题/测试问题/环境问题)
    - 评审 agent 是否有效拦截了问题?(评审发现的问题 vs 用户发现的问题)
@@ -1086,7 +1081,7 @@ CI 结果:{deliverables[1]}
 
 ### 6. 运行指标记录
 
-主 agent 将本次需求的所有运行指标汇总写入 `.xyz-harness/metrics/{yyyy-MM-dd}-{需求名}.json`:
+主 agent 将本次需求的所有运行指标汇总写入 `.xyz-harness/{yyyy-MM-dd}-{主题}/metrics.json`:
 
 ```json
 {
@@ -1199,15 +1194,22 @@ CI 结果:{deliverables[1]}
     └── retrospective.md                 # 复盘记录
 
 .xyz-harness/
-├── gate/
+├── gate/                                # gitignore
 │   ├── stage-01.pass                    # 各阶段 L1 门禁标记
 │   ├── stage-03.pass
 │   ├── stage-05.pass
 │   ├── stage-07.pass
 │   ├── stage-08.pass
 │   └── stage-09.pass
-└── metrics/
-    └── {yyyy-MM-dd}-{需求名}.json       # 运行指标
+└── {yyyy-MM-dd}-{主题}/
+    ├── spec.md
+    ├── plan.md
+    ├── metrics.json                    # 运行指标
+    └── changes/
+        ├── summary.md
+        ├── reviews/
+        ├── evidence/
+        └── retrospective.md
 
 wiki/                                    # 如果阶段 11 建议了补充
 └── [按需新增或更新的领域文档]
@@ -1229,7 +1231,7 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
 
 ## 运行指标
 
-每个需求完成后,运行指标记录到 `.xyz-harness/metrics/{yyyy-MM-dd}-{需求名}.json`,包含:
+每个需求完成后,运行指标记录到 `.xyz-harness/{yyyy-MM-dd}-{主题}/metrics.json`,包含:
 - 总 token 消耗和耗时
 - 各阶段 subagent 的 token/耗时
 - 回退次数和回退原因
@@ -1237,11 +1239,9 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
 
 ## 跨需求聚合
 
-手动触发更新 `.xyz-harness/harness-health.md`:
+> 当用户说"更新 harness health"、"聚合指标"、"harness 健康报告"时,扫描 `.xyz-harness/` 下所有子目录的 `metrics.json`,聚合分析后输出到终端。
 
-> 当用户说"更新 harness health"、"聚合指标"、"harness 健康报告"时,读取 `.xyz-harness/metrics/` 下所有 JSON 文件,聚合分析后更新 `harness-health.md`。
-
-内容包含:
+聚合内容包含:
 - 累计需求数
 - 平均回退次数
 - 常见错误模式

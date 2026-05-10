@@ -42,9 +42,15 @@ description: >
 ```
 主 agent(纯调度器)
   │
+  ├─ Step 0:状态机推进(所有阶段)
+  │   运行:harness-state.sh advance {NN} {project_root}
+  │   验证前置阶段全部 pass → 更新 state.json
+  │   前置不通过 → 直接 fail(不允许跳阶段)
+  │
   ├─ Step 1:派遣 执行/评审 subagent
   │   输入:阶段号 + 必要的文件路径(不传文件内容)
   │   subagent 返回:{status, deliverables, summary, reason, rollback_target}
+  │
   │
   ├─ Step 2:L1 脚本强制检查(仅 135789)
   │   运行:gate-script.sh {NN} {project_root} [additional_args...]
@@ -56,7 +62,13 @@ description: >
   │   pass → 进入 Step 4
   │   fail → 按回退路由表处理
   │
-  └─ Step 4:complete_task(N) + 人工确认判断
+  ├─ Step 4:状态机标记通过
+  │   运行:harness-state.sh pass {NN} {project_root}
+  │   L1 阶段:验证 .pass 文件由 gate-script.sh 生成
+  │   非 L1 阶段:直接生成 .pass 文件
+  │
+  │
+  └─ Step 5:complete_task(N) + 人工确认判断
         无确认点 → 进入下一阶段
         有确认点 → 暂停,透传 summary,等待用户决策
 ```
@@ -98,8 +110,45 @@ description: >
 
 1. **pass 文件只能由 gate-script.sh 生成** — 禁止 subagent 或主 agent 手动创建 `.pass` 文件。主 agent 在运行 gate-script.sh 后必须验证 pass 文件存在
 2. **pass 文件格式验证** — 主 agent 必须读取生成的 pass 文件,验证内容以 `pass at` 开头。不符合格式视为 L1 失败
-3. **回退时清除 pass 标记** — 发生回退时,主 agent 必须删除回退目标阶段及之后所有阶段的 `.pass` 文件,防止脏标记残留
+3. **回退时清除 pass 标记** — 发生回退时,主 agent 必须运行 `harness-state.sh rollback {stage} {project_root}`,自动清除被回退阶段的 pass 文件
 4. **subagent 禁止操作 gate 目录** — 所有 subagent 的工具权限中不包含对 `.xyz-harness/gate/` 目录的写操作
+5. **状态机强制** — 每个阶段开始前必须运行 `harness-state.sh advance {stage} {project_root}`,前置阶段未通过则不可推进
+
+## Harness 脚本集
+
+所有脚本位于 `skills/xyz-harness-dev-flow/scripts/` 目录下:
+
+| 脚本 | 用途 | 调用时机 |
+|------|------|----------|
+| `harness-state.sh` | 状态机管理(advance/pass/rollback/status/check) | 每个阶段开始/结束时 |
+| `gate-script.sh` | L1 门禁检查(编译/测试/lint) | 阶段 1,3,5,7,8,9 |
+| `pre-stage-check.sh` | 前置阶段检查 | gate-script.sh 自动调用 |
+| `spec-ref-scan.sh` | Spec 引用完整性扫描 | 阶段 ① 完成后 |
+
+### Hook 安装
+
+`scripts/hooks/` 目录提供了兼容 Pi 和 Claude Code 的门禁拦截 hook:
+
+**Claude Code** — 在项目的 `.claude/hooks/hooks.json` 中引用:
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "matcher": "*",
+      "hooks": [{
+        "type": "command",
+        "command": "bash /path/to/scripts/hooks/harness-gate-hook.sh",
+        "timeout": 10
+      }]
+    }]
+  }
+}
+```
+
+**Pi** — 将 `harness-gate-hook.ts` 复制到 `~/.pi/agent/extensions/` 或 `.pi/extensions/`:
+```bash
+cp scripts/hooks/harness-gate-hook.ts ~/.pi/agent/extensions/
+```
 
 ---
 
@@ -404,7 +453,16 @@ description: >
 
 该章节在编码评审（阶段④）时作为数据流合规检查的依据。
 
-### 2. L1 脚本检查
+### 2. Spec 引用完整性扫描
+
+- 运行：`spec-ref-scan.sh {project_root} .xyz-harness/{主题}/spec.md`
+- 检查项：
+  - spec 中提到的代码标识符是否在代码库中有遗漏的引用文件
+  - spec 中提到的文件路径是否存在
+  - spec 中标记“移除”的标识符是否仍有残留引用
+- 失败 → 主 agent 直接修复 spec/plan,重新扫描
+
+### 3. L1 脚本检查
 
 - 运行：`gate-script.sh 01 {project_root} .xyz-harness/{主题}/spec.md .xyz-harness/{主题}/plan.md`
 - 检查项：
@@ -413,7 +471,7 @@ description: >
   - plan.md 包含至少 1 个 "Task" 标题
 - 失败 → 回退到 ①，主 agent 直接修复
 
-### 3. 人工确认点 1：需求待决议确认
+### 4. 人工确认点 1：需求待决议确认
 
 **⚠️ 强制暂停。必须在此处等待用户回复后才能继续。绝对禁止跳过此确认点直接进入阶段 ②。**
 

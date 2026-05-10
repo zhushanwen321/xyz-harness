@@ -649,6 +649,14 @@ if [[ ! -d "$PROJECT_ROOT" ]]; then
     fail "project root does not exist: ${PROJECT_ROOT}"
 fi
 
+# 前置阶段检查（调用 pre-stage-check.sh）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/pre-stage-check.sh" ]]; then
+    if ! "$SCRIPT_DIR/pre-stage-check.sh" "$STAGE" "$PROJECT_ROOT"; then
+        fail "prerequisite stages not passed — cannot proceed"
+    fi
+fi
+
 # 清理旧的 pass 文件（确保本次检查的 pass 文件是新鲜的）
 rm -f "$GATE_DIR/stage-$(printf '%02d' "$STAGE").pass"
 

@@ -94,6 +94,13 @@ description: >
 
 **执行顺序**:主 agent 先执行 L1(如果适用),L1 通过后再执行 L2。
 
+### L1 Gate 强制验证规则
+
+1. **pass 文件只能由 gate-script.sh 生成** — 禁止 subagent 或主 agent 手动创建 `.pass` 文件。主 agent 在运行 gate-script.sh 后必须验证 pass 文件存在
+2. **pass 文件格式验证** — 主 agent 必须读取生成的 pass 文件,验证内容以 `pass at` 开头。不符合格式视为 L1 失败
+3. **回退时清除 pass 标记** — 发生回退时,主 agent 必须删除回退目标阶段及之后所有阶段的 `.pass` 文件,防止脏标记残留
+4. **subagent 禁止操作 gate 目录** — 所有 subagent 的工具权限中不包含对 `.xyz-harness/gate/` 目录的写操作
+
 ---
 
 # 第三部分:前置检查
@@ -362,6 +369,7 @@ description: >
    - 提出 2-3 个方案及 trade-off
    - 逐节呈现设计，每节确认
    - 产出 spec.md
+   - **当需求涉及数据存储/传递时，spec.md 必须包含数据流章节**（格式见下方）
 4. 执行 writing-plans skill：
    - 基于 spec.md 规划文件结构
    - 拆分为 bite-sized task
@@ -374,6 +382,32 @@ description: >
 - `.xyz-harness/{主题}/spec.md` — 需求设计文档
 - `.xyz-harness/{主题}/plan.md` — 实现计划
 - `.xyz-harness/{主题}/changes/summary.md` — 初始化的追溯文件
+
+#### spec.md 数据流章节（当需求涉及数据存储/传递时必填）
+
+当需求涉及新增数据字段、数据传递、数据存储时，spec.md 必须包含以下格式的数据流章节：
+
+```markdown
+## 数据流
+
+### 新增数据字段
+| 字段 | 类型 | 生产者 | 存储位置 | 消费者 | 读取时机 |
+|------|------|--------|---------|--------|----------|
+| cache_read_tokens_estimated | INTEGER | CacheEstimator hook | request_metrics DB | Dashboard SSE / Admin API / 日志详情 | 实时推送 + 查询时 |
+
+### 数据流图
+```
+生产者 → [存储/传输] → 消费者1
+                         → 消费者2
+                         → 消费者N
+```
+
+### 时序要求
+- 生产者写入时机：[描述何时写入]
+- 消费者读取时机：[描述何时读取，必须在写入之后]
+```
+
+该章节在编码评审（阶段④）时作为数据流合规检查的依据。
 
 ### 2. L1 脚本检查
 

@@ -9,6 +9,8 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "loop_task_tracker"
 
 **你不会继承 Phase 1 的会话上下文。所有你需要的信息都在 spec.md 和 plan.md 中。**
 
+**如果 spec 或 plan 中某个文件路径/函数名/接口不完整，导致你无法执行——不要猜测，停止并报告给用户，要求补充 Phase 1 文档。**
+
 ## 固定阶段（按序执行）
 
 使用 loop_task_tracker 管理以下阶段：

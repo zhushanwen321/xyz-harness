@@ -435,10 +435,13 @@ cp commands/dev.md .claude/commands/dev.md
    - 提出 2-3 个方案及 trade-off
    - 逐节呈现设计，每节确认
    - 产出 spec.md
+   - **spec.md 必须包含已有基础设施章节**（格式见下方）
+   - 当存在设计稿/原型时，spec.md 必须在开头引用设计稿链接
    - **当需求涉及数据存储/传递时，spec.md 必须包含数据流章节**（格式见下方）
 4. 执行 writing-plans skill：
    - 基于 spec.md 规划文件结构
    - 拆分为 bite-sized task
+   - 每个 task 必须包含验收标准、风险点、文件变更分类（格式见下方）
    - 产出 plan.md
 5. 将 spec.md 和 plan.md 写入 `.xyz-harness/{主题}/`
 6. 初始化 `changes/summary.md`，阶段 ① 标记为进行中
@@ -448,6 +451,34 @@ cp commands/dev.md .claude/commands/dev.md
 - `.xyz-harness/{主题}/spec.md` — 需求设计文档
 - `.xyz-harness/{主题}/plan.md` — 实现计划
 - `.xyz-harness/{主题}/changes/summary.md` — 初始化的追溯文件
+
+#### plan.md task 格式（始终必填）
+
+plan.md 中每个 task 必须包含以下 4 个要素。缺少验收标准或文件变更表的 task 在需求评审（阶段②）时标记为 MUST FIX。
+
+```markdown
+## Task N：{标题}
+
+### 描述
+{做什么，核心逻辑，关键约束}
+
+### 验收标准
+- [ ] {具体的可检查条件}
+- [ ] {如：getFilteredCommands('/') 返回包含 clear/compact/help 的数组}
+- [ ] {如：skill 标签在 send 后消失，不是 select 后}
+
+### 文件变更
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `src/composables/useSlashCommands.ts` | 重写 | 命令类型化注册 |
+| `src/components/chat/SlashMenu.vue` | 重写 | 保留已有 Teleport + 键盘导航 |
+| `src/components/chat/ChatInput.vue` | 修改 | 新增 skill 标签 UI |
+| `shared/src/message.ts` | 修改 | 新增 skillName 可选字段 |
+
+### 风险点
+- {可能踩的坑，如：skill 标签消失时机容易写错}
+- {如：Message 接口改了要同步 shared 类型，前端和 sidecar 共享}
+```
 
 #### spec.md 数据流章节（当需求涉及数据存储/传递时必填）
 
@@ -474,6 +505,43 @@ cp commands/dev.md .claude/commands/dev.md
 ```
 
 该章节在编码评审（阶段④）时作为数据流合规检查的依据。
+
+#### spec.md 已有基础设施章节（始终必填）
+
+spec.md 必须包含「已有基础设施」章节，让 Phase 2 编码 agent 能复用现有代码、避开已知问题。缺少该章节的 spec 在需求评审（阶段②）时标记为 MUST FIX。
+
+```markdown
+## 已有基础设施
+
+### 可复用的现有 API
+
+| 位置 | 方法/组件 | 用途 |
+|------|----------|------|
+| `src/composables/useSession.ts` | `compactSession()` | 发送 session.compact 协议消息 |
+| `src/composables/useSession.ts` | `clearSession()` | 发送 session.clear 协议消息 |
+| `src/stores/chat.ts` | `clearMessages(sid)` | 清空指定 session 聊天记录 |
+
+### 接口/类型定义位置
+
+| 位置 | 接口名 | 用途 |
+|------|--------|------|
+| `shared/src/message.ts` | `Message` | 消息体，新增字段在此扩展 |
+| `shared/src/provider.ts` | `SkillInfo` | Skill 元数据，含 id/name/description/enabled |
+
+### 技术调研结论
+
+- **协议约束**：说明外部系统的实际行为限制（不是文档说的，是验证过的）
+- **平台限制**：CORS、单线程、无独立通道等
+- **已有协议类型清单**：不需要新增的协议消息类型
+
+### 已知技术债务（编码 agent 不修）
+
+| 文件 | 问题 | 原因 |
+|------|------|------|
+| `path/to/file.ts` | 具体错误描述 | 预存，非本次引入 |
+```
+
+该章节在编码评审（阶段④）时作为基础设施复用检查的依据。
 
 ### 2. Spec 引用完整性扫描
 

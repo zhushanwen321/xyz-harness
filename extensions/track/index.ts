@@ -10,7 +10,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
-
+import * as fs from "fs";
 // ── Fixed Step Template ────────────────────────────────
 
 interface TrackStep {
@@ -70,8 +70,10 @@ const STEPS: TrackStep[] = [
 		id: 6,
 		name: "用户确认",
 		description:
-			"向用户展示最终 spec 和 plan，等待确认。确认后验证产出物完整性。" +
-			"输出 Phase 2 启动指令：/new 创建新 session，然后 /loop --max 20 继续开发需求",
+			"向用户展示最终 spec 和 plan，等待确认。确认前必须先调用 validate_outputs 检查产出物完整性。" +
+			"**自包含检查**：另一个 agent 单凭 spec.md + plan.md + 代码库，不需要任何会话上下文就能完成实现。" +
+			"如果某个文件/函数/接口在 spec 中被引用但路径不完整，必须补充完整。" +
+			"确认后输出完整的 Phase 2 启动指令，包含 spec.md 和 plan.md 路径，以及 6 阶段流程描述",
 		requiredOutputs: ["changes/summary.md"],
 		requiresConfirmation: true,
 	},
@@ -105,7 +107,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 	// ── Tool: track_step ───────────────────────────────
 
 	const TrackStepParams = Type.Object({
-		action: StringEnum(["complete_step", "list_steps", "start"] as const),
+		action: StringEnum(["complete_step", "list_steps", "start", "validate_outputs"] as const),
 		stepId: Type.Optional(Type.Number({ description: "Step ID for complete_step (1-6)" })),
 		requirementSummary: Type.Optional(Type.String({ description: "Requirement summary for start" })),
 		topicDir: Type.Optional(Type.String({ description: "Topic directory name (e.g. 2026-05-10-my-feature)" })),
@@ -124,6 +126,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 			"完成每个步骤后必须调用 track_step 的 complete_step 标记",
 			"使用 track_step 的 list_steps 查看当前进度和下一步",
 			"所有步骤按固定顺序执行，不可跳步",
+			"你的产出(spec.md/plan.md)将交付给另一个 agent 执行开发——它没有你的会话上下文，所以文档必须自包含、详细，所有文件路径/函数名/接口/依赖关系都要写清楚",
+			"在标记 Step 2(Spec)和 Step 4(Plan)完成前，检查文档是否自包含：另一个 agent 能否单凭这份文档+代码就完成实现，不需要提问",
 		],
 		parameters: TrackStepParams,
 
@@ -194,8 +198,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					if (nextStep) {
 						msg += `\n\n下一步: Step ${nextStep.id}: ${nextStep.name}\n${nextStep.description}`;
 					} else {
-						msg += `\n\n所有步骤已完成！输出 Phase 2 启动指令。`;
-					}
+					const loopCmd = `\n\n=== Phase 1 完成 ===\n\n产出物：\n- spec.md: .xyz-harness/${state.topicDir}/spec.md\n- plan.md: .xyz-harness/${state.topicDir}/plan.md\n- 需求: ${state.requirementSummary}\n\n启动 Phase 2（开发交付）：\n1. /new 创建新 session\n2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求\n\n需求: ${state.requirementSummary}\nSpec: .xyz-harness/${state.topicDir}/spec.md\nPlan: .xyz-harness/${state.topicDir}/plan.md\n\n按以下 6 阶段流程执行(详见 skills/xyz-harness-dev-flow/SKILL.md)：\nStage 1: 编码实现 (TDD + 按 plan Task 逐个完成)\nStage 2: 编码评审 (reviewer ≤2轮)\nStage 3: 测试编写 (Change-driven Testing)\nStage 4: 测试评审 (reviewer ≤2轮)\nStage 5: 推送 + CI + 部署\nStage 6: 自动复盘\n注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass\`;\n					msg += loopCmd;\n					}
 
 					return { content: [{ type: "text", text: msg }] };
 				}
@@ -225,6 +228,48 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 					return { content: [{ type: "text", text: lines.join("\n") }] };
 				}
+
+				case "validate_outputs": {
+					if (!state.isActive) {
+						return { content: [{ type: "text", text: "Track 未激活。使用 /track <需求描述> 启动。" }] };
+					}
+					if (params.stepId === undefined) {
+						throw new Error("validate_outputs requires stepId");
+					}
+					const vStep = STEPS.find((s) => s.id === params.stepId);
+					if (!vStep) {
+						throw new Error(`Step ${params.stepId} not found. Valid: 1-6`);
+					}
+
+					const missing: string[] = [];
+					const dir = state.topicDir;
+					if (!dir) {
+						return { content: [{ type: "text", text: "产出目录未设置。请先调用 start 初始化。" }] };
+					}
+
+					for (const output of vStep.requiredOutputs) {
+						const fullPath = `${process.cwd()}/.xyz-harness/${dir}/${output}`;
+						if (!fs.existsSync(fullPath)) {
+							missing.push(`${output} (不存在)`);
+						} else {
+							const stat = fs.statSync(fullPath);
+							if (stat.size === 0) {
+								missing.push(`${output} (文件为空)`);
+							}
+						}
+					}
+
+					if (missing.length > 0) {
+						return {
+							content: [{ type: "text", text: "❌ Step " + params.stepId + " 缺少必要产出物：\n" + missing.join("\n") }],
+						};
+					}
+
+					return {
+						content: [{ type: "text", text: `✓ Step ${params.stepId} 产出物完整性检查通过。` }],
+					};
+				}
+
 
 				default:
 					throw new Error(`Unknown action: ${params.action}`);
@@ -406,7 +451,13 @@ export default function trackExtension(pi: ExtensionAPI) {
 					`3. 进度: ${state.completedSteps.length}/${STEPS.length} 已完成\n` +
 					`   已完成: ${state.completedSteps.map((id) => `Step ${id}`).join(", ") || "无"}\n\n` +
 					`4. 产出目录: .xyz-harness/${state.topicDir}/\n\n` +
-					`5. 你的产出将交付给另一个 agent 执行。文档务必自包含、详细。\n\n` +
+					`5. 关键警告：你的产出将交付给另一个 agent 执行开发，务必自包含、详细。` +
+					`   另一个 agent 没有你的会话上下文，对话历史会全部丢失。你的文档就是对方的「完整指令集」，` +
+					`   不是补充参考而是唯一信息源。每个文件路径必须完整（从项目根开始），` +
+					`   每个函数/接口必须写明签名和位置。在标记 Step 2/Step 4 完成前，` +
+					`   自包含检查：另一个 agent 能否单凭这份文档 + 代码库完成实现？如果不行，补充细节。
+
+` +
 					`6. 使用 track_step 的 list_steps 查看全部步骤和当前进度。`,
 				display: false,
 			},

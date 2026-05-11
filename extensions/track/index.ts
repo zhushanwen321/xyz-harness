@@ -99,7 +99,57 @@ const DEFAULT_STATE: TrackState = {
 	topicDir: "",
 };
 
-// ── Extension ──────────────────────────────────────────
+// ── Helpers ──────────────────────────────
+
+/**
+ * Create output directory structure: .xyz-harness/{topicDir}/changes/reviews/
+ */
+function ensureOutputDir(topicDir: string): string {
+	const baseDir = process.cwd() + "/.xyz-harness/" + topicDir;
+	try {
+		fs.mkdirSync(baseDir + "/changes/reviews", { recursive: true });
+	} catch {
+		// non-critical, agent can create dirs via write tool
+	}
+	return baseDir;
+}
+
+/**
+ * Write initial changes/summary.md if not exists
+ */
+function writeInitialSummary(topicDir: string, requirementSummary: string): void {
+	const baseDir = process.cwd() + "/.xyz-harness/" + topicDir;
+	const summaryPath = baseDir + "/changes/summary.md";
+	if (fs.existsSync(summaryPath)) return;
+	try {
+		const lines = [
+			"# " + requirementSummary,
+			"",
+			"\u5f00\u59cb\u65f6\u95f4: " + new Date().toISOString(),
+			"\u72b6\u6001: \u8fdb\u884c\u4e2d",
+			"\u9636\u6bb5: Phase 1 (\u9700\u6c42\u6c9f\u901a)",
+			"",
+			"## \u4ea7\u51fa\u7269",
+			"- [ ] spec.md",
+			"- [ ] plan.md",
+			"- [ ] changes/reviews/plan_review_v1.md",
+			"",
+			"## \u4ea4\u4ed8\u7269",
+			"<!-- Phase 2 \u5b8c\u6210\u540e\u66f4\u65b0 -->",
+			"- [ ] \u4ee3\u7801\u5b9e\u73b0",
+			"- [ ] \u5355\u5143\u6d4b\u8bd5",
+			"- [ ] \u4ee3\u7801\u8bc4\u5ba1",
+			"- [ ] \u63a5\u53e3\u6d4b\u8bd5",
+			"- [ ] \u6d4b\u8bd5\u8bc4\u5ba1",
+			"- [ ] \u90e8\u7f72",
+		];
+		fs.writeFileSync(summaryPath, lines.join("\n"));
+	} catch {
+		// non-critical
+	}
+}
+
+// ── Extension ───────────────────────────────────────────────────
 
 export default function trackExtension(pi: ExtensionAPI) {
 	const state: TrackState = { ...DEFAULT_STATE };
@@ -145,6 +195,12 @@ export default function trackExtension(pi: ExtensionAPI) {
 					state.stallCount = 0;
 					state.requirementSummary = params.requirementSummary || "";
 					state.topicDir = params.topicDir || "";
+
+					// auto-create output directory
+					if (state.topicDir) {
+						ensureOutputDir(state.topicDir);
+						writeInitialSummary(state.topicDir, state.requirementSummary);
+					}
 
 					const stepList = STEPS.map((s) => {
 						const icon = s.id === 1 ? "→" : "☐";
@@ -198,7 +254,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					if (nextStep) {
 						msg += `\n\n下一步: Step ${nextStep.id}: ${nextStep.name}\n${nextStep.description}`;
 					} else {
-					const loopCmd = `\n\n=== Phase 1 完成 ===\n\n产出物：\n- spec.md: .xyz-harness/${state.topicDir}/spec.md\n- plan.md: .xyz-harness/${state.topicDir}/plan.md\n- 需求: ${state.requirementSummary}\n\n启动 Phase 2（开发交付）：\n1. /new 创建新 session\n2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求\n\n需求: ${state.requirementSummary}\nSpec: .xyz-harness/${state.topicDir}/spec.md\nPlan: .xyz-harness/${state.topicDir}/plan.md\n\n按以下 6 阶段流程执行(详见 skills/xyz-harness-dev-flow/SKILL.md)：\nStage 1: 编码实现 (TDD + 按 plan Task 逐个完成)\nStage 2: 编码评审 (reviewer ≤2轮)\nStage 3: 测试编写 (Change-driven Testing)\nStage 4: 测试评审 (reviewer ≤2轮)\nStage 5: 推送 + CI + 部署\nStage 6: 自动复盘\n注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass\`;\n					msg += loopCmd;\n					}
+					const loopCmd = `\n\n=== Phase 1 完成 ===\n\n产出物：\n- spec.md: .xyz-harness/${state.topicDir}/spec.md\n- plan.md: .xyz-harness/${state.topicDir}/plan.md\n- 需求: ${state.requirementSummary}\n\n启动 Phase 2（开发交付）：\n1. /new 创建新 session\n2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求\n\n需求: ${state.requirementSummary}\nSpec: .xyz-harness/${state.topicDir}/spec.md\nPlan: .xyz-harness/${state.topicDir}/plan.md\nPhase 1 产出目录: .xyz-harness/${state.topicDir}/\nPhase 2 写回目录: .xyz-harness/${state.topicDir}/changes/\n\n按以下 6 阶段流程执行(详见 skills/xyz-harness-phase2-dev/SKILL.md)：\nStage 1: 编码实现 (TDD + 按 plan Task 逐个完成)\nStage 2: 编码评审 (reviewer ≤2轮)\nStage 3: 测试编写 (Change-driven Testing)\nStage 4: 测试评审 (reviewer ≤2轮)\nStage 5: 推送 + CI + 部署\nStage 6: 自动复盘 (写回 Phase 1 目录)\n注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass\`;\n					msg += loopCmd;\n					}
 
 					return { content: [{ type: "text", text: msg }] };
 				}
@@ -356,7 +412,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 	// ── Command: /track ─────────────────────────────────
 
 	pi.registerCommand("track", {
-		description: "需求沟通阶段追踪：/track <需求描述> | /track status | /track abort",
+		description: "需求沟通阶段追踪：/track <需求描述> | /track status | /track abort | /track resume | /track redo <stepId>",
 
 		handler: async (args, ctx) => {
 			const trimmed = args.trim().toLowerCase();
@@ -374,6 +430,55 @@ export default function trackExtension(pi: ExtensionAPI) {
 					`进度: ${state.completedSteps.length}/${STEPS.length}`,
 				];
 				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+
+			if (trimmed === "resume") {
+				if (!state.isActive) {
+					ctx.ui.notify("Track 未激活。请先使用 /track <需求描述> 启动。", "warning");
+					return;
+				}
+				const resumeStep = STEPS.find((s) => s.id === state.currentStep);
+				if (!resumeStep) {
+					ctx.ui.notify("所有步骤已完成，无需恢复。请启动 Phase 2。", "info");
+					return;
+				}
+				ctx.ui.notify("从 Step " + state.currentStep + ": " + resumeStep.name + " 恢复", "info");
+				pi.sendUserMessage(
+					"Track 已恢复。继续执行 Phase 1 需求沟通。\\n\\n" +
+					"1. 使用 track_step 的 list_steps 查看当前进度\\n" +
+					"2. 从当前步骤继续: Step " + state.currentStep + ": " + resumeStep.name + "\\n" +
+					"3. 你的产出将交付给另一个 agent 执行，务必自包含、详细\\n\\n" +
+					"产出目录: .xyz-harness/" + state.topicDir + "/"
+				);
+				return;
+			}
+
+			const redoMatch = trimmed.match(/^redo\s+(\d+)$/);
+			if (redoMatch) {
+				if (!state.isActive) {
+					ctx.ui.notify("Track 未激活。请先使用 /track <需求描述> 启动。", "warning");
+					return;
+				}
+				const redoStepId = parseInt(redoMatch[1], 10);
+				if (redoStepId < 1 || redoStepId > STEPS.length) {
+					ctx.ui.notify("无效步骤: " + redoStepId + "。合法范围: 1-" + STEPS.length, "warning");
+					return;
+				}
+				if (redoStepId > state.currentStep || !state.completedSteps.includes(redoStepId)) {
+					ctx.ui.notify("Step " + redoStepId + " 还未完成（当前在 Step " + state.currentStep + "），无法回退", "warning");
+					return;
+				}
+				// roll back completedSteps >= redoStepId
+				state.completedSteps = state.completedSteps.filter((id) => id < redoStepId);
+				state.currentStep = redoStepId;
+				persistState();
+				updateWidget(ctx);
+				ctx.ui.notify("回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1].name, "info");
+				pi.sendUserMessage(
+					"Track 已回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1].name + "。\\n\\n" +
+					"请重新执行此步骤。完成后调用 track_step 的 complete_step 标记 (stepId: " + redoStepId + ")。"
+				);
 				return;
 			}
 
@@ -414,6 +519,10 @@ export default function trackExtension(pi: ExtensionAPI) {
 			state.stallCount = 0;
 			state.requirementSummary = requirement;
 			state.topicDir = `${today}-${topicSlug}`;
+
+			// auto-create output directory
+			ensureOutputDir(state.topicDir);
+			writeInitialSummary(state.topicDir, requirement);
 
 			persistState();
 			updateWidget(ctx);

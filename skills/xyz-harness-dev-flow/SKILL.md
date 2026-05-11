@@ -150,6 +150,28 @@ description: >
 cp scripts/hooks/harness-gate-hook.ts ~/.pi/agent/extensions/
 ```
 
+### 二阶段命令
+
+**Pi** — 将 `extensions/track/index.ts` 复制到 `~/.pi/agent/extensions/track/`:
+```bash
+mkdir -p ~/.pi/agent/extensions/track
+cp extensions/track/index.ts ~/.pi/agent/extensions/track/
+```
+
+- `/track <需求描述>` — 启动 Phase 1（需求沟通，6 步固定流程）
+- Phase 2 使用 `/loop --max 20 继续开发需求` 启动
+
+**Claude Code** — 使用 slash commands:
+```bash
+# 复制 commands/ 目录到项目
+mkdir -p .claude/commands
+cp commands/track.md .claude/commands/track.md
+cp commands/dev.md .claude/commands/dev.md
+```
+
+- `/track <需求描述>` — 启动 Phase 1
+- `/dev <spec路径> <plan路径>` — 启动 Phase 2
+
 ---
 
 # 第三部分:前置检查
@@ -1309,6 +1331,38 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
 ---
 
 ## 流程总结
+
+### 二阶段模式（推荐）
+
+流程拆为两个独立 session，通过固定产出文档衔接：
+
+```
+╔════════════════════════════════════════════════════════════╗
+║ Phase 1: 需求沟通 (/track 命令)                            ║
+║   [交互] Step 1: 需求讨论 (brainstorming)                   ║
+║   [交互] Step 2: Spec 编写                                  ║
+║   [自动] Step 3: 引用扫描 (spec-ref-scan.sh)                ║
+║   [交互] Step 4: Plan 编写                                  ║
+║   [自动] Step 5: 计划评审 (reviewer subagent, ≤3轮)         ║
+║   [交互] Step 6: 用户确认 ← 强制暂停                        ║
+║   产出: spec.md + plan.md + summary.md                      ║
+╚════════════════════════════════════════════════════════════╝
+    ↓ 用户 /new 创建新 session
+╔════════════════════════════════════════════════════════════╗
+║ Phase 2: 开发交付 (/loop 命令)                              ║
+║   [自动] Stage 1: 编码实现 (TDD + 实现, 按 task 迭代)       ║
+║   [自动] Stage 2: 编码评审 (reviewer, ≤2轮)                 ║
+║   [自动] Stage 3: 测试编写 (Change-driven Testing)          ║
+║   [自动] Stage 4: 测试评审 (reviewer, ≤2轮)                 ║
+║   [自动] Stage 5: 推送 + CI + 部署                           ║
+║   [自动] Stage 6: 自动复盘                                   ║
+║   门禁: harness-state.sh + gate-script.sh 强制执行          ║
+╚════════════════════════════════════════════════════════════╝
+```
+
+**Phase 1 产出物是给 Phase 2 agent 的完整指令**，必须自包含、详细。
+
+### 单阶段模式（兼容旧流程）
 
 ```
 需求描述

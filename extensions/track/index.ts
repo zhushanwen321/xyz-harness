@@ -108,7 +108,7 @@ function ensureOutputDir(topicDir: string): string {
 	const baseDir = process.cwd() + "/.xyz-harness/" + topicDir;
 	try {
 		fs.mkdirSync(baseDir + "/changes/reviews", { recursive: true });
-	} catch {
+	} catch (_e) {
 		// non-critical, agent can create dirs via write tool
 	}
 	return baseDir;
@@ -144,7 +144,7 @@ function writeInitialSummary(topicDir: string, requirementSummary: string): void
 			"- [ ] \u90e8\u7f72",
 		];
 		fs.writeFileSync(summaryPath, lines.join("\n"));
-	} catch {
+	} catch (_e) {
 		// non-critical
 	}
 }
@@ -254,7 +254,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					if (nextStep) {
 						msg += `\n\n下一步: Step ${nextStep.id}: ${nextStep.name}\n${nextStep.description}`;
 					} else {
-					const loopCmd = `\n\n=== Phase 1 完成 ===\n\n产出物：\n- spec.md: .xyz-harness/${state.topicDir}/spec.md\n- plan.md: .xyz-harness/${state.topicDir}/plan.md\n- 需求: ${state.requirementSummary}\n\n启动 Phase 2（开发交付）：\n1. /new 创建新 session\n2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求\n\n需求: ${state.requirementSummary}\nSpec: .xyz-harness/${state.topicDir}/spec.md\nPlan: .xyz-harness/${state.topicDir}/plan.md\nPhase 1 产出目录: .xyz-harness/${state.topicDir}/\nPhase 2 写回目录: .xyz-harness/${state.topicDir}/changes/\n\n按以下 6 阶段流程执行(详见 skills/xyz-harness-phase2-dev/SKILL.md)：\nStage 1: 编码实现 (TDD + 按 plan Task 逐个完成)\nStage 2: 编码评审 (reviewer ≤2轮)\nStage 3: 测试编写 (Change-driven Testing)\nStage 4: 测试评审 (reviewer ≤2轮)\nStage 5: 推送 + CI + 部署\nStage 6: 自动复盘 (写回 Phase 1 目录)\n注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass\`;\n					msg += loopCmd;\n					}
+					const loopCmd = `\n\n=== Phase 1 完成 ===\n\n产出物：\n- spec.md: .xyz-harness/${state.topicDir}/spec.md\n- plan.md: .xyz-harness/${state.topicDir}/plan.md\n- 需求: ${state.requirementSummary}\n\n启动 Phase 2（开发交付）：\n1. /new 创建新 session\n2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求\n\n需求: ${state.requirementSummary}\nSpec: .xyz-harness/${state.topicDir}/spec.md\nPlan: .xyz-harness/${state.topicDir}/plan.md\nPhase 1 产出目录: .xyz-harness/${state.topicDir}/\nPhase 2 写回目录: .xyz-harness/${state.topicDir}/changes/\n\n按以下 6 阶段流程执行(详见 skills/xyz-harness-phase2-dev/SKILL.md)：\nStage 1: 编码实现 (TDD + 按 plan Task 逐个完成)\nStage 2: 编码评审 (reviewer ≤2轮)\nStage 3: 测试编写 (Change-driven Testing)\nStage 4: 测试评审 (reviewer ≤2轮)\nStage 5: 推送 + CI + 部署\nStage 6: 自动复盘 (写回 Phase 1 目录)\n注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass`;\n					msg += loopCmd;\n					}
 
 					return { content: [{ type: "text", text: msg }] };
 				}

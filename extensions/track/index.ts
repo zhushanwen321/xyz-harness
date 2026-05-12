@@ -472,7 +472,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 					"2. 从当前步骤继续: Step " + state.currentStep + ": " + resumeStep.name + "\n" +
 					"3. 你的产出将交付给另一个 agent 执行，务必自包含、详细\n\n" +
 					"产出目录: .xyz-harness/" + state.topicDir + "/"
-				);
+				,
+				{ deliverAs: "followUp" });
 				return;
 			}
 
@@ -499,7 +500,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				pi.sendUserMessage(
 					"Track 已回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1]!.name + "。\n\n" +
 					"请重新执行此步骤。完成后调用 track_step 的 complete_step 标记 (stepId: " + redoStepId + ")。"
-				);
+				,
+				{ deliverAs: "followUp" });
 				return;
 			}
 
@@ -555,7 +557,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				"3. 可验证 — 每个验收标准都能被测试或检查\n\n" +
 				"产出目录: .xyz-harness/" + state.topicDir + "/\n\n" +
 				"从 Step 1: 需求讨论开始。向我提问澄清需求。"
-			);
+			,
+			{ deliverAs: "followUp" });
 		},
 	});
 

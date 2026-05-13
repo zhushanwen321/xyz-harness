@@ -25,6 +25,12 @@ interface TodoStep {
 	requiresConfirmation: boolean;
 }
 
+interface SubTask {
+	id: number;
+	description: string;
+	completed: boolean;
+}
+
 const STEPS: TodoStep[] = [
 	{
 		id: 1,
@@ -112,6 +118,7 @@ interface TodoState {
 	stallCount: number;
 	requirementSummary: string; // one-line requirement description
 	topicDir: string; // .xyz-harness/{yyyy-MM-dd}-{topic}/
+	stepSubtasks: Record<number, SubTask[]>; // stepId -> subtasks（固定步骤模式下展开的子任务）
 	// 自由任务模式（Stage 1 内部 Task）
 	tasks: TodoItem[];
 	mode: "fixed" | "free"; // fixed=固定步骤, free=自由任务
@@ -125,6 +132,7 @@ const DEFAULT_STATE: TodoState = {
 	stallCount: 0,
 	requirementSummary: "",
 	topicDir: "",
+	stepSubtasks: {},
 	tasks: [],
 	mode: "fixed",
 	memoryDir: "",
@@ -294,6 +302,8 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			"complete_step",      // 完成固定步骤
 			"list_steps",         // 查看固定步骤进度
 			"validate_outputs",   // 验证产出物
+			"expand_step",        // 给指定步骤追加子任务（固定模式）
+			"complete_subtask",   // 完成步骤内的子任务（固定模式）
 			"create_tasks",       // 创建自由任务列表（Stage 1）
 			"complete_task",      // 完成自由任务 + 写 memory.md
 			"list_tasks",         // 查看自由任务进度
@@ -319,6 +329,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 		description:
 			"管理 /track 模式的固定步骤清单和自由任务列表。" +
 			"固定模式：7 个步骤按序执行，使用 start 初始化、complete_step 标记、list_steps 查看进度。" +
+			"支持 expand_step 给当前步骤追加子任务，complete_subtask 完成子任务。" +
 			"自由任务模式：使用 create_tasks 创建任务列表、complete_task 标记完成、list_tasks 查看进度。" +
 			"complete_task 的 summary 会自动写入 memory.md。",
 		promptSnippet: "管理需求沟通阶段的任务追踪",
@@ -393,7 +404,24 @@ export default function todolistExtension(pi: ExtensionAPI) {
 						};
 					}
 
+					// 检查当前步骤的子任务是否全部完成
+					const stepSubs = state.stepSubtasks[params.stepId];
+					if (stepSubs && stepSubs.length > 0) {
+						const incompleteSubs = stepSubs.filter((st) => !st.completed);
+						if (incompleteSubs.length > 0) {
+							const subList = incompleteSubs.map((st) => "  ☐ #" + st.id + ": " + st.description).join("\n");
+							return {
+								content: [{
+									type: "text",
+									text: "Step " + params.stepId + " 还有 " + incompleteSubs.length + " 个子任务未完成，不能完成此步骤：\n" + subList,
+								}],
+							};
+						}
+					}
+
 					state.completedSteps.push(params.stepId);
+					// 步骤完成后清除其子任务数据（redo 时需重新展开）
+					delete state.stepSubtasks[params.stepId];
 					if (params.stepId < STEPS.length) {
 						state.currentStep = params.stepId + 1;
 					}
@@ -433,6 +461,14 @@ export default function todolistExtension(pi: ExtensionAPI) {
 						lines.push(icon + " Step " + s.id + ": " + name);
 						if (s.requiresConfirmation && current) {
 							lines.push("   ⚠ 此步骤需要用户确认");
+						}
+						// 展示当前步骤的子任务
+						if (current && state.stepSubtasks[s.id] && state.stepSubtasks[s.id].length > 0) {
+							const subs = state.stepSubtasks[s.id];
+							for (const sub of subs) {
+								const subIcon = sub.completed ? "  ✓" : "  ☐";
+								lines.push(subIcon + " #" + sub.id + ": " + sub.description);
+							}
 						}
 					}
 					lines.push("");
@@ -479,6 +515,87 @@ export default function todolistExtension(pi: ExtensionAPI) {
 
 					return {
 						content: [{ type: "text", text: "✓ Step " + params.stepId + " 产出物完整性检查通过。" }],
+					};
+				}
+
+				case "expand_step": {
+					if (!state.isActive || state.mode !== "fixed") {
+						return { content: [{ type: "text", text: "固定步骤模式未激活。" }] };
+					}
+					if (params.stepId === undefined) {
+						throw new Error("expand_step requires stepId");
+					}
+					if (params.stepId !== state.currentStep) {
+						return {
+							content: [{
+								type: "text",
+								text: "只能给当前步骤追加子任务。当前步骤是 Step " + state.currentStep + "，请求的是 Step " + params.stepId + "。",
+							}],
+						};
+					}
+					if (!params.tasks || params.tasks.length === 0) {
+						throw new Error("expand_step requires non-empty tasks array");
+					}
+					const expandStep = STEPS.find((s) => s.id === params.stepId);
+					if (!expandStep) {
+						throw new Error("Step " + params.stepId + " not found. Valid: 1-" + STEPS.length);
+					}
+					const existing = state.stepSubtasks[params.stepId] || [];
+					const nextId = existing.length > 0 ? Math.max(...existing.map((st) => st.id)) + 1 : 1;
+					const newSubtasks = params.tasks.map((desc, i) => ({
+						id: nextId + i,
+						description: desc,
+						completed: false,
+					}));
+					state.stepSubtasks[params.stepId] = [...existing, ...newSubtasks];
+					const subtaskList = newSubtasks.map((st) => "  ☐ #" + st.id + ": " + st.description).join("\n");
+					return {
+						content: [{
+							type: "text",
+							text: "Step " + params.stepId + ": " + expandStep.name + " 已追加 " + newSubtasks.length + " 个子任务：\n" + subtaskList +
+								"\n\n子任务全部完成后才能 complete_step。",
+						}],
+					};
+				}
+
+				case "complete_subtask": {
+					if (!state.isActive || state.mode !== "fixed") {
+						return { content: [{ type: "text", text: "固定步骤模式未激活。" }] };
+					}
+					if (params.stepId === undefined) {
+						throw new Error("complete_subtask requires stepId");
+					}
+					if (params.taskId === undefined) {
+						throw new Error("complete_subtask requires taskId (subtask ID)");
+					}
+					if (params.stepId !== state.currentStep) {
+						return {
+							content: [{
+								type: "text",
+								text: "只能完成当前步骤的子任务。当前步骤是 Step " + state.currentStep + "。",
+							}],
+						};
+					}
+					const stepSubs = state.stepSubtasks[params.stepId];
+					if (!stepSubs || stepSubs.length === 0) {
+						return { content: [{ type: "text", text: "Step " + params.stepId + " 没有子任务。" }] };
+					}
+					const sub = stepSubs.find((st) => st.id === params.taskId);
+					if (!sub) {
+						throw new Error("Subtask #" + params.taskId + " not found in Step " + params.stepId);
+					}
+					if (sub.completed) {
+						return { content: [{ type: "text", text: "Step " + params.stepId + " 子任务 #" + sub.id + ": " + sub.description + " 已完成。" }] };
+					}
+					sub.completed = true;
+					const done = stepSubs.filter((st) => st.completed).length;
+					const total = stepSubs.length;
+					return {
+						content: [{
+							type: "text",
+							text: "✓ Step " + params.stepId + " 子任务 #" + sub.id + ": " + sub.description + " 已完成。(" + done + "/" + total + ")" +
+								(done === total ? "\n\n所有子任务已完成，可以调用 complete_step 完成 Step " + params.stepId + "。" : ""),
+						}],
 					};
 				}
 
@@ -658,6 +775,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			tasks: state.tasks,
 			mode: state.mode,
 			memoryDir: state.memoryDir,
+			stepSubtasks: state.stepSubtasks,
 		});
 	}
 
@@ -682,6 +800,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 					state.tasks = data.tasks ?? [];
 					state.mode = data.mode ?? "fixed";
 					state.memoryDir = data.memoryDir ?? "";
+					state.stepSubtasks = (data as any).stepSubtasks ?? {};
 				}
 				break;
 			}
@@ -698,11 +817,28 @@ export default function todolistExtension(pi: ExtensionAPI) {
 		// Widget 只在固定步骤模式下显示
 		if (state.mode !== "fixed") {
 			ctx.ui.setWidget("todolist", undefined);
-			// 自由任务模式：在 status bar 显示简要进度
+			// 自由任务模式：渲染 widget（放在 belowEditor 位置，与 force-loop 上方形成上下分栏）
 			const completed = state.tasks.filter((t) => t.completed).length;
 			const total = state.tasks.length;
 			const th = ctx.ui.theme;
-			ctx.ui.setStatus("todolist", th.fg("accent", "📋 " + completed + "/" + total + " tasks"));
+
+			const statusText = th.fg("accent", "📋 " + completed + "/" + total + " tasks");
+			ctx.ui.setStatus("todolist", statusText);
+
+			if (total > 0) {
+				const lines: string[] = [];
+				lines.push(th.fg("accent", "📋 Todo") + th.fg("muted", " ✓ " + completed + "/" + total));
+				for (const t of state.tasks) {
+					const done = t.completed;
+					const icon = done ? th.fg("success", "✓") : th.fg("dim", "☐");
+					const desc = done ? th.fg("dim", t.description) : th.fg("text", t.description);
+					const summaryText = t.summary ? th.fg("dim", " — " + t.summary.slice(0, 60)) : "";
+					lines.push("  " + icon + " #" + t.id + " " + desc + summaryText);
+				}
+				ctx.ui.setWidget("todolist", lines, { placement: "belowEditor" });
+			} else {
+				ctx.ui.setWidget("todolist", undefined, { placement: "belowEditor" });
+			}
 			return;
 		}
 
@@ -723,6 +859,15 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			else icon = th.fg("dim", "☐");
 			const desc = done ? th.fg("dim", s.name) : (current ? th.fg("text", s.name) : th.fg("dim", s.name));
 			lines.push(icon + " " + th.fg("accent", "Step " + s.id) + " " + desc);
+			// 当前步骤展开子任务
+			if (current && state.stepSubtasks[s.id] && state.stepSubtasks[s.id].length > 0) {
+				const subs = state.stepSubtasks[s.id];
+				for (const sub of subs) {
+					const subIcon = sub.completed ? th.fg("success", "  ✓") : th.fg("dim", "  ☐");
+					const subDesc = sub.completed ? th.fg("dim", sub.description) : th.fg("text", sub.description);
+					lines.push(subIcon + " #" + sub.id + " " + subDesc);
+				}
+			}
 		}
 		ctx.ui.setWidget("todolist", lines);
 	}
@@ -804,6 +949,10 @@ export default function todolistExtension(pi: ExtensionAPI) {
 				}
 				state.completedSteps = state.completedSteps.filter((id) => id < redoStepId);
 				state.currentStep = redoStepId;
+				// 清除回退步骤及后续步骤的子任务数据
+				for (let sid = redoStepId; sid <= STEPS.length; sid++) {
+					delete state.stepSubtasks[sid];
+				}
 				persistState();
 				updateWidget(ctx);
 				ctx.ui.notify("回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1]!.name, "info");
@@ -824,6 +973,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 				state.currentStep = 0;
 				state.completedSteps = [];
 				state.tasks = [];
+				state.stepSubtasks = {};
 				state.mode = "fixed";
 				state.memoryDir = "";
 				persistState();
@@ -856,6 +1006,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			state.requirementSummary = requirement;
 			state.topicDir = today + "-" + topicSlug;
 			state.tasks = [];
+			state.stepSubtasks = {};
 			state.memoryDir = "";
 
 			ensureOutputDir(state.topicDir);
@@ -897,6 +1048,15 @@ export default function todolistExtension(pi: ExtensionAPI) {
 					"2. 完成后必须调用 todolist 的 complete_step 标记 (stepId: " + state.currentStep + ")\n\n" +
 					"3. 进度: " + state.completedSteps.length + "/" + STEPS.length + " 已完成\n" +
 					"   已完成: " + (state.completedSteps.length > 0 ? state.completedSteps.map((id) => "Step " + id).join(", ") : "无") + "\n\n" +
+					// 子任务进度
+					(() => {
+						const subs = state.stepSubtasks[state.currentStep];
+						if (!subs || subs.length === 0) return "";
+						const subDone = subs.filter((st) => st.completed).length;
+						const subList = subs.map((st) => (st.completed ? "  ✓" : "  ☐") + " #" + st.id + ": " + st.description).join("\n");
+						return "3b. 当前步骤子任务 (" + subDone + "/" + subs.length + "):\n" + subList + "\n" +
+							"   使用 todolist complete_subtask(stepId=" + state.currentStep + ", taskId=N) 完成子任务。\n\n";
+					})() +
 					"4. 产出目录: .xyz-harness/" + state.topicDir + "/\n\n" +
 					"5. 关键警告：你的产出将交付给另一个 agent 执行开发，务必自包含、详细。" +
 					"   另一个 agent 没有你的会话上下文，对话历史会全部丢失。你的文档就是对方的「完整指令集」，" +

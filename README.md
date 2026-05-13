@@ -343,6 +343,8 @@ AI 展示所有阶段的 summary，你确认最终交付：
 | xyz-harness-coding-skill | 新建 | ③ | Clean Architecture 分层编码规范（被 subagent 加载） |
 | xyz-harness-test-driven-development | 提取 | ③ | TDD 方法论（被 subagent 加载） |
 | xyz-harness-unit-test-write | 新建 | ⑤ | Change-driven Testing（接口级） |
+| **xyz-harness-e2e-test-plan** | 新建 | Phase 1 Step 5 | E2E 测试计划编写（四层验证策略） |
+| xyz-harness-phase2-dev | 新建 | Phase 2 | 7 阶段开发交付（编码→评审→单元测试→E2E→评审→推送→复盘） |
 | xyz-harness-verification-before-completion | 提取 | ⑧ | 编译、测试、lint 验证 |
 | xyz-harness-deploy-verify | 新建 | ⑨ | 部署验证 |
 
@@ -356,6 +358,93 @@ AI 展示所有阶段的 summary，你确认最终交付：
 | harness-gate-checker | 门禁检查 | 每阶段完成后 | 独立验证交付物和门禁条件 |
 
 Agent 文件位于 `agents/` 目录，通过 CLAUDE.md 的「Harness Agent 覆盖」章节可覆盖默认配置。
+
+## 依赖
+
+### 运行环境
+
+| 依赖 | 版本 | 用途 | 必需？ |
+|------|------|------|--------|
+| **Bash** | macOS / Linux | 门禁脚本、状态机、hook | 必需 |
+| **Node.js** | v21+（内置 WebSocket） | CDP 客户端（`cdp.js`）、状态机 JSON 解析 | 必需 |
+| **Python** | 3.10+（仅 stdlib） | 安装脚本（`install.py`）、状态机 JSON 解析（node 不可用时的 fallback） | 二选一 |
+| **Git** | 2.x+ | worktree 管理、代码推送、diff 分析 | 必需 |
+| **curl** | 任意 | CDP HTTP API、健康检查、API 测试 | 必需 |
+
+### Pi 扩展依赖
+
+| 扩展 | 用途 | 安装方式 |
+|------|------|----------|
+| **force-loop** | `/loop` 循环模式、`loop_task_tracker` 任务追踪 | `cp extensions/track/ ~/.pi/agent/extensions/track/`（track 扩展自带） |
+
+`extensions/track/index.ts` 编译运行需要以下 Pi SDK 包（Pi 环境自带，无需单独安装）：
+- `@mariozechner/pi-ai`
+- `@mariozechner/pi-coding-agent`
+- `@mariozechner/pi-tui`
+- `typebox`
+
+### 外部 Skill 依赖
+
+E2E 测试（Phase 2 Stage 4）依赖以下全局 skill，需单独安装：
+
+| Skill | 用途 | Layer | 安装状态检查 |
+|-------|------|-------|-------------|
+| **chrome-automation** | CDP 浏览器操控：导航、DOM 检查、截图 | Layer 2 (DOM/A11y) + Layer 3 (截图) | `ls ~/.pi/agent/skills/chrome-automation/` |
+| **zai-vision** | AI 视觉对比：设计稿 vs 实际截图 | Layer 3 (视觉对比) | `ls ~/.pi/agent/skills/zai-vision/` |
+| **zcommit** | 智能提交代码（Phase 2 Stage 6） | 代码推送 | `ls ~/.pi/agent/skills/zcommit/` |
+
+**E2E 测试的 Chrome 要求**：
+```bash
+# Chrome 需以远程调试模式启动
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+```
+
+### 可选依赖
+
+| 依赖 | 用途 | 触发条件 |
+|------|------|----------|
+| **jq** | JSON 解析（API 测试） | E2E Layer 1 验证 |
+| **gh**（GitHub CLI） | 创建 PR、CI 触发 | Phase 2 Stage 6 推送 |
+| **psql / mysql / sqlite3** | 数据库查询验证 | E2E Layer 4 验证 |
+| **npx** | 运行项目编译/lint 命令 | gate-script.sh 按需调用 |
+| **docker** | 部署验证 | Phase 2 Stage 6（按项目配置） |
+
+### 各 Skill 依赖矩阵
+
+| Skill | Bash | Node.js | Python | 外部 Skill | 特殊要求 |
+|-------|:----:|:-------:|:------:|-----------|----------|
+| xyz-harness-dev-flow | ✅ | ✅ | (fallback) | zcommit | - |
+| xyz-harness-brainstorming | - | - | - | - | - |
+| xyz-harness-writing-plans | - | - | - | - | - |
+| xyz-harness-expert-reviewer | - | - | - | - | - |
+| xyz-harness-coding-skill | - | - | - | - | - |
+| xyz-harness-subagent-driven-development | - | - | - | create-worktree | - |
+| xyz-harness-test-driven-development | - | - | - | - | - |
+| xyz-harness-unit-test-write | ✅ | - | - | - | 需要 git |
+| xyz-harness-verification-before-completion | ✅ | - | - | - | 需要 git |
+| xyz-harness-deploy-verify | ✅ | - | - | - | 需要部署工具（docker/deploy.sh） |
+| xyz-harness-init | - | - | - | - | - |
+| xyz-harness-phase2-dev | ✅ | - | - | - | 需要 git |
+| **xyz-harness-e2e-test-plan** | ✅ | ✅ | ✅ | chrome-automation, zai-vision | Chrome `--remote-debugging-port` |
+
+### 安装验证
+
+```bash
+# 检查必需工具
+node --version  && echo "✓ Node.js"
+python3 --version && echo "✓ Python"
+git --version && echo "✓ Git"
+curl --version | head -1 && echo "✓ curl"
+
+# 检查 E2E 测试外部 skill
+ls ~/.pi/agent/skills/chrome-automation/SKILL.md && echo "✓ chrome-automation"
+ls ~/.pi/agent/skills/zai-vision/SKILL.md && echo "✓ zai-vision"
+ls ~/.pi/agent/skills/zcommit/SKILL.md && echo "✓ zcommit"
+
+# 检查可选工具
+jq --version && echo "✓ jq" || echo "⚠ jq not found (API 测试需要)"
+gh --version && echo "✓ gh" || echo "⚠ gh not found (PR 创建需要)"
+```
 
 ## 安装
 
@@ -403,6 +492,8 @@ xyz-harness-engineering/
 │   │   ├── SKILL.md
 │   │   └── specs/                   # 6 份 Clean Architecture 分层规范
 │   ├── xyz-harness-unit-test-write/
+│   ├── xyz-harness-e2e-test-plan/          # E2E 测试计划（四层验证）
+│   ├── xyz-harness-phase2-dev/              # Phase 2 开发交付（7 阶段）
 │   ├── xyz-harness-verification-before-completion/
 │   ├── xyz-harness-deploy-verify/
 │   └── xyz-harness-test-driven-development/

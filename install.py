@@ -20,6 +20,8 @@ SKILLS_DIR = SCRIPT_ROOT / "skills"
 AGENTS_DIR = SCRIPT_ROOT / "agents"
 PREFIX = "xyz-harness-"
 AGENT_PREFIX = "harness-"
+# 非 xyz-harness- 前缀但属于本项目的 skill
+EXTRA_SKILLS = {"chrome-automation", "vision-analysis", "zcommit", "create-worktree", "merge-worktree"}
 
 # 旧版 skill 清理映射：目标目录 → 需要清理的 skill 名称列表
 CLEANUP_MAP: dict[str, list[str]] = {
@@ -104,13 +106,13 @@ def create_symlink(link: Path, target: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def discover_skills() -> list[Path]:
-    """返回 skills/ 下所有 PREFIX 前缀的目录，按名称排序"""
+    """返回 skills/ 下所有属于本项目的目录，按名称排序"""
     if not SKILLS_DIR.is_dir():
         print(f"{C_RED}错误: skills 目录不存在: {SKILLS_DIR}{C_RESET}")
         sys.exit(1)
     return sorted(
         p for p in SKILLS_DIR.iterdir()
-        if p.is_dir() and p.name.startswith(PREFIX)
+        if p.is_dir() and (p.name.startswith(PREFIX) or p.name in EXTRA_SKILLS)
     )
 
 

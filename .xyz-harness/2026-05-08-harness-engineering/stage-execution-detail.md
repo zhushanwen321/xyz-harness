@@ -90,17 +90,46 @@
 
 2. **执行 writing-plans skill**
    - 基于 spec.md 规划文件结构
-   - 拆分为 bite-sized task
-   - 产出 plan.md
+   - **评估复杂度等级（L1/L2）**——5 个维度（领域/存储/数据流/API/非功能性），任一命中 L2 则整体 L2
+   - 拆分为 bite-sized task，每个 task 标注类型（frontend/backend）
+   - L1：产出单文件 plan.md
+   - L2：产出 plan.md 总纲（目标、架构概述、task 列表、子文档索引）
 
-3. **初始化变更追溯**
+3. **L2 并行设计（仅 L2 复杂度时执行）**
+
+   如果评估为 L2，在 plan.md 总纲产出后执行：
+
+   **步骤 A：并行派遣设计 subagent**
+   | 子步骤 | Agent | 输入 | 输出 |
+   |--------|-------|------|------|
+   | A-1 后端设计 | harness-backend-planner | spec.md + plan.md 总纲 + CLAUDE.md + 项目代码 | plan-backend.md + plan-api-contract.md + 更新 docs/architecture.md |
+   | A-2 前端设计 | harness-frontend-planner | spec.md + plan.md 总纲 + CLAUDE.md | plan-frontend.md |
+
+   A-1 和 A-2 并行执行。
+
+   **步骤 B：API 对齐**（A-1 和 A-2 都完成后）
+   | 子步骤 | Agent | 输入 | 输出 |
+   |--------|-------|------|------|
+   | B API 对齐 | harness-api-alignment | plan-api-contract.md + plan-frontend.md + plan-backend.md | 更新 plan-frontend.md + api-alignment-report.md |
+
+   harness-api-alignment 以后端 API 合约为准修正前端设计。如果发现后端遗漏 API，报告给主 agent。
+
+   **步骤 C：汇总**
+   确认所有子文档就绪，更新 plan.md 总纲的子文档索引。
+
+   **L1 不需要上述额外步骤。**
+
+4. **初始化变更追溯**
    - 创建 `.superpowers/{主题}/changes/summary.md`
    - 创建 `.xyz-harness/gate/` 目录
    - 阶段 ① 状态标记为进行中
 
-4. **交付物：**
+5. **交付物：**
    - `.superpowers/{主题}/spec.md`
    - `.superpowers/{主题}/plan.md`
+   - `.superpowers/{主题}/plan-backend.md`（L2 时）
+   - `.superpowers/{主题}/plan-api-contract.md`（L2 时）
+   - `.superpowers/{主题}/plan-frontend.md`（L2 时）
    - `.superpowers/{主题}/changes/summary.md`
 
 ### 交互完成后：L1 脚本检查 + compaction
@@ -141,7 +170,9 @@
 
 ## 阶段 2 需求评审
 
-### 1. 派遣 评审 subagent
+### 1. 派遣评审 subagent
+
+**L1 复杂度（单文件 plan.md）：**
 
 | 项目 | 值 |
 |------|---|
@@ -150,20 +181,33 @@
 | 模型 | glm-5.1 |
 | 输入 | spec.md 路径 + plan.md 路径 + 项目根目录 |
 
+**L2 复杂度（并行评审）：**
+
+同时派遣两个评审 subagent：
+
+| 角色 | Agent | 输入 |
+|------|-------|------|
+| 后端设计评审 | harness-backend-plan-reviewer | spec.md + plan-backend.md + plan-api-contract.md + 项目根目录 |
+| 前端+整体评审 | code-reviewer | spec.md + plan.md + plan-frontend.md + 项目根目录 |
+
+两个评审并行执行。主 agent 收集结果后汇总所有 MUST FIX。
+
 **subagent 入口条件检查:**
 - spec.md 存在
 - plan.md 存在
 - 阶段 1 已确认(用户已回复确认)
 
 **subagent 执行逻辑:**
-1. 读取 spec.md 和 plan.md(不继承阶段 1 的执行上下文)
+1. 读取 spec.md 和 plan.md（L2 时加读 plan-backend.md / plan-frontend.md / plan-api-contract.md）
 2. 读取项目 CLAUDE.md 中的架构约束和编码规范
-3. 执行 expert-reviewer 计划评审模式:
+3. 执行评审:
    - spec 完整性检查(目标明确?范围合理?验收标准可量化?)
    - plan 可行性检查(任务拆分合理?依赖关系正确?工作量估算现实?)
    - spec 与 plan 一致性检查(plan 是否覆盖 spec 所有需求?)
+   - L1 时：后端设计充分性检查（详见 expert-reviewer skill）
+   - L2 时：后端评审由 harness-backend-plan-reviewer 独立执行
 4. 产出评审报告,每条意见标注优先级(MUST FIX / LOW / INFO)
-5. 写入 `changes/reviews/plan_review_v1.md`(版本递增,旧版不删)
+5. 写入 `changes/reviews/plan_review_v1.md`（L2 时加写 `backend_plan_review_v1.md`）
 
 **交付物:**
 - `.superpowers/{主题}/changes/reviews/plan_review_v1.md` - 评审报告

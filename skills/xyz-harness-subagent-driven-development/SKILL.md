@@ -31,7 +31,9 @@ Execute plan by dispatching fresh subagent per task: TDD coder (writes failing t
 
 **Core principle:** Fresh subagent per task: TDD coder (tests first) → executor (code to pass tests) → spec compliance review = high quality, fast iteration
 
-**Task tracking:** Stage 1 内部的 plan Task 使用 `todolist` 工具跟踪进度。每完成一个 Task，调用 `todolist complete_task(taskId, summary="...")`，summary 自动写入 memory.md。Phase 2 的 7 个 Stage 由 `loop_task_tracker` 管理。
+**Task tracking:** Stage 1 内部的 plan Task 使用 `todolist` 工具跟踪进度（自由任务模式）。每完成一个 Task，调用 `todolist complete_task(taskId, summary="...")`，summary 自动写入 memory.md。Phase 2 的 7 个 Stage 由 `loop_task_tracker` 管理。
+
+**重要：subagent 内部也使用 `todolist`（而非 `loop_task_tracker`）管理自己的多步骤流程。** `loop_task_tracker` 是全局状态，subagent 调用 `create_tasks` 会覆盖主 agent 的 Stage 列表。subagent 使用 `todolist create_tasks`（自由任务模式）注册自己的步骤。
 
 **Spec deviation tracking:** 如果 executor 返回了 `spec_deviations`（非空数组），主 agent 必须将偏差追加到 `spec.md` 的 `## 实现偏差记录` 章节。追加格式：
 ```markdown
@@ -139,6 +141,21 @@ digraph process {
 | E2E tester | e2e-test-plan.md、spec.md 验收标准 | 测试环境配置摘要 | 编码过程上下文、其他无关 spec 章节 |
 
 **操作方式**：主 agent 在派遣 subagent 前，先 read spec.md 和 plan.md，从中提取当前 task 对应的片段，作为 subagent task 参数的一部分传入。subagent 不需要自己读 spec/plan 文件。
+
+### L2 复杂度下的额外上下文
+
+当 plan.md 标注为 L2 复杂度时，除了 plan.md 总纲，还存在子设计文档。主 agent 需要根据 task 类型传入额外上下文：
+
+| Task 类型 | 必传额外文档 | 说明 |
+|-----------|-------------|------|
+| 后端 task（API/数据库/业务逻辑） | `plan-backend.md` 对应章节 | 领域模型、状态机、存储设计、数据流等 |
+| 后端 task | `plan-api-contract.md` 相关端点 | API 端点的请求/响应结构 |
+| 前端 task（UI/页面/组件） | `plan-frontend.md` 对应章节 | 组件设计、交互逻辑、暂定 API（已对齐） |
+| 跨前后端 task | 两份文档的相关章节 | 集成点、API 合约 |
+
+**L1 不需要额外文档**——所有设计都在 plan.md 单文件中。
+
+**提取策略**：主 agent 读取子文档后，只提取当前 task 涉及的章节（如 Task 3 涉及 §5 领域模型和 §8 存储设计），不传整个子文档。这避免了 subagent 上下文被无关信息占满。
 
 ## Model Selection
 

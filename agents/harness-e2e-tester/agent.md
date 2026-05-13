@@ -23,6 +23,8 @@ model: llm-simple-router/glm-5.1
 
 ## 前置准备
 
+使用 `todolist create_tasks` 创建任务列表，注册以下执行步骤，每完成一步调用 `todolist complete_task`。
+
 ### 1. 读取测试计划
 
 ```

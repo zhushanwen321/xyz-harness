@@ -20,6 +20,8 @@ model: llm-simple-router/glm-5.1
 
 ## 检查流程
 
+使用 `todolist create_tasks` 创建任务列表，注册以下检查步骤，每完成一步调用 `todolist complete_task`。
+
 1. 接收阶段号和交付物路径列表
 2. 检查 L1 脚本是否已生成对应的 `.xyz-harness/gate/stage-{NN}.pass` 文件（如果该阶段有 L1 检查）
 3. 按阶段号对应的检查清单逐项验证

@@ -297,7 +297,16 @@ xyz-harness-engineering/
 │   └── xyz-harness-test-driven-development/
 │       └── SKILL.md
 ├── agents/
-│   └── (如需新建或覆盖 agent)
+│   ├── harness-executor/          # 编码执行 agent
+│   ├── harness-tdd-coder/         # TDD 测试先行 agent
+│   ├── harness-frontend-developer/ # 前端三阶段开发 agent
+│   ├── harness-reviewer/          # 评审 agent（代码/测试）
+│   ├── harness-e2e-tester/        # E2E 测试 agent
+│   ├── harness-gate-checker/      # 门禁检查 agent
+│   ├── harness-backend-planner/   # 后端设计方案规划 agent（含模板）
+│   ├── harness-backend-plan-reviewer/ # 后端设计评审 agent
+│   ├── harness-frontend-planner/  # 前端设计方案规划 agent
+│   └── harness-api-alignment/     # 前后端 API 对齐 agent
 ├── extensions/
 │   └── (如需 extension)
 ├── install.py                     # symlink 安装 + 清理旧版
@@ -312,14 +321,19 @@ xyz-harness-engineering/
 
 ## 8. Agent 角色映射
 
-不需要新建 Agent，复用 pi 已有：
-
-| Harness 角色 | 复用 pi Agent | 何时派遣 | 模型选择 |
-|-------------|-------------|---------|---------|
+| Harness 角色 | Agent | 何时派遣 | 模型选择 |
+|-------------|--------|---------|---------|
 | 调度器 | 主 agent（dev-flow skill） | 全程 | 当前会话模型 |
-| 执行者（编码） | code-fixer | 阶段 ③⑤ | 简单任务 glm-5-turbo，复杂 glm-5.1 |
-| 评审者 | code-reviewer | 阶段 ②④⑥ | glm-5.1 |
-| 门禁检查 | code-reviewer | 每阶段完成后 | glm-5.1 |
+| 执行者（编码） | harness-executor | 阶段 ③⑤ | 简单任务 glm-5-turbo，复杂 glm-5.1 |
+| TDD coder | harness-tdd-coder | 阶段 ③（每个 task 先写测试） | glm-5.1 |
+| 前端开发 | harness-frontend-developer | 阶段 ③（前端 task） | 按项目配置 |
+| E2E 测试 | harness-e2e-tester | 阶段 ④ | glm-5.1 |
+| 评审者 | harness-reviewer | 阶段 ②④⑥ | glm-5.1 |
+| 门禁检查 | harness-gate-checker | 每阶段完成后 | glm-5.1 |
+| 后端设计规划 | harness-backend-planner | 阶段 ① L2 时 | glm-5.1 |
+| 后端设计评审 | harness-backend-plan-reviewer | 阶段 ② L2 时 | glm-5.1 |
+| 前端设计规划 | harness-frontend-planner | 阶段 ① L2 时 | glm-5.1 |
+| API 对齐 | harness-api-alignment | 阶段 ① L2 时 | glm-5-turbo |
 
 ---
 

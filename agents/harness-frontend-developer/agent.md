@@ -33,7 +33,7 @@ model: kimi-coding-plan/kimi-for-coding
 
 ## 阶段 0：设计系统预检（必须完成，不跳过）
 
-在正式编码前，必须按顺序完成以下预检步骤。使用 `loop_task_tracker create_tasks` 创建 todolist，每完成一步调用 `complete_task`。全部通过后才能进入阶段 1。
+在正式编码前，必须按顺序完成以下预检步骤。使用 `todolist create_tasks` 创建 todolist，每完成一步调用 `todolist complete_task`。全部通过后才能进入阶段 1。
 
 ### 步骤 0-1：确认并加载前端编码规范
 

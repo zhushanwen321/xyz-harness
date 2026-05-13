@@ -32,6 +32,69 @@ Assume they are a skilled developer, but know almost nothing about our toolset o
 
 If the spec covers multiple independent subsystems, it should have been broken into sub-project specs during brainstorming. If it wasn't, suggest breaking this into separate plans — one per subsystem. Each plan should produce working, testable software on its own.
 
+## Complexity Assessment (L1/L2)
+
+Before writing the plan, assess the architectural complexity of the spec. This determines whether the plan is a single file or requires parallel frontend/backend design.
+
+### Assessment Dimensions
+
+| Dimension | L1 (Simple — no split) | L2 (Complex — split design) |
+|-----------|------------------------|-----------------------------|
+| Domain impact | Extend existing models, no new concepts | New domain modeling or cross-domain coordination |
+| Storage impact | Add fields/indexes to existing tables | New tables, new storage engines, sharding strategy |
+| Data flow | Simple, synchronous, short path | Cross-service async, event-driven, long path |
+| API impact | Few new/modified endpoints | Multiple endpoints requiring parallel frontend/backend work |
+| Non-functional | No special requirements | High concurrency / low latency / strong consistency / special security |
+
+**Any single dimension hitting L2 → overall L2.**
+
+### L1 Flow (Simple)
+
+Produce a single `plan.md` with all tasks inline. Backend design is described within the relevant tasks. No parallel design needed.
+
+### L2 Flow (Complex)
+
+1. Produce `plan.md` as a **master document** (goal, architecture overview, task list with frontend/backend labels, dependency graph, sub-document index)
+2. Dispatch **harness-backend-planner** agent → produces `plan-backend.md` + `plan-api-contract.md`
+3. Dispatch **harness-frontend-planner** agent → produces `plan-frontend.md`
+4. After both complete, dispatch **harness-api-alignment** agent → aligns `plan-frontend.md` with `plan-api-contract.md`
+5. Update `docs/architecture.md` (backend-planner handles this)
+
+**L2 parallel execution:**
+- Steps 2 and 3 can run in parallel (both read spec.md + plan.md master)
+- Step 4 runs after both 2 and 3 complete
+- Step 5 is part of step 2 (backend-planner updates architecture doc)
+
+**L2 plan.md master structure:**
+
+```markdown
+# [Feature Name] Implementation Plan
+
+**Goal:** ...
+**Complexity:** L2
+**Architecture:** ...
+
+## Sub-documents
+- Backend design: `plan-backend.md`
+- API contract: `plan-api-contract.md`
+- Frontend design: `plan-frontend.md`
+
+## Task List
+| # | Task | Type | Depends on | Sub-document |
+|---|------|------|-----------|-------------|
+| 1 | ... | backend | — | plan-backend.md §3 |
+| 2 | ... | frontend | 1 | plan-frontend.md §2 |
+
+## Dependency Graph
+...
+```
+
+The master plan.md does NOT duplicate the detailed design from sub-documents. It provides:
+- Global goal and architecture overview
+- Complete task list with dependencies
+- Index to sub-documents for details
+- Integration points between frontend and backend
+
 ## File Structure
 
 Before defining tasks, map out which files will be created or modified and what each one is responsible for. This is where decomposition decisions get locked in.

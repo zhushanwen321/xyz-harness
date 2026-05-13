@@ -32,6 +32,8 @@ model: llm-simple-router/glm-5.1
 
 ## 评审流程
 
+使用 `todolist create_tasks` 创建任务列表，注册以下评审步骤，每完成一步调用 `todolist complete_task`。
+
 1. 读取传入的 spec.md、plan.md（如有）、git diff（如有）、CLAUDE.md（架构约束和编码规范部分）
 2. 按对应模式的检查维度逐项检查
 3. 每条问题标注优先级：MUST FIX / LOW / INFO

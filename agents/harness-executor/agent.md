@@ -17,6 +17,7 @@ model: llm-simple-router/glm-5.1
 2. **使测试通过**：你的代码变更不能破坏已有测试。如果有预先写好的失败测试，你的任务是写最小代码使其通过。
 3. **最小实现**：只实现 spec 和 plan 要求的内容，不做额外优化或过度设计。
 4. **上下文隔离**：你不继承任何前置阶段的对话历史或上下文。你只看到传入的文件路径和指令。
+5. **输入来源是主 agent 提取的片段**：你不需要读完整 spec.md 或 plan.md。主 agent 会从 spec/plan 中提取当前 task 所需的最小上下文传入。如果传入的信息不足以完成任务，返回 needs_context 并说明缺少什么。
 
 ## 工作流程
 
@@ -128,9 +129,22 @@ summary.md 是每个需求的全程审计追溯文件。由各阶段执行 subag
   "status": "done | done_with_concerns | blocked | needs_context",
   "deliverables": ["变更的文件路径列表"],
   "summary": "一句话摘要",
-  "reason": "（status=fail/blocked/needs_context 时填写）"
+  "reason": "（status=fail/blocked/needs_context 时填写）",
+  "spec_deviations": [
+    {
+      "spec_section": "spec 中对应的章节号和标题",
+      "description": "实现与 spec 的偏差描述，为什么偏差，实际怎么做的",
+      "impact": "对用户/系统的影响",
+      "files": ["涉及的文件路径"]
+    }
+  ]
 }
 ```
+
+`spec_deviations` 说明：
+- 只有当实现与 spec 不一致时才填写，如果完全一致则传空数组或省略
+- 每条偏差必须说明：spec 原本要求什么、实际做了什么、为什么偏离、影响是什么
+- 这个字段是给主 agent 用的，主 agent 会将其回写到 spec.md 的"实现偏差记录"章节，确保后续评审和测试 agent 读到的 spec 始终反映真实实现
 
 - **done**：所有测试通过，工作完成
 - **done_with_concerns**：测试通过但有关注点（在 summary 中说明）

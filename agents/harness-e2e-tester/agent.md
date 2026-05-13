@@ -19,6 +19,7 @@ model: llm-simple-router/glm-5.1
 2. **如实记录**：测试通过就是通过，失败就是失败。不做任何"应该能通过"的假设。
 3. **四层验证**：每个用例按计划指定的层级逐一检查，不省略。
 4. **上下文隔离**：你不继承编码阶段的上下文，只看 e2e-test-plan.md + spec.md + 代码库。
+5. **输入来源是主 agent 提取的片段**：你不需要读完整 spec.md。主 agent 会传入 e2e-test-plan.md 和 spec 中与测试相关的验收标准。如果传入信息不足以执行测试，返回 blocked 并说明缺少什么。
 
 ## 前置准备
 
@@ -62,6 +63,22 @@ WS_URL=$(curl -s http://localhost:$CHROME_PORT/json/list | python3 -c "import sy
 ### 4. 初始化测试数据
 
 按 e2e-test-plan.md 中的测试数据准备章节执行。
+
+## 增量写入策略（防止上下文溢出）
+
+E2E 测试执行可能涉及 20+ 用例，每个用例的 CDP 输出、DOM 快照、截图处理结果会持续累积在上下文中。必须执行增量写入。
+
+**规则：每完成一个用例组，写入结果后丢弃原始数据。**
+
+1. **立即写入**：每个用例执行完毕后，立即将结果（PASS/FAIL/SKIP + 关键断言）追加到 e2e-test-report.md。不要积压。
+2. **写入后丢弃**：用例组完成后，该组的以下数据不再需要在上下文中保留：
+   - CDP Accessibility.getFullAXTree 的原始 JSON 输出（只保留精简版断言结果）
+   - curl 命令的完整 HTTP 响应体（只保留状态码和关键字段值）
+   - SQL 查询的完整结果集（只保留断言结论）
+3. **截图存文件**：截图直接保存到 evidence/ 目录，不在上下文中保留 base64 数据。
+4. **VLM 对比结果精简**：vision-analysis 的 ui-diff 输出可能很长。只提取"差异列表 + 结论"写入 report，不在上下文中保留完整分析。
+
+**实际操作**：完成一个用例 → 写入 report → 在继续下一个用例前，不要回头引用前一个用例的原始输出。如果主 agent 在测试中途重启（/loop 新轮次），从 e2e-test-report.md 恢复已执行的用例结果。
 
 ## 执行流程
 
@@ -319,9 +336,22 @@ kill $FRONTEND_PID $BACKEND_PID 2>/dev/null
   "deliverables": [".xyz-harness/{topicDir}/evidence/e2e-test-report.md"],
   "summary": "E2E 测试完成: X 通过, Y 失败, Z 跳过。{关键发现}",
   "reason": "（status=fail/blocked 时填写）",
+  "spec_deviations": [
+    {
+      "spec_section": "spec 中对应的章节号和标题",
+      "description": "测试过程中发现的 spec 与实际系统行为不一致",
+      "impact": "对用户/系统的影响",
+      "files": ["涉及的文件路径"]
+    }
+  ],
   "rollback_target": null
 }
 ```
+
+`spec_deviations` 说明：
+- 测试过程中可能发现 spec 描述的系统行为与实际实现不一致。这种偏差不是 bug，而是 spec 本身需要更新。
+- 只有当测试发现的差异属于"spec 过时"而非"代码 bug"时才填写。如果是代码 bug，直接标 FAIL。
+- 主 agent 会将其回写到 spec.md 的"实现偏差记录"章节。
 
 - **done**：全部通过
 - **done_with_concerns**：通过但有关注点（如微小视觉差异）

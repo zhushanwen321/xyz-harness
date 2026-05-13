@@ -31,6 +31,17 @@ Execute plan by dispatching fresh subagent per task: TDD coder (writes failing t
 
 **Core principle:** Fresh subagent per task: TDD coder (tests first) → executor (code to pass tests) → spec compliance review = high quality, fast iteration
 
+**Task tracking:** Stage 1 内部的 plan Task 使用 `todolist` 工具跟踪进度。每完成一个 Task，调用 `todolist complete_task(taskId, summary="...")`，summary 自动写入 memory.md。Phase 2 的 7 个 Stage 由 `loop_task_tracker` 管理。
+
+**Spec deviation tracking:** 如果 executor 返回了 `spec_deviations`（非空数组），主 agent 必须将偏差追加到 `spec.md` 的 `## 实现偏差记录` 章节。追加格式：
+```markdown
+### Task {N}: {标题} ({日期})
+- **Spec 章节**: {spec_section}
+- **偏差描述**: {description}
+- **影响范围**: {impact}
+- **涉及文件**: {files}
+```
+
 **Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
 ## When to Use
@@ -76,7 +87,7 @@ digraph process {
         "Dispatch spec reviewer (harness-reviewer)" [shape=box];
         "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
         "Implementer subagent fixes spec gaps" [shape=box];
-        "Mark task complete via complete_task" [shape=box];
+        "Mark task complete via todolist (write spec deviations if any)" [shape=box];
     }
 
     "Read plan, extract all tasks with full text, note context, create_tasks" [shape=box];
@@ -94,12 +105,40 @@ digraph process {
     "Dispatch spec reviewer (harness-reviewer)" -> "Spec reviewer subagent confirms code matches spec?";
     "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
     "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer (harness-reviewer)" [label="re-review"];
-    "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via complete_task" [label="yes"];
-    "Mark task complete via complete_task" -> "More tasks remain?";
+    "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via todolist (write spec deviations if any)" [label="yes"];
+    "Mark task complete via todolist (write spec deviations if any)" -> "More tasks remain?";
     "More tasks remain?" -> "Dispatch TDD coder (harness-tdd-coder)" [label="yes"];
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
+
+## 主 Agent 上下文管理
+
+主 agent（调度器）自身的上下文也需要管理。Stage 1 内按 plan task 逐个派遣 subagent，每个 subagent 返回的 summary 都会占用主 agent 的上下文。大量 task 后主 agent 可能退化。
+
+**规则：**
+
+1. **subagent summary 不保留原文**：subagent 返回的 summary 通常是 500-1000 token。主 agent 收到后，提取关键信息（status + 一句话摘要），通过 `todolist complete_task(taskId, summary="...")` 写入 memory.md，然后不再在上下文中引用原始 summary。
+
+2. **每 5 个 task 后主动 compact**：完成第 5、10、15...个 task 后，主动执行 `/compact`。compact 前确保 memory.md 已更新。compact 后从 memory.md 恢复进度。
+
+3. **大型 plan（>8 task）考虑拆分 session**：如果 plan.md 有超过 8 个 task，建议在 task 5-6 完成后暂停，提交一次 git commit，然后在新 session 中继续剩余 task。新 session 通过读取 memory.md 恢复进度。
+
+4. **调度决策写 memory**：如果某个 task 的派遣过程中做了非显而易见的决策（比如选了特定模型、调整了 task 顺序），通过 `todolist update_memory(content="决策：...")` 记录，不要只留在对话历史中。
+
+## Context Diet（上下文瘦身）
+
+每个 subagent 只传入完成任务所需的最小上下文。不要全量传 spec/plan。主 agent 从 spec/plan 中提取必要片段传入，避免 subagent 上下文被无关信息占满。
+
+| 角色 | 必传 | 可选 | 不传 |
+|------|------|------|------|
+| TDD coder | 当前 task 描述、被测接口签名、测试框架信息 | 同文件已有代码 | 完整 spec 背景章节、其他 task |
+| executor | 当前 task 描述、TDD coder 产出的测试文件路径、相关已有代码片段 | CLAUDE.md 编码规范摘要（仅相关部分） | 完整 spec 背景章节、其他 task 描述 |
+| 前端 developer | 当前 task 描述、相关设计稿路径、已有组件代码片段 | CLAUDE.md 前端规范摘要（tokens、组件库约束） | 完整 spec 背景章节、其他 task |
+| spec reviewer | 当前 task 的 spec 验收标准（AC 部分）、git diff（仅当前 task 变更） | plan 中当前 task 的文件变更表 | 完整 spec 背景章节、其他 task 内容 |
+| E2E tester | e2e-test-plan.md、spec.md 验收标准 | 测试环境配置摘要 | 编码过程上下文、其他无关 spec 章节 |
+
+**操作方式**：主 agent 在派遣 subagent 前，先 read spec.md 和 plan.md，从中提取当前 task 对应的片段，作为 subagent task 参数的一部分传入。subagent 不需要自己读 spec/plan 文件。
 
 ## Model Selection
 
@@ -156,8 +195,33 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 | 角色 | Agent | 职责 |
 |------|-------|------|
 | TDD coder | harness-tdd-coder | 写失败测试（不写实现代码） |
-| 实现者 | harness-executor | 写代码使测试通过 |
+| 后端实现者 | harness-executor | 写后端代码使测试通过 |
+| 前端实现者 | harness-frontend-developer | 前端三阶段开发（骨架→功能→美化） |
 | Spec 合规检查 | harness-reviewer | 验证代码是否实现 spec 要求 |
+
+### 前端 task 路由
+
+当 task 涉及 UI 组件、页面、布局、样式时，派遣 `harness-frontend-developer` 而非 `harness-executor`。
+
+**判断信号：**
+- 文件路径包含 `frontend/`、`src/components/`、`src/views/`、`src/pages/`
+- task 描述中包含组件名、页面名、布局、样式、交互等关键词
+- plan.md 中 task 标注了 `type: frontend`
+- spec.md 描述了 UI 行为
+
+**前端 agent 不走 TDD 流程**。前端 agent 采用自己的"骨架→功能→美化"三阶段工作流，不需要先派遣 TDD coder。派遣前端 agent 时直接传 task，不需要先写测试。
+
+**派遣模式：**
+```
+前端 task:
+  跳过 TDD coder
+  agent: harness-frontend-developer
+  model: 按项目配置（默认 kimi-coding-plan/kimi-for-coding）
+  完成后: spec 合规检查 → todolist complete_task
+
+后端 task:
+  TDD coder → executor → spec 合规检查 → todolist complete_task
+```
 
 ## Example Workflow
 
@@ -196,7 +260,8 @@ Implementer: "Got it. Implementing now..."
 [Dispatch spec compliance reviewer]
 Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
 
-[Call complete_task for Task 1]
+[Call todolist complete_task for Task 1, summary="安装脚本完成，支持用户级和系统级安装"]
+[If executor returned spec_deviations, append them to spec.md ## 实现偏差记录 section]
 
 Task 2: Recovery modes
 
@@ -230,12 +295,15 @@ Implementer: Removed --json flag, added progress reporting
 [Spec reviewer reviews again]
 Spec reviewer: ✅ Spec compliant now
 
-[Call complete_task for Task 2]
+[Call todolist complete_task for Task 2, summary="verify/repair 模式完成，含进度上报"]
+[If executor returned spec_deviations, append them to spec.md ## 实现偏差记录 section]
 
 ...
 
 [After all tasks]
-[All tasks complete, proceed to merge-worktree for integration]
+[All plan tasks complete via todolist]
+[Now call loop_task_tracker complete_task 1 to mark Stage 1 done]
+[Proceed to Stage 2: 编码评审]
 
 Done!
 ```
@@ -259,6 +327,7 @@ Done!
 - Spec compliance review prevents over/under-building
 - Review loops ensure fixes actually work
 - Code quality review is handled separately by dev-flow 阶段④的 expert-reviewer skill
+- Spec deviation tracking ensures spec.md stays in sync with implementation, preventing false positives in later reviews
 
 **Cost:**
 - Three subagent invocations per task (TDD coder + implementer + reviewer)

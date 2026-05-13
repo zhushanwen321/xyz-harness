@@ -45,12 +45,20 @@ model: llm-simple-router/glm-5.1
 - [ ] 编译/类型检查通过（读取 gate-script.sh 输出）
 - [ ] 测试通过且 tests > 0
 - [ ] `.xyz-harness/gate/stage-03.pass` 存在
+- **前端 task 额外检查（仅当 diff 涉及 `.vue`/`.tsx`/`.jsx`/CSS 时）：**
+  - [ ] 无原生 HTML 表单/交互元素（`<button>`, `<input>`, `<select>` 等被组件库替代）
+  - [ ] 无 Tailwind 硬编码颜色（grep `bg-\(red\|blue\|green\|gray\|yellow\)-\d` 无结果）
+  - [ ] 无 magic spacing（grep `\[\d+px\]` 在 Tailwind 类中无结果）
+  - [ ] 组件行数不超限（`<template>` ≤ 400, `<script>` ≤ 300）
 - **失败回退：** → 阶段 ③ 重新派遣执行 subagent（task 内修复）
 
 ### 阶段 ④ 编码评审
 - [ ] 评审报告文件存在且非空
 - [ ] 无未解决的 MUST FIX 项
 - [ ] 评审轮次 ≤ 2
+- **前端 task 额外检查（仅当 diff 涉及前端文件时）：**
+  - [ ] 评审报告中包含前端专项维度检查（组件库合规、设计系统合规）
+  - [ ] 如有前端 MUST FIX，已全部解决
 - **失败回退：** → 阶段 ③（代码质量问题）
 
 ### 阶段 ⑤ 测试编写

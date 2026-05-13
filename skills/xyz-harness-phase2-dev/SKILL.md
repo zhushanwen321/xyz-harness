@@ -16,11 +16,26 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 7 阶段 TDD+编码+
 3. **门禁脚本强制执行** — 每个阶段完成后运行 `harness-state.sh advance → gate-script.sh → harness-state.sh pass`
 4. **Phase 2 产出写回 Phase 1 目录** — 复盘和指标写入 Phase 1 的 `.xyz-harness/{topicDir}/` 下
 
+## 每轮恢复（/loop 模式）
+
+Phase 2 使用 `/loop` 模式执行 7 个阶段。每轮开始时，**必须先读取 memory.md 恢复上下文**。
+
+```
+1. 读取 $TOPIC_DIR/changes/memory.md
+2. 从中恢复：
+   - 当前在哪个 Stage（如果 loop_task_tracker 还未创建，从 memory 推断）
+   - 当前 plan Task 进度（todolist 管理的 task）
+   - 已完成的关键决策和陷阱提醒
+3. 继续从上次中断的位置执行
+```
+
+如果 memory.md 不存在或为空（第一轮），跳过此步骤正常启动。
+
 ## 7 阶段流程
 
 ### 阶段 1: 编码实现
 
-1. 调用 `loop_task_tracker create_tasks` 创建以下 7 个 task：
+1. 调用 `loop_task_tracker create_tasks` 创建以下 7 个 Stage 粒度的 task：
    ```
    1. 编码实现 (TDD + 按 plan Task 逐个完成)
    2. 编码评审 (reviewer ≤2轮)
@@ -30,9 +45,18 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 7 阶段 TDD+编码+
    6. 推送 + CI + 部署
    7. 自动复盘 (写回 Phase 1 目录)
    ```
-2. 按 plan.md 的 Task 逐个实现：
-   - 每个 Task 执行 TDD：先写测试 → 测试失败确认 → 实现 → 测试通过 → git commit
-   - 完成后 `loop_task_tracker complete_task 1`
+2. **在 Stage 1 内部，使用 `todolist` 管理 plan.md 的 Task**：
+   - 调用 `todolist create_tasks`（tasks=[plan.md 的所有 Task 描述]，memoryDir="$TOPIC_DIR/changes"）注册所有 plan Task
+   - 每个 Task 执行流程根据类型不同：
+     - **后端 task**：TDD 流程（TDD coder → executor → spec 合规检查）
+     - **前端 task**：跳过 TDD，直接派遣 `harness-frontend-developer`（骨架→功能→美化三阶段）
+     - 判断方式：task 涉及 UI 组件/页面/布局/样式 → 前端 task；其余 → 后端 task
+   - 每完成一个 plan Task → git commit
+   - 完成后调用 `todolist complete_task(taskId, summary="关键决策和提醒")` 标记完成
+   - summary 会自动写入 `$TOPIC_DIR/changes/memory.md`，供后续 Stage 和 /loop 轮次恢复上下文
+   - 每完成一个 plan Task，如果涉及关键决策或发现了潜在陷阱，也调用 `todolist update_memory(content="...")` 追加到 memory.md，不等 task 完成
+   - 如需回退，调用 `todolist rollback(taskId)` 重置该 task 及后续 task
+   - 所有 plan Task 完成后，调用 `loop_task_tracker complete_task 1` 标记 Stage 1 完成
 3. 运行门禁：
    ```bash
    bash scripts/harness-state.sh advance 1 $PROJECT_ROOT
@@ -98,11 +122,25 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 7 阶段 TDD+编码+
 
 ### 阶段 7: 自动复盘
 
-1. 派遣 reviewer subagent 分析整个流程，产出 `retrospective.md`
+1. 派遣 reviewer subagent 分析整个流程，产出 `retrospective.md`。**复盘 agent 必须读取以下全部材料**：
+   - `$TOPIC_DIR/changes/memory.md` — 全流程工作记忆（关键决策、陷阱、task 完成记录）
+   - `$TOPIC_DIR/changes/summary.md` — 阶段状态追踪
+   - `$TOPIC_DIR/changes/reviews/` — 所有评审报告（plan_review、code_review、test_review）
+   - `$TOPIC_DIR/evidence/e2e-test-report.md` — E2E 测试结果（如有）
+   - `$TOPIC_DIR/evidence/` — 验证证据（CI 结果、部署结果）
+   - `git log --oneline --since="{开始日期}"` — 实际提交粒度和频率
+   - `git diff --stat main` — 总变更量和变更文件分布
 2. **写回 Phase 1 目录**（路径由 Phase 1 提供）：
    - 复制 `retrospective.md` 到 `.xyz-harness/{topicDir}/changes/retrospective.md`
    - 计算指标（token 消耗、耗时、各阶段耗时），写入 `.xyz-harness/{topicDir}/metrics.json`
    - 更新 `.xyz-harness/{topicDir}/changes/summary.md`，标记 Phase 2 交付物完成
+   - 复盘报告必须包含以下维度：
+     - **回退根因分析**：每次回退发生的原因分类（需求不清/代码问题/测试问题/环境问题）
+     - **评审有效率**：评审发现的 MUST FIX 数 vs 用户事后发现的问题数
+     - **提交质量**：git log 中每个 task 的提交粒度是否合理（过大/过碎）
+     - **E2E 测试分布**：通过率、失败分布（按层级：API/DOM/Visual/DB）
+     - **上下文使用效率**：memory.md 中的记录是否覆盖了关键决策（覆盖率自查）
+     - **CLAUDE.md 改进建议**：哪些错误是因为 CLAUDE.md 规则缺失导致的
 3. 完成后 `loop_task_tracker complete_task 7`
 
 ## 门禁脚本

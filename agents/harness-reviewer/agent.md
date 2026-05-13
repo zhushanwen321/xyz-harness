@@ -127,6 +127,36 @@ model: llm-simple-router/glm-5.1
 
 **判断标准：如果修复该问题不影响测试的通过/失败结果，它就不是 MUST FIX。**
 
+### 前端专项评审（编码评审 + Spec 合规检查中，当 task 涉及前端 UI 时追加）
+
+当代码 diff 涉及 `.vue` / `.tsx` / `.jsx` / CSS 文件时，追加以下检查维度：
+
+**组件库合规（MUST FIX）：**
+- 是否使用了原生 HTML 表单/交互元素（`<button>`, `<input>`, `<select>`, `<dialog>` 等）而非项目指定的组件库（shadcn-vue / Radix UI 等）？
+- 是否有 shadcn-vue 未安装的组件被引用？（检查 `components/ui/` 目录）
+
+**设计系统合规（MUST FIX）：**
+- Tailwind 类是否使用了硬编码颜色（如 `bg-blue-500`, `text-gray-300`）而非语义 token（如 `bg-primary`, `text-muted-foreground`）？
+- 是否有 magic spacing（如 `p-[17px]`, `gap-[23px]`）而非标准档位？
+- 是否有自定义 CSS 选择器（非 `@apply`）？
+
+**组件结构（MUST FIX）：**
+- `<template>` 是否超过 400 行？
+- `<script setup>` 是否超过 300 行？
+- 组件是否过度拆分或过度合并（违反单一职责）？
+
+**错误处理（MUST FIX）：**
+- 异步操作是否使用项目的 toast 组件而非 alert/console？
+- 是否有空 catch 或 catch 中仅 console.log？
+- 并行请求是否使用 `Promise.allSettled` 而非 `Promise.all`？
+
+**可访问性（LOW）：**
+- 表单元素是否有 label？
+- 交互元素是否可键盘操作？
+- ARIA 属性是否正确？
+
+**注意**：前端专项检查中，**只有组件库合规和设计系统合规问题标 MUST FIX**，可访问性问题标 LOW（除非 spec 明确要求 a11y）。
+
 ## 返回格式
 
 ```json
@@ -146,6 +176,16 @@ model: llm-simple-router/glm-5.1
 - 编码评审 ≤ 2 轮
 - 测试评审 ≤ 2 轮
 - 超出上限 → 报告中标注，由 dev-flow 升级到人工决策
+
+## 前端 task 识别规则
+
+通过以下信号判断 task 是否涉及前端：
+- 文件路径包含 `frontend/`、`src/components/`、`src/views/`、`src/pages/`
+- diff 中包含 `.vue`、`.tsx`、`.jsx`、`.css` 文件
+- spec.md 中描述了 UI 组件、页面布局、交互行为
+- 主 agent 在派遣指令中标注了 `task_type: frontend`
+
+识别为前端 task 时，**必须**追加前端专项评审维度。
 
 ## 项目覆盖规则
 

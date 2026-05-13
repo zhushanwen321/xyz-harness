@@ -1,6 +1,6 @@
 ---
 description: "需求沟通阶段追踪（Claude Code 兼容）。7 步固定流程：讨论→Spec→扫描→Plan→E2E测试计划→评审→确认。"
-allowed-tools: ["read", "edit", "write", "bash", "subagent", "loop_task_tracker"]
+allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 ---
 
 # 需求沟通阶段 — Track 模式
@@ -11,7 +11,7 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "loop_task_tracker"
 
 ## 固定步骤（按序执行，不可跳步）
 
-使用 loop_task_tracker 管理以下步骤：
+使用 todolist 管理以下步骤（start 初始化 → complete_step 逐步标记）：
 
 1. **需求讨论** — 与用户讨论需求，澄清目标、范围、约束。逐一提问确认。
 2. **Spec 编写** — 编写 spec.md，包含：目标、架构决策、验收标准(AC)、数据流(如涉及)、受影响文件列表。**每个文件路径必须从项目根开始写完整，每个函数/接口必须写明签名和位置。你的文档是给另一个 agent 的完整指令——不要假设对方知道你在说什么。**

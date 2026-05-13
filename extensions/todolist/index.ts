@@ -1,8 +1,9 @@
 /**
- * track — 需求沟通阶段任务追踪器
+ * todolist — 需求沟通阶段任务追踪器
  *
  * 固定 7 步模板，强制 AI 按序执行需求沟通流程。
  * 与 loop 不同：不强制循环，每步由用户驱动推进。
+ * 同时支持自由任务模式，供 Stage 1 编码实现时使用。
  *
  * 产出物：spec.md + plan.md + e2e-test-plan.md + summary.md（交付给 Phase 2 的 agent）
  */
@@ -14,7 +15,7 @@ import * as fs from "fs";
 
 // ── Fixed Step Template ────────────────────────────────
 
-interface TrackStep {
+interface TodoStep {
 	id: number;
 	name: string;
 	description: string;
@@ -24,7 +25,7 @@ interface TrackStep {
 	requiresConfirmation: boolean;
 }
 
-const STEPS: TrackStep[] = [
+const STEPS: TodoStep[] = [
 	{
 		id: 1,
 		name: "需求讨论",
@@ -96,22 +97,37 @@ const STEPS: TrackStep[] = [
 
 // ── State ──────────────────────────────────────────────
 
-interface TrackState {
+interface TodoItem {
+	id: number;
+	description: string;
+	completed: boolean;
+	summary?: string; // 完成时的摘要
+}
+
+interface TodoState {
 	isActive: boolean;
+	// 固定步骤模式（Phase 1）
 	currentStep: number; // 1-based, 0 = not started
 	completedSteps: number[]; // step ids that are done
 	stallCount: number;
 	requirementSummary: string; // one-line requirement description
 	topicDir: string; // .xyz-harness/{yyyy-MM-dd}-{topic}/
+	// 自由任务模式（Stage 1 内部 Task）
+	tasks: TodoItem[];
+	mode: "fixed" | "free"; // fixed=固定步骤, free=自由任务
+	memoryDir: string; // memory.md 所在目录（自由任务模式）
 }
 
-const DEFAULT_STATE: TrackState = {
+const DEFAULT_STATE: TodoState = {
 	isActive: false,
 	currentStep: 0,
 	completedSteps: [],
 	stallCount: 0,
 	requirementSummary: "",
 	topicDir: "",
+	tasks: [],
+	mode: "fixed",
+	memoryDir: "",
 };
 
 // ── Helpers ────────────────────────────────────────────
@@ -154,6 +170,54 @@ function writeInitialSummary(topicDir: string, requirementSummary: string): void
 			"- [ ] 部署",
 		];
 		fs.writeFileSync(summaryPath, lines.join("\n"));
+	} catch (_e) {
+		// non-critical
+	}
+}
+
+/** 自由任务模式：初始化 memory.md 文件 */
+function ensureMemoryFile(memoryDir: string): void {
+	const dir = memoryDir.startsWith("/") ? memoryDir : process.cwd() + "/" + memoryDir;
+	const memoryPath = dir + "/memory.md";
+	if (fs.existsSync(memoryPath)) return;
+	try {
+		fs.mkdirSync(dir, { recursive: true });
+		const content = [
+			"# 工作记忆",
+			"",
+			"## 当前状态",
+			"<!-- 由 todolist 自动更新 -->",
+			"",
+			"## 任务完成记录",
+			"| 类型 | 摘要 | 时间 |",
+			"|------|------|------|",
+			"",
+			"## 关键决策记录",
+			"<!-- 由主 agent 通过 update_memory 追加 -->",
+			"",
+			"## 陷阱提醒",
+			"<!-- 由主 agent 通过 update_memory 追加 -->",
+			"",
+			"## 手动笔记",
+			"<!-- 由主 agent 通过 update_memory 追加 -->",
+			"",
+		].join("\n");
+		fs.writeFileSync(memoryPath, content);
+	} catch (_e) {
+		// non-critical
+	}
+}
+
+/** 自由任务模式：向 memory.md 追加任务完成记录 */
+function appendMemoryEntry(memoryDir: string, taskId: number, summary: string): void {
+	const dir = memoryDir.startsWith("/") ? memoryDir : process.cwd() + "/" + memoryDir;
+	const memoryPath = dir + "/memory.md";
+	try {
+		ensureMemoryFile(memoryDir);
+		const timestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
+		const type = taskId === 0 ? "📝 笔记" : "✓ Task #" + taskId;
+		const row = "| " + type + " | " + summary.replace(/\|/g, "\\|") + " | " + timestamp + " |\n";
+		fs.appendFileSync(memoryPath, row);
 	} catch (_e) {
 		// non-critical
 	}
@@ -219,45 +283,69 @@ function buildPhase2LaunchCommand(topicDir: string, requirement: string): string
 
 // ── Extension ─────────────────────────────────────────
 
-export default function trackExtension(pi: ExtensionAPI) {
-	const state: TrackState = { ...DEFAULT_STATE };
+export default function todolistExtension(pi: ExtensionAPI) {
+	const state: TodoState = { ...DEFAULT_STATE };
 
-	// ── Tool: track_step ───────────────────────────────
+	// ── Tool: todolist ──────────────────────────────────
 
-	const TrackStepParams = Type.Object({
-		action: StringEnum(["complete_step", "list_steps", "start", "validate_outputs"] as const),
-		stepId: Type.Optional(Type.Number({ description: "Step ID for complete_step (1-6)" })),
+	const TodoParams = Type.Object({
+		action: StringEnum([
+			"start",              // 初始化固定步骤模式（Phase 1）
+			"complete_step",      // 完成固定步骤
+			"list_steps",         // 查看固定步骤进度
+			"validate_outputs",   // 验证产出物
+			"create_tasks",       // 创建自由任务列表（Stage 1）
+			"complete_task",      // 完成自由任务 + 写 memory.md
+			"list_tasks",         // 查看自由任务进度
+			"update_memory",      // 手动追加 memory.md 条目（改进4）
+			"rollback",           // 回退自由任务
+		] as const),
+		// start 模式参数
+		stepId: Type.Optional(Type.Number({ description: "Step ID for complete_step (1-7)" })),
 		requirementSummary: Type.Optional(Type.String({ description: "Requirement summary for start" })),
 		topicDir: Type.Optional(Type.String({ description: "Topic directory name (e.g. 2026-05-10-my-feature)" })),
+		// create_tasks 模式参数
+		tasks: Type.Optional(Type.Array(Type.String({ description: "Task descriptions for create_tasks" }))),
+		memoryDir: Type.Optional(Type.String({ description: "Directory for memory.md (used by free task mode)" })),
+		// complete_task / rollback 模式参数
+		taskId: Type.Optional(Type.Number({ description: "Task ID for complete_task / rollback" })),
+		summary: Type.Optional(Type.String({ description: "Summary for complete_task (written to memory.md)" })),
+		content: Type.Optional(Type.String({ description: "Content to append to memory.md for update_memory" })),
 	});
 
 	pi.registerTool({
-		name: "track_step",
-		label: "Track Step Tracker",
+		name: "todolist",
+		label: "Todo Step Tracker",
 		description:
-			"管理 /track 模式的固定步骤清单。6 个步骤按序执行，完成一步标记一步。" +
-			"使用 start 初始化，complete_step 标记完成，list_steps 查看进度。" +
-			"只在 /track 模式激活时可用。",
-		promptSnippet: "管理需求沟通阶段的固定步骤追踪",
+			"管理 /track 模式的固定步骤清单和自由任务列表。" +
+			"固定模式：7 个步骤按序执行，使用 start 初始化、complete_step 标记、list_steps 查看进度。" +
+			"自由任务模式：使用 create_tasks 创建任务列表、complete_task 标记完成、list_tasks 查看进度。" +
+			"complete_task 的 summary 会自动写入 memory.md。",
+		promptSnippet: "管理需求沟通阶段的任务追踪",
 		promptGuidelines: [
-			"使用 track_step 的 start 初始化步骤追踪",
-			"完成每个步骤后必须调用 track_step 的 complete_step 标记",
-			"使用 track_step 的 list_steps 查看当前进度和下一步",
+			"使用 todolist 的 start 初始化 Phase 1 固定步骤追踪",
+			"完成每个步骤后必须调用 todolist 的 complete_step 标记",
+			"使用 todolist 的 list_steps 查看当前进度和下一步",
 			"所有步骤按固定顺序执行，不可跳步",
-			"你的产出(spec.md/plan.md/e2e-test-plan.md)将交付给另一个 agent 执行开发——它没有你的会话上下文，所以文档必须自包含、详细，所有文件路径/函数名/接口/依赖关系都要写清楚",
-			"在标记 Step 2(Spec)和 Step 4(Plan)完成前，检查文档是否自包含：另一个 agent 能否单凭这份文档+代码就完成实现，不需要提问",
+			"Stage 1 编码实现时，使用 todolist 的 create_tasks 创建 plan task 列表",
+			"每完成一个 plan task，调用 todolist 的 complete_task 标记并传入 summary",
+			"complete_task 的 summary 会自动写入 memory.md，供后续阶段和 /loop 轮次恢复上下文",
+			"在 plan Task 执行过程中发现关键决策或陷阱时，使用 todolist 的 update_memory 追加到 memory.md",
 		],
-		parameters: TrackStepParams,
+		parameters: TodoParams,
 
 		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			switch (params.action) {
+				// ── Fixed Step Mode ──────────────────────
+
 				case "start": {
-					if (state.isActive) {
+					if (state.isActive && state.mode === "fixed") {
 						return {
-							content: [{ type: "text", text: "Track 已激活，无需重复初始化。当前步骤: " + state.currentStep }],
+							content: [{ type: "text", text: "Todo 已激活（固定步骤模式），无需重复初始化。当前步骤: " + state.currentStep }],
 						};
 					}
 					state.isActive = true;
+					state.mode = "fixed";
 					state.currentStep = 1;
 					state.completedSteps = [];
 					state.stallCount = 0;
@@ -277,14 +365,14 @@ export default function trackExtension(pi: ExtensionAPI) {
 					return {
 						content: [{
 							type: "text",
-							text: "Track 已启动。固定 7 步流程：\n" + stepList + "\n\n当前: Step 1 — 从需求讨论开始。",
+							text: "Todo 已启动（固定步骤模式）。固定 7 步流程：\n" + stepList + "\n\n当前: Step 1 — 从需求讨论开始。",
 						}],
 					};
 				}
 
 				case "complete_step": {
-					if (!state.isActive) {
-						return { content: [{ type: "text", text: "Track 未激活。使用 /track <需求描述> 启动。" }] };
+					if (!state.isActive || state.mode !== "fixed") {
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
 					}
 					if (params.stepId === undefined) {
 						throw new Error("complete_step requires stepId");
@@ -312,6 +400,12 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 					const nextStep = STEPS.find((s) => s.id === params.stepId + 1);
 					let msg = "✓ Step " + params.stepId + ": " + step.name + " 已完成。";
+
+					// 在高上下文消耗步骤完成后提示 compaction
+					if (params.stepId === 1 || params.stepId === 2) {
+						msg += "\n\n💡 建议现在执行 /compact 压缩对话历史。Step " + (params.stepId === 1 ? "1 的讨论内容已沉淀到需求理解中" : "2 的 Spec 已写入文件") + "，原始对话不再需要完整保留。";
+					}
+
 					if (nextStep) {
 						msg += "\n\n下一步: Step " + nextStep.id + ": " + nextStep.name + "\n" + nextStep.description;
 					} else {
@@ -322,8 +416,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				}
 
 				case "list_steps": {
-					if (!state.isActive) {
-						return { content: [{ type: "text", text: "Track 未激活。使用 /track <需求描述> 启动。" }] };
+					if (!state.isActive || state.mode !== "fixed") {
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
 					}
 					const lines: string[] = [];
 					lines.push("需求: " + (state.requirementSummary || "(未设置)"));
@@ -348,8 +442,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				}
 
 				case "validate_outputs": {
-					if (!state.isActive) {
-						return { content: [{ type: "text", text: "Track 未激活。使用 /track <需求描述> 启动。" }] };
+					if (!state.isActive || state.mode !== "fixed") {
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
 					}
 					if (params.stepId === undefined) {
 						throw new Error("validate_outputs requires stepId");
@@ -388,14 +482,160 @@ export default function trackExtension(pi: ExtensionAPI) {
 					};
 				}
 
+				// ── Free Task Mode ───────────────────────
+
+				case "create_tasks": {
+					if (!params.tasks || params.tasks.length === 0) {
+						throw new Error("create_tasks requires non-empty tasks array");
+					}
+					// 如果固定步骤模式已激活，不允许使用自由任务模式
+					if (state.isActive && state.mode === "fixed") {
+						return {
+							content: [{ type: "text", text: "当前处于固定步骤模式，不能创建自由任务。请先完成固定步骤或使用 /track abort 中止。" }],
+						};
+					}
+
+					state.isActive = true;
+					state.mode = "free";
+					state.tasks = params.tasks.map((desc, idx) => ({
+						id: idx + 1,
+						description: desc,
+						completed: false,
+					}));
+					state.memoryDir = params.memoryDir || "";
+
+					if (state.memoryDir) {
+						ensureMemoryFile(state.memoryDir);
+					}
+
+					const taskList = state.tasks.map((t) => "☐ #" + t.id + ": " + t.description).join("\n");
+					return {
+						content: [{
+							type: "text",
+							text: "已创建 " + state.tasks.length + " 个自由任务：\n" + taskList,
+						}],
+					};
+				}
+
+				case "complete_task": {
+					if (!state.isActive || state.mode !== "free") {
+						return { content: [{ type: "text", text: "自由任务模式未激活。请先使用 create_tasks 创建任务。" }] };
+					}
+					if (params.taskId === undefined) {
+						throw new Error("complete_task requires taskId");
+					}
+					const task = state.tasks.find((t) => t.id === params.taskId);
+					if (!task) {
+						throw new Error("Task #" + params.taskId + " not found. Valid: 1-" + state.tasks.length);
+					}
+					if (task.completed) {
+						return { content: [{ type: "text", text: "Task #" + task.id + ": " + task.description + " 已完成。" }] };
+					}
+
+					task.completed = true;
+					if (params.summary) {
+						task.summary = params.summary;
+						// 写入 memory.md（如果配置了 memoryDir）
+						if (state.memoryDir) {
+							appendMemoryEntry(state.memoryDir, task.id, params.summary);
+						}
+					}
+
+					const remaining = state.tasks.filter((t) => !t.completed).length;
+					const total = state.tasks.length;
+					const completedCount = total - remaining;
+					let msg = "✓ Task #" + task.id + ": " + task.description + " 已完成。";
+					if (params.summary) {
+						msg += "\n摘要: " + params.summary;
+					}
+					msg += "\n进度: " + completedCount + "/" + total;
+					msg += "\n\n提醒：如果 executor 返回了 spec_deviations，请将偏差追加到 spec.md 的\"实现偏差记录\"章节。";
+					if (remaining === 0) {
+						msg += "\n\n所有任务已完成！";
+					}
+
+					return { content: [{ type: "text", text: msg }] };
+				}
+
+				case "update_memory": {
+					if (!state.isActive || state.mode !== "free") {
+						return { content: [{ type: "text", text: "自由任务模式未激活。请先使用 create_tasks 创建任务。" }] };
+					}
+					if (!state.memoryDir) {
+						return { content: [{ type: "text", text: "memoryDir 未设置，无法写入 memory.md。" }] };
+					}
+					if (!params.content) {
+						throw new Error("update_memory requires content");
+					}
+					appendMemoryEntry(state.memoryDir, 0, params.content);
+					return { content: [{ type: "text", text: "已追加到 memory.md。" }] };
+				}
+
+				case "list_tasks": {
+					if (!state.isActive || state.mode !== "free") {
+						return { content: [{ type: "text", text: "自由任务模式未激活。请先使用 create_tasks 创建任务。" }] };
+					}
+					const pending = state.tasks.filter((t) => !t.completed);
+					const done = state.tasks.filter((t) => t.completed);
+					const lines: string[] = [];
+
+					if (pending.length > 0) {
+						lines.push("未完成 (" + pending.length + "):");
+						for (const t of pending) {
+							lines.push("  ☐ #" + t.id + ": " + t.description);
+						}
+					}
+					if (done.length > 0) {
+						lines.push("已完成 (" + done.length + "):");
+						for (const t of done) {
+							const suffix = t.summary ? " — " + t.summary : "";
+							lines.push("  ✓ #" + t.id + ": " + t.description + suffix);
+						}
+					}
+
+					return { content: [{ type: "text", text: lines.join("\n") }] };
+				}
+
+				case "rollback": {
+					if (!state.isActive || state.mode !== "free") {
+						return { content: [{ type: "text", text: "自由任务模式未激活。请先使用 create_tasks 创建任务。" }] };
+					}
+					if (params.taskId === undefined) {
+						throw new Error("rollback requires taskId");
+					}
+					const targetTask = state.tasks.find((t) => t.id === params.taskId);
+					if (!targetTask) {
+						throw new Error("Task #" + params.taskId + " not found. Valid: 1-" + state.tasks.length);
+					}
+
+					let rolledBack = 0;
+					state.tasks = state.tasks.map((t) => {
+						if (t.id >= params.taskId! && t.completed) {
+							rolledBack++;
+							return { ...t, completed: false, summary: undefined };
+						}
+						return t;
+					});
+
+					return {
+						content: [{
+							type: "text",
+							text: "已回退 " + rolledBack + " 个任务（从 Task #" + params.taskId + " 开始）。",
+						}],
+					};
+				}
+
 				default:
 					throw new Error("Unknown action: " + params.action);
 			}
 		},
 
 		renderCall(args, theme) {
-			let text = theme.fg("toolTitle", theme.bold("track_step ")) + theme.fg("muted", args.action);
+			let text = theme.fg("toolTitle", theme.bold("todolist ")) + theme.fg("muted", args.action);
 			if (args.stepId !== undefined) text += " " + theme.fg("accent", "Step " + args.stepId);
+			if (args.tasks) text += " " + theme.fg("dim", "(" + args.tasks.length + " tasks)");
+			if (args.taskId !== undefined) text += " " + theme.fg("accent", "#" + args.taskId);
+			if (args.content) text += " " + theme.fg("dim", "(" + (args.content as string).slice(0, 40) + "...)" );
 			return new Text(text, 0, 0);
 		},
 
@@ -408,13 +648,16 @@ export default function trackExtension(pi: ExtensionAPI) {
 	// ── State persistence ───────────────────────────────
 
 	function persistState(): void {
-		pi.appendEntry("track", {
+		pi.appendEntry("todolist", {
 			isActive: state.isActive,
 			currentStep: state.currentStep,
 			completedSteps: state.completedSteps,
 			stallCount: state.stallCount,
 			requirementSummary: state.requirementSummary,
 			topicDir: state.topicDir,
+			tasks: state.tasks,
+			mode: state.mode,
+			memoryDir: state.memoryDir,
 		});
 	}
 
@@ -426,9 +669,9 @@ export default function trackExtension(pi: ExtensionAPI) {
 			if (
 				entry.type === "custom" &&
 				"customType" in entry &&
-				(entry as any).customType === "track"
+				(entry as any).customType === "todolist"
 			) {
-				const data = (entry as any).data as TrackState | undefined;
+				const data = (entry as any).data as TodoState | undefined;
 				if (data) {
 					state.isActive = data.isActive ?? false;
 					state.currentStep = data.currentStep ?? 0;
@@ -436,6 +679,9 @@ export default function trackExtension(pi: ExtensionAPI) {
 					state.stallCount = data.stallCount ?? 0;
 					state.requirementSummary = data.requirementSummary ?? "";
 					state.topicDir = data.topicDir ?? "";
+					state.tasks = data.tasks ?? [];
+					state.mode = data.mode ?? "fixed";
+					state.memoryDir = data.memoryDir ?? "";
 				}
 				break;
 			}
@@ -444,8 +690,19 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 	function updateWidget(ctx: ExtensionContext): void {
 		if (!state.isActive) {
-			ctx.ui.setWidget("track", undefined);
-			ctx.ui.setStatus("track", undefined);
+			ctx.ui.setWidget("todolist", undefined);
+			ctx.ui.setStatus("todolist", undefined);
+			return;
+		}
+
+		// Widget 只在固定步骤模式下显示
+		if (state.mode !== "fixed") {
+			ctx.ui.setWidget("todolist", undefined);
+			// 自由任务模式：在 status bar 显示简要进度
+			const completed = state.tasks.filter((t) => t.completed).length;
+			const total = state.tasks.length;
+			const th = ctx.ui.theme;
+			ctx.ui.setStatus("todolist", th.fg("accent", "📋 " + completed + "/" + total + " tasks"));
 			return;
 		}
 
@@ -453,10 +710,10 @@ export default function trackExtension(pi: ExtensionAPI) {
 		const completed = state.completedSteps.length;
 		const total = STEPS.length;
 
-		ctx.ui.setStatus("track", th.fg("accent", "📋 " + completed + "/" + total + " 步骤"));
+		ctx.ui.setStatus("todolist", th.fg("accent", "📋 " + completed + "/" + total + " 步骤"));
 
 		const lines: string[] = [];
-		lines.push(th.fg("accent", "📋 Track: " + completed + "/" + total + " 步骤"));
+		lines.push(th.fg("accent", "📋 Todo: " + completed + "/" + total + " 步骤"));
 		for (const s of STEPS) {
 			const done = state.completedSteps.includes(s.id);
 			const current = s.id === state.currentStep;
@@ -467,7 +724,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 			const desc = done ? th.fg("dim", s.name) : (current ? th.fg("text", s.name) : th.fg("dim", s.name));
 			lines.push(icon + " " + th.fg("accent", "Step " + s.id) + " " + desc);
 		}
-		ctx.ui.setWidget("track", lines);
+		ctx.ui.setWidget("todolist", lines);
 	}
 
 	// ── Command: /track ─────────────────────────────────
@@ -480,7 +737,17 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 			if (trimmed === "status") {
 				if (!state.isActive) {
-					ctx.ui.notify("Track 模式未激活。使用 /track <需求描述> 启动。", "info");
+					ctx.ui.notify("Todo 模式未激活。使用 /track <需求描述> 启动。", "info");
+					return;
+				}
+				if (state.mode === "free") {
+					const completed = state.tasks.filter((t) => t.completed).length;
+					const lines: string[] = [
+						"状态: 📋 自由任务模式",
+						"进度: " + completed + "/" + state.tasks.length,
+						"memory.md: " + (state.memoryDir || "(未设置)"),
+					];
+					ctx.ui.notify(lines.join("\n"), "info");
 					return;
 				}
 				const lines: string[] = [
@@ -496,7 +763,11 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 			if (trimmed === "resume") {
 				if (!state.isActive) {
-					ctx.ui.notify("Track 未激活。请先使用 /track <需求描述> 启动。", "warning");
+					ctx.ui.notify("Todo 未激活。请先使用 /track <需求描述> 启动。", "warning");
+					return;
+				}
+				if (state.mode === "free") {
+					ctx.ui.notify("自由任务模式已激活。使用 todolist 的 list_tasks 查看进度。", "info");
 					return;
 				}
 				const resumeStep = STEPS.find((s) => s.id === state.currentStep);
@@ -506,8 +777,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				}
 				ctx.ui.notify("从 Step " + state.currentStep + ": " + resumeStep.name + " 恢复", "info");
 				pi.sendUserMessage(
-					"Track 已恢复。继续执行 Phase 1 需求沟通。\n\n" +
-					"1. 使用 track_step 的 list_steps 查看当前进度\n" +
+					"Todo 已恢复。继续执行 Phase 1 需求沟通。\n\n" +
+					"1. 使用 todolist 的 list_steps 查看当前进度\n" +
 					"2. 从当前步骤继续: Step " + state.currentStep + ": " + resumeStep.name + "\n" +
 					"3. 你的产出将交付给另一个 agent 执行，务必自包含、详细\n\n" +
 					"产出目录: .xyz-harness/" + state.topicDir + "/"
@@ -518,8 +789,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 			const redoMatch = trimmed.match(/^redo\s+(\d+)$/);
 			if (redoMatch) {
-				if (!state.isActive) {
-					ctx.ui.notify("Track 未激活。请先使用 /track <需求描述> 启动。", "warning");
+				if (!state.isActive || state.mode !== "fixed") {
+					ctx.ui.notify("固定步骤模式未激活。请先使用 /track <需求描述> 启动。", "warning");
 					return;
 				}
 				const redoStepId = parseInt(redoMatch[1]!, 10);
@@ -537,8 +808,8 @@ export default function trackExtension(pi: ExtensionAPI) {
 				updateWidget(ctx);
 				ctx.ui.notify("回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1]!.name, "info");
 				pi.sendUserMessage(
-					"Track 已回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1]!.name + "。\n\n" +
-					"请重新执行此步骤。完成后调用 track_step 的 complete_step 标记 (stepId: " + redoStepId + ")。"
+					"Todo 已回退到 Step " + redoStepId + ": " + STEPS[redoStepId - 1]!.name + "。\n\n" +
+					"请重新执行此步骤。完成后调用 todolist 的 complete_step 标记 (stepId: " + redoStepId + ")。"
 				,
 				{ deliverAs: "followUp" });
 				return;
@@ -546,15 +817,18 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 			if (trimmed === "abort") {
 				if (!state.isActive) {
-					ctx.ui.notify("Track 模式未激活", "info");
+					ctx.ui.notify("Todo 模式未激活", "info");
 					return;
 				}
 				state.isActive = false;
 				state.currentStep = 0;
 				state.completedSteps = [];
+				state.tasks = [];
+				state.mode = "fixed";
+				state.memoryDir = "";
 				persistState();
 				updateWidget(ctx);
-				ctx.ui.notify("Track 已中止", "info");
+				ctx.ui.notify("Todo 已中止", "info");
 				return;
 			}
 
@@ -575,18 +849,21 @@ export default function trackExtension(pi: ExtensionAPI) {
 				.slice(0, 50);
 
 			state.isActive = true;
+			state.mode = "fixed";
 			state.currentStep = 1;
 			state.completedSteps = [];
 			state.stallCount = 0;
 			state.requirementSummary = requirement;
 			state.topicDir = today + "-" + topicSlug;
+			state.tasks = [];
+			state.memoryDir = "";
 
 			ensureOutputDir(state.topicDir);
 			writeInitialSummary(state.topicDir, requirement);
 
 			persistState();
 			updateWidget(ctx);
-			ctx.ui.notify("Track 已启动: " + requirement, "info");
+			ctx.ui.notify("Todo 已启动: " + requirement, "info");
 
 			pi.sendUserMessage(
 				"开始需求沟通阶段。需求: " + requirement + "\n\n" +
@@ -604,19 +881,20 @@ export default function trackExtension(pi: ExtensionAPI) {
 	// ── Events ──────────────────────────────────────────
 
 	pi.on("before_agent_start", async (_event, ctx) => {
-		if (!state.isActive) return;
+		// 只在固定步骤模式下注入上下文
+		if (!state.isActive || state.mode !== "fixed") return;
 
 		const currentStep = STEPS.find((s) => s.id === state.currentStep);
 		if (!currentStep) return;
 
 		return {
 			message: {
-				customType: "track-context",
+				customType: "todolist-context",
 				content:
-					"[TRACK ACTIVE — 你必须严格遵守以下规则]\n\n" +
+					"[TODO ACTIVE — 你必须严格遵守以下规则]\n\n" +
 					"1. 当前步骤: Step " + state.currentStep + ": " + currentStep.name + "\n" +
 					"   " + currentStep.description + "\n\n" +
-					"2. 完成后必须调用 track_step 的 complete_step 标记 (stepId: " + state.currentStep + ")\n\n" +
+					"2. 完成后必须调用 todolist 的 complete_step 标记 (stepId: " + state.currentStep + ")\n\n" +
 					"3. 进度: " + state.completedSteps.length + "/" + STEPS.length + " 已完成\n" +
 					"   已完成: " + (state.completedSteps.length > 0 ? state.completedSteps.map((id) => "Step " + id).join(", ") : "无") + "\n\n" +
 					"4. 产出目录: .xyz-harness/" + state.topicDir + "/\n\n" +
@@ -625,7 +903,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					"   不是补充参考而是唯一信息源。每个文件路径必须完整（从项目根开始），" +
 					"   每个函数/接口必须写明签名和位置。在标记 Step 2/Step 4 完成前，" +
 					"   自包含检查：另一个 agent 能否单凭这份文档 + 代码库完成实现？如果不行，补充细节。\n\n" +
-					"6. 使用 track_step 的 list_steps 查看全部步骤和当前进度。",
+					"6. 使用 todolist 的 list_steps 查看全部步骤和当前进度。",
 				display: false,
 			},
 		};
@@ -643,7 +921,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 
 	// ── Message Renderers ───────────────────────────────
 
-	pi.registerMessageRenderer("track-context", (message, _options, theme) => {
-		return new Text(theme.fg("accent", "[TRACK] ") + theme.fg("dim", message.content), 0, 0);
+	pi.registerMessageRenderer("todolist-context", (message, _options, theme) => {
+		return new Text(theme.fg("accent", "[TODO] ") + theme.fg("dim", message.content), 0, 0);
 	});
 }

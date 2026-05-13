@@ -161,6 +161,25 @@ BODY=$(echo "$RESPONSE" | sed '$d')
 echo "$BODY" | jq -e '.id' > /dev/null || echo "FAIL: missing .id"
 ```
 
+## Selector 策略（L2 验证优先级）
+
+L2 DOM/A11y 验证中，选择 DOM 元素的方式直接影响测试稳定性。按优先级从高到低：
+
+| 优先级 | 方式 | 示例 | 稳定性 |
+|--------|------|------|--------|
+| 1 (首选) | A11y Tree role + name | `role=button, name=保存` | 高 — 语义不变即稳定 |
+| 2 | `[data-testid]` | `[data-testid="save-btn"]` | 高 — 明确的测试锚点 |
+| 3 | 元素文本内容 | 包含"保存"的 button | 中 — 文案可能变更 |
+| 4 (最后) | CSS class selector | `.btn-primary` | 低 — 样式重构就失效 |
+
+**铁律：禁止使用 Tailwind 工具类作为 selector**（如 `.flex.items-center.gap-2\.5`）。
+Tailwind 类名是样式实现细节，不是语义标识。任何样式调整都会导致测试全挂。
+
+**实际操作**：
+- 优先用 Accessibility Tree 查询（本 agent 的 Layer 2 已默认使用）
+- 只有在 A11y Tree 无法精确匹配时（如多个同名 role 元素），才降级用 `[data-testid]`
+- 如果目标页面没有 `data-testid`，在报告中建议开发团队补充
+
 ### Layer 2: DOM/A11y 验证
 
 ```bash

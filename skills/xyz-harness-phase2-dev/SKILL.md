@@ -1,5 +1,5 @@
 ---
-description: "Phase 2 开发交付 — 基于 spec+plan 的 6 阶段 TDD+编码+审查+测试+推送+复盘流程。触发条件：用户说「Phase 2」「开发交付」「6 阶段流程」「开始开发」「继续开发需求」「基于 spec 和 plan」或 /loop 中包含这些关键词。此 skill 是旧 dev-flow 的精简版，仅描述 Phase 2 流程，不包含 Phase 1 的需求沟通。"
+description: "Phase 2 开发交付 — 基于 spec+plan 的 7 阶段 TDD+编码+审查+单元测试+E2E测试+推送+复盘流程。触发条件：用户说「Phase 2」「开发交付」「7 阶段流程」「开始开发」「继续开发需求」「基于 spec 和 plan」或 /loop 中包含这些关键词。此 skill 是旧 dev-flow 的精简版，仅描述 Phase 2 流程，不包含 Phase 1 的需求沟通。"
 ---
 
 # Phase 2: 开发交付流程
@@ -16,18 +16,19 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 6 阶段 TDD+编码+
 3. **门禁脚本强制执行** — 每个阶段完成后运行 `harness-state.sh advance → gate-script.sh → harness-state.sh pass`
 4. **Phase 2 产出写回 Phase 1 目录** — 复盘和指标写入 Phase 1 的 `.xyz-harness/{topicDir}/` 下
 
-## 6 阶段流程
+## 7 阶段流程
 
 ### 阶段 1: 编码实现
 
-1. 调用 `loop_task_tracker create_tasks` 创建以下 6 个 task：
+1. 调用 `loop_task_tracker create_tasks` 创建以下 7 个 task：
    ```
    1. 编码实现 (TDD + 按 plan Task 逐个完成)
    2. 编码评审 (reviewer ≤2轮)
-   3. 测试编写 (Change-driven Testing)
-   4. 测试评审 (reviewer ≤2轮)
-   5. 推送 + CI + 部署
-   6. 自动复盘 (写回 Phase 1 目录)
+   3. 单元测试编写 (Change-driven Testing)
+   4. E2E 测试执行 (按 e2e-test-plan.md 端到端验证)
+   5. 测试评审 (单元测试 + E2E 测试结果，reviewer ≤2轮)
+   6. 推送 + CI + 部署
+   7. 自动复盘 (写回 Phase 1 目录)
    ```
 2. 按 plan.md 的 Task 逐个实现：
    - 每个 Task 执行 TDD：先写测试 → 测试失败确认 → 实现 → 测试通过 → git commit
@@ -47,7 +48,7 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 6 阶段 TDD+编码+
 4. 最多 2 轮评审，MUST FIX 必须修复
 5. 完成后 `loop_task_tracker complete_task 2`
 
-### 阶段 3: 测试编写
+### 阶段 3: 单元测试编写
 
 1. 分析代码变更，对每个变更接口编写接口级测试（Change-driven Testing）
 2. 运行门禁：
@@ -58,33 +59,51 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 6 阶段 TDD+编码+
    ```
 3. 完成后 `loop_task_tracker complete_task 3`
 
-### 阶段 4: 测试评审
+### 阶段 4: E2E 测试执行
 
-1. 派遣 reviewer subagent 评审测试覆盖度和质量
+1. 读取 e2e-test-plan.md，按依赖关系图的拓扑顺序执行测试组
+2. 按测试环境配置章节启动前后端服务，初始化测试数据
+3. 逐组、逐用例执行：
+   - 前置条件检查（依赖的 TC 是否已通过）
+   - 按测试步骤执行操作（curl/CDP/SQL 等）
+   - 按验证方法检查结果
+   - 记录通过/失败/跳过状态
+4. 失败处理：
+   - 阻塞级失败 → 记录并继续执行无依赖的用例
+   - 依赖链传播 → 跳过所有依赖失败用例的后置用例
+5. 生成 e2e-test-report.md 写入 evidence/ 目录
+6. 回退判定：
+   - 存在阻塞级失败 → 回退到 Stage 1 编码修复
+   - 全部通过或仅有一般级失败 → 通过
+7. 完成后 `loop_task_tracker complete_task 4`
+
+### 阶段 5: 测试评审
+
+1. 派遣 reviewer subagent 评审单元测试覆盖度、质量以及 E2E 测试结果
 2. 评审报告写入 `.xyz-harness/{topicDir}/changes/reviews/test_review_v1.md`
 3. 最多 2 轮评审
-4. 完成后 `loop_task_tracker complete_task 4`
+4. 完成后 `loop_task_tracker complete_task 5`
 
-### 阶段 5: 推送 + CI + 部署
+### 阶段 6: 推送 + CI + 部署
 
 1. `git push` 推送代码
 2. 等待 CI 通过，验证结果写入 `changes/evidence/verification_output.md`
 3. 部署验证，结果写入 `changes/evidence/deploy_result.md`
 4. 运行门禁：
    ```bash
-   bash scripts/harness-state.sh advance 5 $PROJECT_ROOT
-   bash scripts/harness-state.sh pass 5 $PROJECT_ROOT
+   bash scripts/harness-state.sh advance 6 $PROJECT_ROOT
+   bash scripts/harness-state.sh pass 6 $PROJECT_ROOT
    ```
-5. 完成后 `loop_task_tracker complete_task 5`
+5. 完成后 `loop_task_tracker complete_task 6`
 
-### 阶段 6: 自动复盘
+### 阶段 7: 自动复盘
 
 1. 派遣 reviewer subagent 分析整个流程，产出 `retrospective.md`
 2. **写回 Phase 1 目录**（路径由 Phase 1 提供）：
    - 复制 `retrospective.md` 到 `.xyz-harness/{topicDir}/changes/retrospective.md`
    - 计算指标（token 消耗、耗时、各阶段耗时），写入 `.xyz-harness/{topicDir}/metrics.json`
    - 更新 `.xyz-harness/{topicDir}/changes/summary.md`，标记 Phase 2 交付物完成
-3. 完成后 `loop_task_tracker complete_task 6`
+3. 完成后 `loop_task_tracker complete_task 7`
 
 ## 门禁脚本
 
@@ -114,4 +133,5 @@ PROJECT_ROOT=<项目根目录>          # 从 launch 命令获取
 TOPIC_DIR=.xyz-harness/{topicDir}  # Phase 1 提供的主题目录
 SPEC_PATH=$TOPIC_DIR/spec.md        # spec 文件路径
 PLAN_PATH=$TOPIC_DIR/plan.md        # plan 文件路径
+E2E_TEST_PLAN=$TOPIC_DIR/e2e-test-plan.md  # E2E 测试计划文件路径
 ```

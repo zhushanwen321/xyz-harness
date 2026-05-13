@@ -1,10 +1,10 @@
 /**
  * track — 需求沟通阶段任务追踪器
  *
- * 固定 6 步模板，强制 AI 按序执行需求沟通流程。
+ * 固定 7 步模板，强制 AI 按序执行需求沟通流程。
  * 与 loop 不同：不强制循环，每步由用户驱动推进。
  *
- * 产出物：spec.md + plan.md + summary.md（交付给 Phase 2 的 agent）
+ * 产出物：spec.md + plan.md + e2e-test-plan.md + summary.md（交付给 Phase 2 的 agent）
  */
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -60,21 +60,35 @@ const STEPS: TrackStep[] = [
 	},
 	{
 		id: 5,
+		name: "E2E 测试计划",
+		description:
+			"基于 spec.md + plan.md 编写 e2e-test-plan.md（端到端测试计划）。" +
+			"先由主 agent 生成整体方案框架（测试环境、分组策略、依赖关系图），" +
+			"再通过 subagent 分组生成具体测试用例。" +
+			"每个用例包含：测试目标、启动方式、操作步骤、期望结果、衡量方式（DOM/截图/数据库/日志）。" +
+			"用例之间标注依赖关系，失败的用例会导致后置依赖用例跳过。" +
+			"详见 skill: xyz-harness-e2e-test-plan。",
+		requiredOutputs: ["e2e-test-plan.md"],
+		requiresConfirmation: false,
+	},
+	{
+		id: 6,
 		name: "计划评审",
 		description:
-			"派遣 reviewer subagent 对 spec + plan 进行独立评审。评审报告写入 changes/reviews/plan_review_v1.md。" +
+			"派遣 reviewer subagent 对 spec + plan + e2e-test-plan 进行独立评审。" +
+			"评审报告写入 changes/reviews/plan_review_v1.md。" +
 			"如有 MUST FIX，修复后重新评审（最多 3 轮）。",
 		requiredOutputs: ["changes/reviews/plan_review_v1.md"],
 		requiresConfirmation: false,
 	},
 	{
-		id: 6,
+		id: 7,
 		name: "用户确认",
 		description:
-			"向用户展示最终 spec 和 plan，等待确认。确认前必须先调用 validate_outputs 检查产出物完整性。" +
-			"**自包含检查**：另一个 agent 单凭 spec.md + plan.md + 代码库，不需要任何会话上下文就能完成实现。" +
+			"向用户展示最终 spec、plan 和 e2e-test-plan，等待确认。确认前必须先调用 validate_outputs 检查产出物完整性。" +
+			"**自包含检查**：另一个 agent 单凭 spec.md + plan.md + e2e-test-plan.md + 代码库，不需要任何会话上下文就能完成实现和 E2E 测试。" +
 			"如果某个文件/函数/接口在 spec 中被引用但路径不完整，必须补充完整。" +
-			"确认后输出完整的 Phase 2 启动指令，包含 spec.md 和 plan.md 路径，以及 6 阶段流程描述",
+			"确认后输出完整的 Phase 2 启动指令（7 阶段流程）",
 		requiredOutputs: ["changes/summary.md"],
 		requiresConfirmation: true,
 	},
@@ -127,6 +141,7 @@ function writeInitialSummary(topicDir: string, requirementSummary: string): void
 			"## 产出物",
 			"- [ ] spec.md",
 			"- [ ] plan.md",
+			"- [ ] e2e-test-plan.md",
 			"- [ ] changes/reviews/plan_review_v1.md",
 			"",
 			"## 交付物",
@@ -134,7 +149,7 @@ function writeInitialSummary(topicDir: string, requirementSummary: string): void
 			"- [ ] 代码实现",
 			"- [ ] 单元测试",
 			"- [ ] 代码评审",
-			"- [ ] 接口测试",
+			"- [ ] E2E 测试执行报告",
 			"- [ ] 测试评审",
 			"- [ ] 部署",
 		];
@@ -144,7 +159,7 @@ function writeInitialSummary(topicDir: string, requirementSummary: string): void
 	}
 }
 
-/** Build the Phase 2 launch command shown when all 6 steps complete */
+/** Build the Phase 2 launch prompt shown when all 6 steps complete */
 function buildPhase2LaunchCommand(topicDir: string, requirement: string): string {
 	const td = ".xyz-harness/" + topicDir;
 	return [
@@ -157,24 +172,48 @@ function buildPhase2LaunchCommand(topicDir: string, requirement: string): string
 		"- plan.md: " + td + "/plan.md",
 		"- 需求: " + requirement,
 		"",
-		"启动 Phase 2（开发交付）：",
-		"1. /new 创建新 session",
-		"2. 在新 session 中执行：/loop --max 20 基于以下文档继续开发需求",
+		"请在新的 agent session 中执行以下提示词启动 Phase 2（开发交付）：",
 		"",
-		"需求: " + requirement,
-		"Spec: " + td + "/spec.md",
-		"Plan: " + td + "/plan.md",
-		"Phase 1 产出目录: " + td + "/",
-		"Phase 2 写回目录: " + td + "/changes/",
+		"```",
+		"/loop --max 20 " + requirement,
 		"",
-		"按以下 6 阶段流程执行(详见 skills/xyz-harness-phase2-dev/SKILL.md)：",
+		"你正在执行 Phase 2（开发交付）。Phase 1（需求沟通）已完成。",
+		"你不会继承 Phase 1 的会话上下文，所有信息在以下文档中：",
+		"",
+		"## 必读文件（按顺序阅读）",
+		"1. 项目 CLAUDE.md（项目级编码规范和架构约束）",
+		"2. " + td + "/spec.md（需求设计文档）",
+		"3. " + td + "/plan.md（实现计划）",
+		"",
+		"## 加载 Skill",
+		"- xyz-harness-phase2-dev（Phase 2 七阶段流程的完整指令）",
+		"- xyz-harness-e2e-test-plan（E2E 测试计划编写规范，参考测试用例结构）",
+		"- xyz-harness-subagent-driven-development（task 调度模式参考）",
+		"- xyz-harness-coding-skill（分层编码规范，按需加载）",
+		"- xyz-harness-unit-test-write（Change-driven Testing，阶段 3 使用）",
+		"- xyz-harness-verification-before-completion（验证，阶段 6 使用）",
+		"- xyz-harness-deploy-verify（部署验证，阶段 6 使用）",
+		"",
+		"## 7 阶段流程（使用 loop_task_tracker 管理进度）",
 		"Stage 1: 编码实现 (TDD + 按 plan Task 逐个完成)",
 		"Stage 2: 编码评审 (reviewer ≤2轮)",
-		"Stage 3: 测试编写 (Change-driven Testing)",
-		"Stage 4: 测试评审 (reviewer ≤2轮)",
-		"Stage 5: 推送 + CI + 部署",
-		"Stage 6: 自动复盘 (写回 Phase 1 目录)",
-		"注意：每个阶段运行 harness-state.sh advance → gate-script.sh → harness-state.sh pass",
+		"Stage 3: 单元测试编写 (Change-driven Testing)",
+		"Stage 4: E2E 测试执行 (按 e2e-test-plan.md 执行端到端测试)",
+		"Stage 5: 测试评审 (reviewer ≤2轮，评审单元测试 + E2E 测试结果)",
+		"Stage 6: 推送 + CI + 部署",
+		"Stage 7: 自动复盘 (写回 Phase 1 目录)",
+		"",
+		"## 关键路径",
+		"- Phase 1 产出目录: " + td + "/",
+		"- Phase 2 写回目录: " + td + "/changes/",
+		"- 门禁脚本: skills/xyz-harness-dev-flow/scripts/",
+		"- 每个阶段运行: harness-state.sh advance → gate-script.sh → harness-state.sh pass",
+		"",
+		"## 启动步骤",
+		"1. loop_task_tracker create_tasks 创建 7 个阶段任务",
+		"2. 阅读 spec.md、plan.md 和 e2e-test-plan.md",
+		"3. 从 Stage 1 编码实现开始，按 plan.md 的 Task 逐个 TDD 实现",
+		"```",
 	].join("\n");
 }
 
@@ -205,7 +244,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 			"完成每个步骤后必须调用 track_step 的 complete_step 标记",
 			"使用 track_step 的 list_steps 查看当前进度和下一步",
 			"所有步骤按固定顺序执行，不可跳步",
-			"你的产出(spec.md/plan.md)将交付给另一个 agent 执行开发——它没有你的会话上下文，所以文档必须自包含、详细，所有文件路径/函数名/接口/依赖关系都要写清楚",
+			"你的产出(spec.md/plan.md/e2e-test-plan.md)将交付给另一个 agent 执行开发——它没有你的会话上下文，所以文档必须自包含、详细，所有文件路径/函数名/接口/依赖关系都要写清楚",
 			"在标记 Step 2(Spec)和 Step 4(Plan)完成前，检查文档是否自包含：另一个 agent 能否单凭这份文档+代码就完成实现，不需要提问",
 		],
 		parameters: TrackStepParams,
@@ -238,7 +277,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					return {
 						content: [{
 							type: "text",
-							text: "Track 已启动。固定 6 步流程：\n" + stepList + "\n\n当前: Step 1 — 从需求讨论开始。",
+							text: "Track 已启动。固定 7 步流程：\n" + stepList + "\n\n当前: Step 1 — 从需求讨论开始。",
 						}],
 					};
 				}
@@ -252,7 +291,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					}
 					const step = STEPS.find((s) => s.id === params.stepId);
 					if (!step) {
-						throw new Error("Step " + params.stepId + " not found. Valid: 1-6");
+						throw new Error("Step " + params.stepId + " not found. Valid: 1-7");
 					}
 					if (state.completedSteps.includes(params.stepId)) {
 						return { content: [{ type: "text", text: "Step " + params.stepId + ": " + step.name + " 已完成。" }] };
@@ -317,7 +356,7 @@ export default function trackExtension(pi: ExtensionAPI) {
 					}
 					const vStep = STEPS.find((s) => s.id === params.stepId);
 					if (!vStep) {
-						throw new Error("Step " + params.stepId + " not found. Valid: 1-6");
+						throw new Error("Step " + params.stepId + " not found. Valid: 1-7");
 					}
 
 					const missing: string[] = [];

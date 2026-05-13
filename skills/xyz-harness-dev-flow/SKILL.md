@@ -79,6 +79,7 @@ description: >
 |------|-----------|---------|------|
 | 执行 subagent | harness-executor | read, edit, write, bash | 简单任务 glm-5-turbo,复杂 glm-5.1 |
 | TDD coder subagent | harness-tdd-coder | read, edit, write, bash | glm-5.1 |
+| E2E 测试 subagent | harness-e2e-tester | read, edit, write, bash | glm-5.1 |
 | 评审 subagent | harness-reviewer | read, bash | glm-5.1 |
 | 门禁 subagent | harness-gate-checker | read, bash | glm-5.1 |
 

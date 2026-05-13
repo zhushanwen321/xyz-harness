@@ -353,6 +353,7 @@ AI 展示所有阶段的 summary，你确认最终交付：
 | Agent 名 | 角色 | 使用阶段 | 说明 |
 |---------|------|---------|------|
 | **harness-tdd-coder** | TDD 测试编写 | ③ task 级 | 只写测试不写实现，确保测试先行 |
+| **harness-e2e-tester** | E2E 测试执行 | Phase 2 Stage 4 | 按 e2e-test-plan 四层验证，独立 Chrome 实例 |
 | harness-executor | 通用执行 | ③ ⑤ ⑦ ⑧ ⑨ | 编码、测试编写、推送、部署 |
 | harness-reviewer | 独立评审 | ② ④ ⑥ ⑪ | 计划评审 / 编码评审 / 测试评审 |
 | harness-gate-checker | 门禁检查 | 每阶段完成后 | 独立验证交付物和门禁条件 |
@@ -516,6 +517,7 @@ xyz-harness-engineering/
 │   └── xyz-harness-test-driven-development/
 ├── agents/                               # Agent 定义
 │   ├── harness-tdd-coder/agent.md         # TDD 测试编写 agent
+│   ├── harness-e2e-tester/agent.md        # E2E 测试执行 agent（四层验证）
 │   ├── harness-executor/agent.md          # 通用执行 agent
 │   ├── harness-reviewer/agent.md          # 独立评审 agent
 │   └── harness-gate-checker/agent.md      # 门禁检查 agent

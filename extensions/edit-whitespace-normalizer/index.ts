@@ -166,15 +166,15 @@ function getLanguageDefault(ext: string, name: string): IndentStyle {
 function resolveFileInfo(
   filePath: string,
   cwd: string,
-): { absolutePath: string; projectRoot: string; ext: string; name: string; relativePath: string } {
+): { absolutePath: string; projectRoot: string; ext: string; name: string; relativePath: string; isGitProject: boolean } {
   const absolutePath = path.resolve(cwd, filePath);
   const ext = path.extname(absolutePath).toLowerCase();
   const name = path.basename(absolutePath);
 
-  let projectRoot = cwd;
+  let projectRoot: string | null = null;
   let dir = path.dirname(absolutePath);
   for (let i = 0; i < 10; i++) {
-  if (fs.existsSync(path.join(dir, ".git")) || fs.existsSync(path.join(dir, ".bare"))) {
+  if (fs.existsSync(path.join(dir, ".git"))) {
     projectRoot = dir;
     break;
   }
@@ -183,9 +183,12 @@ function resolveFileInfo(
   dir = parent;
   }
 
-  const relativePath = path.relative(projectRoot, absolutePath);
+  // 未找到 .git → 可能在 bare repo workspace 容器根目录下操作
+  // 不将 cwd 作为 projectRoot，避免在错误位置创建 .editorconfig
+  const resolvedRoot = projectRoot ?? cwd;
+  const relativePath = path.relative(resolvedRoot, absolutePath);
 
-  return { absolutePath, projectRoot, ext, name, relativePath };
+  return { absolutePath, projectRoot: resolvedRoot, ext, name, relativePath, isGitProject: projectRoot !== null };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -654,8 +657,8 @@ export default function editWhitespaceNormalizer(pi: ExtensionAPI) {
       // Resolve .editorconfig
       const editorConfigParsed = getOrParseEditorConfig(fileInfo.projectRoot);
 
-      // Prompt for .editorconfig creation if missing
-      if (editorConfigParsed === null && !promptedProjects.has(fileInfo.projectRoot)) {
+    // Prompt for .editorconfig creation if missing (only for real git projects)
+    if (fileInfo.isGitProject && editorConfigParsed === null && !promptedProjects.has(fileInfo.projectRoot)) {
         promptedProjects.add(fileInfo.projectRoot);
         await promptCreateEditorConfig(ctx, fileInfo.projectRoot);
         // Re-read cache after potential creation

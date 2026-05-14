@@ -223,9 +223,95 @@ gate_stage_01() {
         task_count=$(grep -cE '^###\s+Task' "$plan_path" || true)
         if [[ $task_count -lt 1 ]]; then
             err "plan.md: no Task headings found (expected at least 1 '### Task')"
-            ((errors++))
+            errors=$((errors + 1))
         else
             ok "plan.md: found ${task_count} Task heading(s)"
+        fi
+    fi
+
+    # ── 六要素章节检查 (spec.md) ──────────────────────────────────
+    if [[ -f "$spec_path" ]]; then
+        local spec_errors=0
+
+        # 检查必填章节是否存在
+        # 1. Outcomes / 目标 / 目的
+        if ! grep -qiE '(^##.*目标|^##.*outcomes|^##.*目的|^##.*目标与范围)' "$spec_path"; then
+            err "spec.md: missing 'Outcomes/目标' section — agent needs concrete end-state description"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has Outcomes/目标 section"
+        fi
+
+        # 2. Scope / 范围
+        if ! grep -qiE '(^##.*范围|^##.*scope)' "$spec_path"; then
+            err "spec.md: missing 'Scope/范围' section — agent needs explicit scope boundaries"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has Scope/范围 section"
+        fi
+        # 2b. Out-of-scope
+        if ! grep -qiE '(out.?of.?scope|不在范围内|排除|不包含)' "$spec_path"; then
+            err "spec.md: missing out-of-scope content — agent expands scope without explicit exclusions"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has out-of-scope content"
+        fi
+
+        # 3. Constraints / 约束 / 限制
+        if ! grep -qiE '(^##.*约束|^##.*constraint|^##.*限制|^##.*非功能性)' "$spec_path"; then
+            err "spec.md: missing 'Constraints/约束' section — agent needs tech stack and performance constraints"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has Constraints section"
+        fi
+
+        # 4. Decisions made / 已做决策
+        if ! grep -qiE '(^##.*已做决策|^##.*decisions|^##.*技术决策|^##.*已确定)' "$spec_path"; then
+            err "spec.md: missing 'Decisions made/已做决策' section — agent will make its own choices"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has Decisions made section"
+        fi
+
+        # 5. Behavioral constraints / 行为约束 (Always/Never)
+        if ! grep -qiE '(^##.*行为约束|^##.*behavioral|^##.*行为规范|always.*never|^###.*always)' "$spec_path"; then
+            err "spec.md: missing '行为约束' section — agent needs Always/Ask First/Never boundaries"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has 行为约束 section"
+        fi
+
+        # 6. 已有基础设施
+        if ! grep -qiE '(^##.*已有基础设施|^##.*infrastructure|^##.*可复用)' "$spec_path"; then
+            err "spec.md: missing '已有基础设施' section — agent needs to know what to reuse"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has 已有基础设施 section"
+        fi
+
+        # 7. 验收标准 / Acceptance / Verification
+        if ! grep -qiE '(^##.*验收标准|^##.*acceptance|^##.*verification|^##.*验证|^##.*成功标准|^##.*success)' "$spec_path"; then
+            err "spec.md: missing '验收标准/Verification' section — agent cannot determine when work is done"
+            spec_errors=$((spec_errors + 1))
+        else
+            ok "spec.md: has 验收标准/Verification"
+        fi
+
+        if [[ $spec_errors -gt 0 ]]; then
+            err "spec.md: ${spec_errors} required section(s) missing (see six-element completeness check)"
+            errors=$((errors + spec_errors))
+        else
+            ok "spec.md: all six-element sections present"
+        fi
+
+        # 检查 [AMBIGUOUS] 残留
+        local ambiguous_count
+        ambiguous_count=$(grep -cE '\[AMBIGUOUS\]' "$spec_path" || true)
+        if [[ $ambiguous_count -gt 0 ]]; then
+            err "spec.md: ${ambiguous_count} unresolved [AMBIGUOUS] marker(s) — all ambiguities must be resolved before proceeding"
+            errors=$((errors + 1))
+        else
+            ok "spec.md: no unresolved [AMBIGUOUS] markers"
         fi
     fi
 
@@ -268,7 +354,7 @@ gate_stage_03() {
         if [[ $rc -ne 0 ]]; then
             err "${ctype}: failed (exit ${rc})"
             echo "$output" | head -30 | while IFS= read -r line; do err "  $line"; done
-            ((errors++))
+            errors=$((errors + 1))
         else
             ok "${ctype}: passed"
         fi
@@ -288,7 +374,7 @@ gate_stage_03() {
         total=$(echo "$parsed" | grep -oP '(?<=total=)\d+' || echo "0")
         if [[ "${total:-0}" -eq 0 ]]; then
             err "test command ran but 0 tests detected — tests may not be actually running"
-            ((errors++))
+            errors=$((errors + 1))
         else
             ok "test count: ${total} > 0"
         fi
@@ -334,7 +420,7 @@ gate_stage_05() {
 
     if [[ -z "$test_files" ]]; then
         err "no test/spec files found in recent changes"
-        ((errors++))
+        errors=$((errors + 1))
     else
         local test_count
         test_count=$(echo "$test_files" | wc -l | tr -d ' ')
@@ -363,7 +449,7 @@ gate_stage_05() {
         if [[ $rc -ne 0 ]]; then
             err "tests failed (exit ${rc})"
             echo "$test_output" | head -30 | while IFS= read -r line; do err "  $line"; done
-            ((errors++))
+            errors=$((errors + 1))
         else
             ok "tests passed"
 
@@ -407,7 +493,7 @@ gate_stage_07() {
         dirty_count=$(echo "$dirty_files" | wc -l | tr -d ' ')
         err "working directory not clean: ${dirty_count} uncommitted change(s)"
         echo "$dirty_files" | while IFS= read -r line; do err "  $line"; done
-        ((errors++))
+        errors=$((errors + 1))
     else
         ok "working directory clean"
     fi
@@ -421,7 +507,7 @@ gate_stage_07() {
 
     if [[ -z "$remote_commit" ]]; then
         err "no commit found on origin/${BRANCH_NAME} — push may not have completed"
-        ((errors++))
+        errors=$((errors + 1))
     else
         ok "remote branch origin/${BRANCH_NAME} has commit: ${remote_commit}"
 
@@ -473,7 +559,7 @@ gate_stage_08() {
         if [[ $rc -ne 0 ]]; then
             err "${ctype}: failed (exit ${rc})"
             echo "$output" | head -30 | while IFS= read -r line; do err "  $line"; done
-            ((errors++))
+            errors=$((errors + 1))
         else
             ok "${ctype}: passed"
         fi
@@ -496,10 +582,10 @@ gate_stage_08() {
 
             if [[ "${total:-0}" -eq 0 ]]; then
                 err "0 tests detected — tests did not actually run"
-                ((errors++))
+                errors=$((errors + 1))
             elif [[ "${failed:-0}" -gt 0 ]]; then
                 err "${failed} test(s) failed (total=${total}, passed=${passed})"
-                ((errors++))
+                errors=$((errors + 1))
             else
                 ok "all tests passed (${total} total, ${passed} passed, ${failed} failed)"
             fi
@@ -507,11 +593,11 @@ gate_stage_08() {
             err "could not parse test output — cannot verify test results"
             err "first 10 lines of test output:"
             echo "$test_output" | head -10 | while IFS= read -r line; do err "  $line"; done
-            ((errors++))
+            errors=$((errors + 1))
         fi
     else
         err "no test command was executed"
-        ((errors++))
+        errors=$((errors + 1))
     fi
 
     if [[ $errors -gt 0 ]]; then
@@ -573,7 +659,7 @@ gate_stage_09() {
 
         if [[ $health_ok -eq 0 ]]; then
             err "health check failed after ${max_retries} attempts"
-            ((errors++))
+            errors=$((errors + 1))
         fi
     else
         # 没有健康检查 URL → 检查 deploy_result.md
@@ -615,10 +701,10 @@ gate_stage_09() {
         if [[ -z "$deploy_result" ]]; then
             err "deploy_result.md not found and no health check URL configured"
             err "either configure a health check URL in CLAUDE.md or set HEALTH_CHECK_URL env var"
-            ((errors++))
+            errors=$((errors + 1))
         elif [[ ! -s "$deploy_result" ]]; then
             err "deploy_result.md is empty: ${deploy_result}"
-            ((errors++))
+            errors=$((errors + 1))
         else
             # 检查包含"成功"关键词
             if grep -qiE '(成功|success|succeeded|deployed|healthy)' "$deploy_result"; then
@@ -626,7 +712,7 @@ gate_stage_09() {
             else
                 err "deploy_result.md does not contain success keyword: ${deploy_result}"
                 err "expected keywords: 成功, success, succeeded, deployed, healthy"
-                ((errors++))
+                errors=$((errors + 1))
             fi
         fi
     fi

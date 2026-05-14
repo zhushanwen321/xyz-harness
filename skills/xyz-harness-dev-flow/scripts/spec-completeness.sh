@@ -141,6 +141,77 @@ while IFS= read -r line || [ -n "$line" ]; do
 
 done < "$DOC_PATH"
 
+# ── 检查 5: 六要素章节完整性 ──────────────────────────────────
+# 仅对 .spec.md 文件执行此检查（不对 plan.md 执行）
+case "$DOC_PATH" in
+	*spec.md*)
+		SECTION_ISSUES=0
+
+		# 1. Outcomes / 目标
+		if ! grep -qiE '(^##.*目标|^##.*outcomes|^##.*目的|^##.*目标与范围)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 'Outcomes/目标' 章节 — agent 需要具体的终态描述"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 2. Scope / 范围（必须包含 out-of-scope）
+		if ! grep -qiE '(^##.*范围|^##.*scope)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 'Scope/范围' 章节 — agent 需要明确的范围边界"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+		if ! grep -qiE '(out.?of.?scope|不在范围内|排除|不包含)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 out-of-scope 内容 — 未明确排除的范围，agent 可能自动扩大范围"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 3. Constraints / 约束
+		if ! grep -qiE '(^##.*约束|^##.*constraint|^##.*限制|^##.*非功能性)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 'Constraints/约束' 章节 — agent 需要技术栈和性能约束"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 4. Decisions made / 已做决策
+		if ! grep -qiE '(^##.*已做决策|^##.*decisions|^##.*技术决策|^##.*已确定)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 '已做决策' 章节 — agent 不知道决策已做出时会自行选择"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 5. 行为约束 (Always/Never)
+		if ! grep -qiE '(^##.*行为约束|^##.*behavioral|^##.*行为规范|always.*never|^###.*always)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 '行为约束' 章节 — agent 需要 Always/Ask First/Never 边界"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 6. 已有基础设施
+		if ! grep -qiE '(^##.*已有基础设施|^##.*infrastructure|^##.*可复用)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 '已有基础设施' 章节 — agent 需要知道哪些可以复用"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		# 7. 验收标准
+		if ! grep -qiE '(^##.*验收标准|^##.*acceptance|^##.*verification|^##.*验证|^##.*成功标准|^##.*success)' "$DOC_PATH"; then
+			echo "[SECTION] 缺少 '验收标准/Verification' 章节 — agent 无法判断何时完成"
+			SECTION_ISSUES=$((SECTION_ISSUES + 1))
+		fi
+
+		if [ "$SECTION_ISSUES" -gt 0 ]; then
+			echo ""
+			echo "[六要素检查] 缺少 $SECTION_ISSUES 个必填章节"
+			ISSUES=$((ISSUES + SECTION_ISSUES))
+		fi
+
+		# ── 检查 6: [AMBIGUOUS] 残留 ─────────────────────────────
+		AMBIGUOUS_COUNT=$(grep -cE '\[AMBIGUOUS\]' "$DOC_PATH" || true)
+		if [ "$AMBIGUOUS_COUNT" -gt 0 ]; then
+			echo ""
+			echo "[AMBIGUOUS] 发现 $AMBIGUOUS_COUNT 个未解决的歧义标记 — 所有歧义必须在进入 plan 前解决"
+			grep -nE '\[AMBIGUOUS\]' "$DOC_PATH" | while IFS= read -r amb_line; do
+				echo "  $amb_line"
+			done
+			ISSUES=$((ISSUES + AMBIGUOUS_COUNT))
+		fi
+		;;
+esac
+
 if [ "$ISSUES" -eq 0 ]; then
 	echo "✓ 自包含检查通过: 未发现问题"
 	exit 0

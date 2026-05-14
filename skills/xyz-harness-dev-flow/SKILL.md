@@ -78,6 +78,7 @@ description: >
 | 角色 | 复用 Agent | 工具权限 | 模型 |
 |------|-----------|---------|------|
 | 执行 subagent | harness-executor | read, edit, write, bash | 简单任务 glm-5-turbo,复杂 glm-5.1 |
+| 代码库扫描 subagent | harness-executor (read-only) | read, bash | glm-5-turbo |
 | TDD coder subagent | harness-tdd-coder | read, edit, write, bash | glm-5.1 |
 | E2E 测试 subagent | harness-e2e-tester | read, edit, write, bash | glm-5.1 |
 | 评审 subagent | harness-reviewer | read, bash | glm-5.1 |
@@ -434,16 +435,24 @@ cp commands/dev.md .claude/commands/dev.md
 
 **执行流程：**
 1. 读取项目 CLAUDE.md，理解项目背景和技术栈
-2. 浏览项目文件结构
-3. 执行 brainstorming skill：
+2. **派遣代码库扫描 subagent**（harness-executor read-only, glm-5-turbo），产出 `infrastructure-scan.md`
+3. 读取扫描结果，作为后续提问和 spec 编写的基础
+4. 执行 brainstorming skill：
    - 逐一向用户提问（每次一个问题，优先多选）
    - 提出 2-3 个方案及 trade-off
    - 逐节呈现设计，每节确认
    - 产出 spec.md
    - **spec.md 必须包含已有基础设施章节**（格式见下方）
+   - **spec.md 必须包含已做决策章节**（格式见下方）
+   - **spec.md 必须包含行为约束章节**（格式见下方）
    - 当存在设计稿/原型时，spec.md 必须在开头引用设计稿链接
    - **当需求涉及数据存储/传递时，spec.md 必须包含数据流章节**（格式见下方）
-4. 进入 Step 4（Plan 编写）时，分阶段展开子任务：
+5. **执行六要素完整性检查**（spec completeness check）：
+   - 逐一检查 Outcomes/Scope/Constraints/Decisions/Verification 是否覆盖
+   - 扫描歧义语言，标记 `[AMBIGUOUS]`
+   - 将歧义列表呈现给用户，逐一确认
+   - 全部解决后才进入下一步
+6. 进入 Step 4（Plan 编写）时，分阶段展开子任务：
    - **立即调用** `todolist expand_step(4, ["评估复杂度(L1/L2)", "基础 plan 编写"])`
    - 完成评估后，如果是 **L2**，再调用 `expand_step(4, ["后端设计(harness-backend-planner)", "前端设计(harness-frontend-planner)", "API 对齐(harness-api-alignment)", "汇总更新"])` 追加子任务
    - **L1 不需要追加**，仅靠基础 plan 编写即可
@@ -545,6 +554,51 @@ plan.md 中每个 task 必须包含以下 4 个要素。缺少验收标准或文
 ```
 
 该章节在编码评审（阶段④）时作为数据流合规检查的依据。
+
+#### spec.md 已做决策章节（始终必填）
+
+spec.md 必须包含「已做决策」章节，明确列出已经确定的技术选型。AI agent 不知道决策已做出时会自行重新选择。缺少该章节的 spec 在需求评审（阶段②）时标记为 MUST FIX。
+
+```markdown
+## 已做决策
+
+| 决策项 | 选择 | 理由 | 是否可推翻 |
+|--------|------|------|------------|
+| 数据库 | SQLite | 项目规模小,无需独立数据库服务 | 否 |
+| 认证方式 | JWT + refresh token | 前后端分离架构标准做法 | 否 |
+| 状态管理 | Pinia | 项目标准,其他页面已使用 | 否 |
+| UI 组件库 | shadcn-vue | 项目标准 | 否 |
+| 缓存策略 | LRU,最大 100 条 | 平衡内存占用和命中率 | 是,如有性能问题可调整 |
+```
+
+该章节在编码评审（阶段④）时作为技术选型合规检查的依据。
+
+#### spec.md 行为约束章节（始终必填）
+
+spec.md 必须包含「行为约束」章节，用三层边界约束 agent 行为。比自由文本的"约束"章节更明确，对 agent 的指导性更强。缺少该章节的 spec 在需求评审（阶段②）时标记为 MUST FIX。
+
+```markdown
+## 行为约束
+
+### Always（必须遵守）
+- 使用项目 UI 组件库（shadcn-vue），禁止原生 HTML 表单/交互元素
+- 新增字段必须在 TypeScript 接口中声明，禁止隐式 any
+- 所有 API 调用必须使用现有的 `useApi()` composable
+- 错误处理必须使用现有的 `useErrorHandler()` composable
+
+### Ask First（需要确认）
+- 引入新的 npm 依赖前,先列出候选方案让用户选择
+- 修改 shared/ 目录下的类型定义前,说明影响范围
+- 涉及数据库 migration 时,先确认 migration 策略
+
+### Never（绝对禁止）
+- 禁止修改 CLAUDE.md 中标记为"技术债务"的代码
+- 禁止使用 `any` 类型
+- 禁止在组件中硬编码颜色值,必须使用 CSS 变量或 Tailwind 语义类名
+- 禁止修改 .env 文件中的现有配置项（可以新增）
+```
+
+该章节在编码评审（阶段④）时作为行为合规检查的依据。
 
 #### spec.md 已有基础设施章节（始终必填）
 
@@ -1470,8 +1524,9 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
 ```
 ╔════════════════════════════════════════════════════════════╗
 ║ Phase 1: 需求沟通 (/track 命令)                            ║
-║   [交互] Step 1: 需求讨论 (brainstorming)                   ║
-║   [交互] Step 2: Spec 编写                                  ║
+║   [自动] Step 1a: 代码库扫描 (subagent, read-only)          ║
+║   [交互] Step 1b: 需求讨论 (brainstorming)                  ║
+║   [交互] Step 2: Spec 编写 + 六要素检查 + 歧义标记          ║
 ║   [自动] Step 3: 引用扫描 (spec-ref-scan.sh)                ║
 ║   [交互] Step 4: Plan 编写                                  ║
 ║   [自动] Step 5: E2E 测试计划 (主agent框架 + subagent用例)   ║
@@ -1501,7 +1556,8 @@ CLAUDE.md                                # 如果阶段 11 建议了规则更新
 需求描述
   → [前置检查] worktree / CLAUDE.md / CI
   → [自动] 1 需求分析
-            产出:spec.md + plan.md + summary.md
+            产出:infrastructure-scan.md + spec.md + plan.md + summary.md
+            前置:代码库扫描 subagent → brainstorming → 六要素检查 → 引用扫描
             L1: gate-script.sh 01 + L2: gate-checker
   → ✋ 确认点1:需求设计确认
   → [自动] 2 需求评审

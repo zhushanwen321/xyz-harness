@@ -31,12 +31,12 @@ Every project goes through this process. A todo list, a single-function utility,
 
 You MUST create a task for each of these items and complete them in order:
 
-1. **Explore project context** — check files, docs, recent commits
-2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
+1. **Scan codebase** — dispatch read-only subagent to explore project structure, existing APIs, types, and patterns. Output: `infrastructure-scan.md` (see below)
+2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. Use scan results to ask higher-quality questions
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit
-6. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
+6. **Spec completeness check** — verify all six elements are covered, mark ambiguities as `[AMBIGUOUS]`, fix or confirm each with user (see below)
 7. **User reviews written spec** — ask user to review the spec file before proceeding
 8. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
@@ -44,24 +44,27 @@ You MUST create a task for each of these items and complete them in order:
 
 ```dot
 digraph brainstorming {
-    "Explore project context" [shape=box];
+    "Codebase scan\n(subagent)" [shape=box];
     "Ask clarifying questions" [shape=box];
     "Propose 2-3 approaches" [shape=box];
     "Present design sections" [shape=box];
     "User approves design?" [shape=diamond];
     "Write design doc" [shape=box];
-    "Spec self-review\n(fix inline)" [shape=box];
+    "Six-element check\n+ Ambiguity marking" [shape=box];
+    "Ambiguities resolved?" [shape=diamond];
     "User reviews spec?" [shape=diamond];
     "Invoke writing-plans skill" [shape=doublecircle];
 
-    "Explore project context" -> "Ask clarifying questions";
+    "Codebase scan\n(subagent)" -> "Ask clarifying questions";
     "Ask clarifying questions" -> "Propose 2-3 approaches";
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";
     "User approves design?" -> "Present design sections" [label="no, revise"];
     "User approves design?" -> "Write design doc" [label="yes"];
-    "Write design doc" -> "Spec self-review\n(fix inline)";
-    "Spec self-review\n(fix inline)" -> "User reviews spec?";
+    "Write design doc" -> "Six-element check\n+ Ambiguity marking";
+    "Six-element check\n+ Ambiguity marking" -> "Ambiguities resolved?";
+    "Ambiguities resolved?" -> "Six-element check\n+ Ambiguity marking" [label="fix & recheck"];
+    "Ambiguities resolved?" -> "User reviews spec?" [label="all resolved"];
     "User reviews spec?" -> "Write design doc" [label="changes requested"];
     "User reviews spec?" -> "Invoke writing-plans skill" [label="approved"];
 }
@@ -71,9 +74,39 @@ digraph brainstorming {
 
 ## The Process
 
-**Understanding the idea:**
+### Step 1: Codebase Scan (Read-Only Subagent)
 
-- Check out the current project state first (files, docs, recent commits)
+**Before asking any questions, dispatch a read-only subagent to scan the codebase.** This produces `infrastructure-scan.md` which makes your subsequent questions higher quality — you won't ask "what framework does this project use" because the scan already tells you.
+
+**Subagent task:**
+```
+Scan the codebase to produce an infrastructure summary. Focus on:
+1. Project structure: directory layout, key entry points
+2. Existing APIs: exported functions/methods in files related to the user's request
+3. Type definitions: interfaces, types, models relevant to the domain
+4. Patterns in use: state management, routing, component structure, error handling
+5. Dependencies: key libraries and their versions
+6. Recent changes: last 5-10 commits to understand active development areas
+
+Output to: .xyz-harness/{topic}/changes/infrastructure-scan.md
+Format: Markdown tables and bullet lists, organized by the 6 areas above.
+Keep it concise — this is a reference, not documentation.
+```
+
+**Subagent config:**
+| Item | Value |
+|------|-------|
+| Agent | harness-executor (read-only mode) |
+| Model | glm-5-turbo (mechanical scan, no complex reasoning) |
+| Tools | read, bash (no write) |
+
+**After scan completes:** Read `infrastructure-scan.md` and use it to:
+- Skip basic questions you already know the answer to
+- Ask more targeted questions about domain-specific gaps
+- Pre-fill the spec's "已有基础设施" chapter with scanned data
+
+### Step 1b: Understanding the Idea
+
 - Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
 - If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 - For appropriately-scoped projects, ask questions one at a time to refine the idea
@@ -81,13 +114,13 @@ digraph brainstorming {
 - Only one question per message - if a topic needs more exploration, break it into multiple questions
 - Focus on understanding: purpose, constraints, success criteria
 
-**Exploring approaches:**
+### Step 3: Exploring Approaches
 
 - Propose 2-3 different approaches with trade-offs
 - Present options conversationally with your recommendation and reasoning
 - Lead with your recommended option and explain why
 
-**Presenting the design:**
+### Step 4: Presenting the Design
 
 - Once you believe you understand what you're building, present the design
 - Scale each section to its complexity: a few sentences if straightforward, up to 200-300 words if nuanced
@@ -117,13 +150,51 @@ digraph brainstorming {
 - Use elements-of-style:writing-clearly-and-concisely skill if available
 - Commit the design document to git
 
-**Spec Self-Review:**
-After writing the spec document, look at it with fresh eyes:
+### Step 6: Spec Completeness Check (Six Elements + Ambiguity Marking)
 
-1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections, or vague requirements? Fix them.
-2. **Internal consistency:** Do any sections contradict each other? Does the architecture match the feature descriptions?
-3. **Scope check:** Is this focused enough for a single implementation plan, or does it need decomposition?
-4. **Ambiguity check:** Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+After writing the spec document, perform a structured completeness check before showing it to the user. This catches gaps that humans miss because "the agent will fill in the blanks, in ways you won't like" (Augment Code, 2026).
+
+#### Six-Element Completeness
+
+Verify the spec answers all six questions. For each missing element, add a `[MISSING]` marker and resolve it:
+
+| Element | What to check | If missing |
+|---------|--------------|------------|
+| **Outcomes** | Is there a concrete description of the end state (not just "build X")? | Add outcome statement, mark `[AMBIGUOUS]` if unsure |
+| **Scope boundaries** | Are both in-scope AND out-of-scope items listed? | Add out-of-scope list; agent expands scope if you don't close the door |
+| **Constraints** | Are tech stack, API limits, performance requirements stated? | Add from scan results or mark `[AMBIGUOUS]` |
+| **Decisions made** | Are already-decided technical choices documented? | Add from scan results or ask user |
+| **Task breakdown** | Is the work decomposed into independently verifiable units? | Not needed at spec stage (plan handles this) |
+| **Verification** | Are there concrete acceptance criteria, not just "does it work"? | Add criteria or mark `[AMBIGUOUS]` |
+
+#### Ambiguity Marking
+
+Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
+
+**Dangerous patterns to flag:**
+- Fuzzy adjectives: "fast", "reasonable", "user-friendly", "appropriate", "as needed"
+- Unquantified thresholds: "large", "many", "soon", "responsive"
+- Slash-combined terms: "Delivery/Fulfillment" (AND or OR?)
+- Implicit assumptions: anything the spec assumes but doesn't state
+- Missing error/failure behavior: happy path described but not what happens on error
+
+**Format:**
+```markdown
+- [AMBIGUOUS] "快速响应" — 具体指标？建议 P99 < 200ms，需确认
+```
+
+**Resolution:** After marking all ambiguities, present the list to the user and resolve each one:
+- User clarifies → update spec
+- User says "doesn't matter" → replace with a concrete default value
+- User says "figure it out" → pick the most reasonable value and note the decision
+
+**Only proceed to user review when all `[AMBIGUOUS]` markers are resolved.**
+
+#### Inline Checks (from original self-review)
+
+1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections? Fix them.
+2. **Internal consistency:** Do any sections contradict each other?
+3. **Scope check:** Is this focused enough for a single implementation plan?
 
 Fix any issues inline. No need to re-review — just fix and move on.
 

@@ -105,14 +105,45 @@ Keep it concise — this is a reference, not documentation.
 - Ask more targeted questions about domain-specific gaps
 - Pre-fill the spec's "已有基础设施" chapter with scanned data
 
-### Step 1b: Understanding the Idea
+### Step 2: Progressive Questioning (Clarifying Questions)
 
-- Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
-- If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
-- For appropriately-scoped projects, ask questions one at a time to refine the idea
-- Prefer multiple choice questions when possible, but open-ended is fine too
-- Only one question per message - if a topic needs more exploration, break it into multiple questions
-- Focus on understanding: purpose, constraints, success criteria
+**This is the core of brainstorming.** The codebase scan gave you context; now use it to ask targeted, high-quality questions. Ask **one question at a time**, building understanding progressively.
+
+#### Question Hierarchy (ask in this order)
+
+Questions follow a deliberate order — each layer builds on the previous one. Don't jump to implementation details before understanding the purpose.
+
+**Layer 1: Purpose & Users (2-3 questions)**
+- What problem does this solve? Who is affected?
+- What does success look like? How would you know it's done?
+- Is this a new feature, a fix, or an improvement to existing behavior?
+
+**Layer 2: Core Behavior (3-5 questions)**
+- Walk me through the main user flow. What happens first, then what?
+- What should happen when [edge case]? (propose specific scenarios based on scan results)
+- What existing functionality does this interact with? (reference specific files/APIs from scan)
+- Are there any hard constraints I should know about? (time, performance, compatibility)
+
+**Layer 3: Boundaries & Non-obvious (2-3 questions)**
+- What should this explicitly NOT do? What's out of scope?
+- Are there any technical decisions already made that I shouldn't revisit?
+- What's the most likely way this could go wrong?
+
+**When to stop asking:** You've covered purpose, core behavior, edge cases, boundaries, and constraints. If you can describe the full solution back to the user without guessing, you're ready to propose approaches.
+
+#### Question Quality Guidelines
+
+- **Prefer multiple choice** when the options are discoverable (e.g., from scan results: "I see the project uses Pinia for state management. Should this feature use the same pattern, or does it need a different approach?")
+- **Use scan results to skip basics** — don't ask "what framework" if the scan already shows Vue 3 + Pinia
+- **Use scan results to ask deeper questions** — "I see `useApi()` handles all API calls with auto-retry. Should this feature use it, or do you need different error handling?"
+- **One question per message** — if a topic needs more exploration, break it into multiple questions
+- **Avoid abstract questions** — instead of "what are the requirements?", ask "when the user clicks X, should Y happen immediately or after confirmation?"
+
+#### Scope Decomposition
+
+Before asking detailed questions, assess scope: if the request describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag this immediately. Don't spend questions refining details of a project that needs to be decomposed first.
+
+If the project is too large for a single spec, help the user decompose into sub-projects: what are the independent pieces, how do they relate, what order should they be built? Then brainstorm the first sub-project through the normal design flow. Each sub-project gets its own spec → plan → implementation cycle.
 
 ### Step 3: Exploring Approaches
 

@@ -273,7 +273,7 @@ model: llm-simple-router/glm-5.1
 
 ```
 如果 docs/architecture.md 不存在：
-  加载 architecture-template.md（本 agent 目录下的模板文件）
+  加载 architecture-template.md（位于 skills/xyz-harness-dev-flow/references/ 目录下的模板文件）
   基于阶段 0-3 对代码的探索，反向生成初始架构文档
 
 如果 docs/architecture.md 已存在：

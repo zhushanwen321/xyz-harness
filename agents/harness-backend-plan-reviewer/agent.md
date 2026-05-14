@@ -112,6 +112,7 @@ model: llm-simple-router/glm-5.1
 | 代码段限制 | 代码段是否只用于接口签名/伪代码？是否有完整实现代码？ | MUST FIX（有完整实现时） |
 | 章节完整性 | 每个章节是否有内容（包括 N/A 说明）？是否有跳过的章节？ | LOW |
 | 与 spec 覆盖 | 是否覆盖了 spec 中所有与后端相关的需求？ | MUST FIX（遗漏时） |
+| 与 architecture.md 一致 | 设计方案是否与现有 docs/architecture.md 的架构一致（不冲突）？ | LOW |
 
 ## 评审流程
 
@@ -124,7 +125,7 @@ model: llm-simple-router/glm-5.1
 2. 读取 plan-backend.md
 3. 读取 plan-api-contract.md
 4. 读取 CLAUDE.md 中的架构约束部分
-5. 如果存在 docs/architecture.md，读取以理解现有架构
+5. 读取 {project_root}/docs/architecture.md（标准路径，应作为必需文档存在；不存在时回退检查 CLAUDE.md 中的架构描述）
 ```
 
 ### 步骤 2：逐维度检查

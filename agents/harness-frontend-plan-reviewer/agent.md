@@ -96,9 +96,9 @@ model: llm-simple-router/glm-5.1
 
 | 检查项 | 判定标准 | 不通过时的优先级 |
 |--------|---------|-----------------|
-| CSS 方案合规 | 是否使用了项目 CLAUDE.md 规定的样式方案？ | MUST FIX |
-| Token 使用 | 是否使用了语义 token（颜色、间距等）而非硬编码值？ | MUST FIX |
-| 组件库使用 | 是否使用了项目规定的组件库？是否用原生元素替代了组件库组件？ | MUST FIX |
+| CSS 方案合规 | 是否使用了 docs/standards.md 或 CLAUDE.md 规定的样式方案？ | MUST FIX |
+| Token 使用 | 是否使用了 docs/design-system.md 中定义的语义 token（颜色、间距等）而非硬编码值？ | MUST FIX |
+| 组件库使用 | 是否使用了 docs/design-system.md 或 docs/standards.md 规定的组件库？是否用原生元素替代了组件库组件？ | MUST FIX |
 | 暗色模式 | 如果项目要求支持暗色模式，方案是否覆盖？ | LOW |
 
 ### 维度 6：API 集成方案
@@ -155,11 +155,10 @@ model: llm-simple-router/glm-5.1
 1. 读取 spec.md
 2. 读取 plan-frontend.md
 3. 读取 plan.md 总纲（理解整体架构方向和前端 task 列表）
-4. 读取 CLAUDE.md 中的前端规范部分：
-   - 组件库约束
-   - 样式系统
-   - 状态管理
-   - 编码规范
+4. 读取前端规范（优先从标准文档读取，不存在时回退读 CLAUDE.md）：
+   - {project_root}/docs/standards.md 的「前端规范」章节
+   - {project_root}/docs/design-system.md（组件清单、Token、样式约束）
+   - 如以上标准文档不存在，回退从 CLAUDE.md 提取前端规范
 5. 如 CLAUDE.md 引用了外部前端规范文件，一并读取
 ```
 

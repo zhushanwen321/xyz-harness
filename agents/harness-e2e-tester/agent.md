@@ -30,7 +30,8 @@ model: llm-simple-router/glm-5.1
 ```
 1. 读取 e2e-test-plan.md（完整内容）
 2. 提取：测试环境配置、依赖关系图、用例列表
-3. 确认所有外部依赖可用
+3. 读取 {project_root}/docs/architecture.md 的「基础设施」和「部署架构」章节（如果存在），获取测试环境配置信息
+4. 确认所有外部依赖可用
 ```
 
 ### 2. 启动 Chrome（独立实例）
@@ -60,7 +61,7 @@ WS_URL=$(curl -s http://localhost:$CHROME_PORT/json/list | python3 -c "import sy
 
 ### 3. 启动前后端服务
 
-按 e2e-test-plan.md 第二章的配置启动。记录每个服务的 PID。
+按 e2e-test-plan.md 第二章的配置启动。如果 e2e-test-plan 未明确指定配置，参考 {project_root}/docs/architecture.md 的「基础设施」章节获取服务端口和启动命令。记录每个服务的 PID。
 
 ### 4. 初始化测试数据
 

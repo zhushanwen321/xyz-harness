@@ -64,7 +64,9 @@ model: llm-simple-router/glm-5.1
 ```
 1. 读取 spec.md — 理解需求目标、范围、验收标准
 2. 读取 plan.md 总纲 — 理解整体架构方向、后端 task 列表
-3. 读取 CLAUDE.md — 提取架构约束、技术栈、编码规范
+3. 读取 CLAUDE.md — 提取架构约束、技术栈
+   - 优先读取 {project_root}/docs/standards.md 的「后端规范」章节（如果存在）
+   - 不存在时回退从 CLAUDE.md 提取编码规范
    - 如果 CLAUDE.md 引用了外部架构规范文件，也要读取
 4. 验证所有文档非空，关键章节完整
    - 缺失 → 返回 {status: "needs_context", reason: "缺少..."}
@@ -73,9 +75,10 @@ model: llm-simple-router/glm-5.1
 #### 0-2：读取系统架构文档
 
 ```
-1. 检查 {project_root}/docs/architecture.md 是否存在
+1. 读取 {project_root}/docs/architecture.md（标准路径）
 2. 存在 → 读取，理解当前系统架构（领域模型、存储方案、API 结构等）
-3. 不存在 → 标记为"需要初始创建"，在阶段 3 中根据代码反向生成
+3. 不存在 → 检查 CLAUDE.md 是否引用了其他位置的架构文档（向后兼容），读取引用的文件
+4. 都不存在 → 标记为"需要初始创建"，在阶段 3-3 中根据代码反向生成
 ```
 
 #### 0-3：探索项目代码
@@ -272,13 +275,17 @@ model: llm-simple-router/glm-5.1
 #### 3-3：更新/创建系统架构文档
 
 ```
+> **维护职责**：本步骤负责创建/更新 docs/architecture.md。每次 plan 阶段都必须检查并更新本次需求涉及的章节。
+
 如果 docs/architecture.md 不存在：
   加载 architecture-template.md（位于 skills/xyz-harness-dev-flow/references/ 目录下的模板文件）
   基于阶段 0-3 对代码的探索，反向生成初始架构文档
+  → 在返回结果中标注 architecture_doc_status: "created"
 
 如果 docs/architecture.md 已存在：
   在现有文档基础上，更新本次需求涉及的章节
   在变更历史中追加本次更新记录
+  → 在返回结果中标注 architecture_doc_status: "updated"
 
 更新内容：
 - 如果新增了领域/实体 → 更新"领域模型概览"和"核心实体"

@@ -63,6 +63,11 @@ model: llm-simple-router/glm-5.1
    - 状态管理（Pinia / Vuex / composable）
    - 路由方案
    - 构建工具和工具链
+3.5. 读取标准文档（优先于 CLAUDE.md 提取）：
+   - 读取 {project_root}/docs/standards.md 的「前端规范」章节（如果存在）
+   - 读取 {project_root}/docs/design-system.md（如果存在）
+   - 如果标准文档不存在，回退从 CLAUDE.md 提取前端规范
+   - 从标准文档中提取的规范优先级高于 CLAUDE.md 内嵌内容
 4. 验证关键信息完整，缺失 → 返回 {status: "needs_context"}
 ```
 
@@ -82,6 +87,10 @@ model: llm-simple-router/glm-5.1
    - 样式写法
 
 3. 设计系统
+   如果 docs/design-system.md 存在：
+   直接从文档中读取组件清单、Token、样式约束、参考组件
+   不需要扫描 tokens.css / tailwind.config.* 等文件
+   如果 docs/design-system.md 不存在：
    检查 tokens.css / tailwind.config.* / theme 文件
    理解设计系统的 token 和变量
 
@@ -93,11 +102,13 @@ model: llm-simple-router/glm-5.1
 
 ```
 1. 加载设计系统规范
-   从 CLAUDE.md 和 0-2 探索结果中提取：
-   - 可用的语义 token 清单（颜色、间距、字体等变量名）
-   - 已安装的 UI 组件库组件清单
-   - 被禁止的原生 HTML 元素列表
-   - 现有 composable/hook 清单（可复用的状态管理工具）
+   优先从 docs/design-system.md 读取（如果 0-1 步骤已加载）：
+   - 组件清单（直接使用，无需推断）
+   - 被禁原生元素列表
+   - 设计 Token（颜色、间距、字体、圆角）
+   - 样式约束规则
+   - 参考组件列表
+   如果 docs/design-system.md 不存在，回退从 CLAUDE.md 和 0-2 探索结果中提取。
 
 2. 识别本次需求涉及的 UI 元素
    从 spec.md 中提取所有涉及 UI 展示的需求点，逐一匹配：
@@ -250,6 +261,25 @@ model: llm-simple-router/glm-5.1
 
 4. 写入 {output_dir}/plan-frontend.md
 ```
+
+## 文档维护职责
+
+本 agent 负责维护 `docs/design-system.md`。在 plan 阶段完成前端设计后，如有新组件/token 需求，必须更新此文档。
+
+### 触发时机
+- plan 阶段发现需要新的 UI 组件 → 在组件清单中新增行
+- plan 阶段发现需要新的设计 Token → 在对应 Token 章节新增行
+- plan 阶段修改了样式约束规则 → 更新样式约束章节
+
+### 更新方式
+1. 编辑 {project_root}/docs/design-system.md
+2. 更新对应章节的表格内容
+3. 在「变更历史」表格中新增一行（日期、更新来源、变更摘要）
+4. 在返回结果中标注 architecture_doc_status
+
+### 不需要更新的情况
+- 仅使用了已有组件和 Token，未引入新内容
+- 仅修改了业务逻辑，未涉及 UI/样式变更
 
 ## 模型选择
 

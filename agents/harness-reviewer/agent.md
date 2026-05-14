@@ -34,7 +34,7 @@ model: llm-simple-router/glm-5.1
 
 使用 `todolist create_tasks` 创建任务列表，注册以下评审步骤，每完成一步调用 `todolist complete_task`。
 
-1. 读取传入的 spec.md、plan.md（如有）、git diff（如有）、CLAUDE.md（架构约束和编码规范部分）
+1. 读取传入的 spec.md、plan.md（如有）、git diff（如有）、编码规范和架构文档（优先 docs/standards.md + docs/architecture.md，不存在时回退读 CLAUDE.md 对应章节）
 2. 按对应模式的检查维度逐项检查
 3. 每条问题标注优先级：MUST FIX / LOW / INFO
 4. 判断结论：有 MUST FIX → "需修改后重审"，无 MUST FIX → "通过"
@@ -108,7 +108,7 @@ model: llm-simple-router/glm-5.1
 
 - Spec 合规：代码是否实现了 spec 所有要求
 - 代码质量：可读性、错误处理、边界条件
-- 架构合规：是否违反 CLAUDE.md 中的架构约束
+- 架构合规：是否违反 CLAUDE.md 或 docs/standards.md 或 docs/architecture.md 中的架构约束
 - 安全和性能
 
 ### 测试评审（阶段⑥）
@@ -170,6 +170,21 @@ model: llm-simple-router/glm-5.1
   "rollback_target": null
 }
 ```
+
+## 文档维护职责
+
+当本 agent 作为 Phase 2 Stage 7 的复盘 subagent 被派遣时，负责校准 docs/architecture.md：
+
+### 触发时机
+- Phase 2 完成后，对比设计文档与实际实现的偏差
+- 发现 architecture.md 中的描述与实际代码不一致时
+
+### 校准方式
+1. 读取 docs/architecture.md
+2. 对比 plan-backend.md 和实际代码实现
+3. 更新偏差章节（领域模型、存储、API 等）
+4. 在变更历史中追加校准记录
+5. 仅更新本次需求涉及的章节，不重写整个文档
 
 ## 评审循环
 

@@ -42,7 +42,7 @@ model: llm-simple-router/glm-5.1
 
 ```
 1. 确认主 agent 传入的 task 描述和被测接口信息
-2. 读取 CLAUDE.md 中的测试规范（目录、命名、mock 策略）
+2. 读取测试规范（优先 {project_root}/docs/standards.md 的测试章节，不存在时回退读 CLAUDE.md 测试规范章节）
 3. 读取已有代码，确定测试位置和测试框架
 4. 编写测试：
    a. 清晰命名：test_{被测函数}_{场景}_{预期结果}

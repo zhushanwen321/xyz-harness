@@ -42,44 +42,29 @@ model: kimi-coding-plan/kimi-for-coding
 **必须创建 todolist 并完成此项后才能继续。**
 
 ```
-读取项目 CLAUDE.md，查找前端规范章节。
+读取项目文档，加载前端编码规范：
 
-前端规范可能以两种形式存在：
+1. 优先读取标准文档（新格式）：
+   - 读取 {project_root}/docs/standards.md 的「前端规范」章节
+   - 读取 {project_root}/docs/design-system.md 的全部内容
 
-形式 A — 直接内嵌在 CLAUDE.md 中：
-  CLAUDE.md 里有「前端开发规范」「前端编码规范」「Frontend 规范」
-  「Vue 规范」「React 规范」「UI 规范」等独立章节，
-  直接列出了组件库约束、样式规则、代码结构限制等。
+2. 如果标准文档不存在，回退读取 CLAUDE.md（旧格式向后兼容）：
+   - 从 CLAUDE.md 中查找前端相关章节
+   - 提取编码规范内容
 
-形式 B — 引用外部规范文件：
-  CLAUDE.md 的前端章节中有一行指向外部文件，例如：
-  - 「前端开发规范详见 docs/frontend-standards.md」
-  - 「前端编码规范：参见 .claude/skills/ts-taste-check/ 下的规则」
-  - 「UI 规范文档：frontend/STYLE_GUIDE.md」
-  - 「参见 @frontend-rules.md」
+3. 验证规范内容覆盖了以下维度（至少 3 个）：
+   - 组件库使用约束（用哪个组件库、禁止哪些原生元素）
+   - 样式系统规则（CSS 方案、token 使用）
+   - 代码结构限制（行数上限、文件组织）
+   - 错误处理模式
+   - 状态管理策略
 
-处理逻辑：
-  1. 找到 CLAUDE.md 中与「前端」「frontend」「UI」「样式」「组件」「Vue」「React」
-     相关的章节
-  2. 检查章节内容是否足够充实（>10 行具体规则）
-     - 充实 → 直接使用，缓存为编码规范（形式 A）
-     - 只有一两行引导语 + 文件路径 → 识别为外部引用（形式 B）
-  3. 如果是形式 B，必须读取引用的文件：
-     - 解析出文件路径（相对路径相对于项目根目录）
-     - 用 read 工具读取该文件
-     - 将文件内容缓存为编码规范
-     - 如果引用的是一个目录（如 .claude/skills/ts-taste-check/），
-       读取目录下的 SKILL.md 或主要规范文件
-  4. 验证规范内容覆盖了以下维度（至少 3 个）：
-     - 组件库使用约束（用哪个组件库、禁止哪些原生元素）
-     - 样式系统规则（CSS 方案、token 使用）
-     - 代码结构限制（行数上限、文件组织）
-     - 错误处理模式
-     - 状态管理策略
-  5. 如果 CLAUDE.md 中完全没有前端相关章节 → blocked，
-     报告「项目 CLAUDE.md 缺少前端编码规范。
-     请在 CLAUDE.md 中添加前端规范章节（或引用外部规范文件），
-     至少覆盖：组件库约束、样式规则、代码结构限制。」
+4. 如果规范不充分 → blocked，
+   报告「项目缺少前端编码规范。
+   请确保 docs/standards.md 包含前端规范章节（或 CLAUDE.md 有前端规范章节），
+   至少覆盖：组件库约束、样式规则、代码结构限制。」
+
+5. 将加载的规范缓存，后续编码严格遵循。
 ```
 
 **为什么必须这一步**：不同项目的前端技术栈差异极大
@@ -90,6 +75,13 @@ model: kimi-coding-plan/kimi-for-coding
 ### 步骤 0-2：验证设计系统基础设施
 
 ```
+如果 docs/design-system.md 存在：
+  - 提取组件清单和被禁原生元素列表
+  - 提取设计 Token（颜色、间距、字体、圆角）
+  - 提取样式约束规则
+  - 提取参考组件列表
+  这些信息直接用于后续编码，无需动态扫描项目。
+
 根据步骤 0-1 加载的规范，验证项目中的基础设施是否就绪：
 
 1. CSS 方案验证：
@@ -115,6 +107,9 @@ model: kimi-coding-plan/kimi-for-coding
 ### 步骤 0-3：加载参考组件
 
 ```
+如果 docs/design-system.md 的「参考组件」章节有内容：
+  优先使用文档中列出的参考组件，不再需要自行搜索。
+
 从项目已有代码中加载 2-3 个典型组件作为风格锚定：
 
 1. 找到与当前 task 类似的已有组件（如同为表单页面、同为数据表格等）
@@ -351,9 +346,9 @@ VISON="skills/vision-analysis/scripts/zai_vision.py"
 python3 "$VISON" ui-diff demo.png /tmp/screenshot.png "对比差异"
 ```
 
-## 编码规范：从项目 CLAUDE.md 动态提取
+## 编码规范：从标准文档读取（向后兼容回退 CLAUDE.md）
 
-以下列出需要从 CLAUDE.md 前端部分提取的规范维度。你需要在阶段 0 预检时读取并缓存，后续编码严格遵循。
+以下列出需要从项目文档提取的规范维度。优先从 docs/standards.md 和 docs/design-system.md 读取，不存在时回退从 CLAUDE.md 读取。你需要在阶段 0 预检时读取并缓存，后续编码严格遵循。
 
 ### 提取维度清单
 
@@ -413,6 +408,7 @@ python3 "$VISON" ui-diff demo.png /tmp/screenshot.png "对比差异"
 - 步骤 0-1：前端规范已加载？来源是 CLAUDE.md 直接内嵌还是外部文件？
 - 步骤 0-2：设计系统基础设施已验证？
 - 步骤 0-3：参考组件已加载？
+- 文档维护：是否新增了组件/token？如有，已更新 docs/design-system.md？
 
 **三阶段完整性：**
 - 阶段 1 骨架：所有 UI 元素存在？编译通过？
@@ -429,6 +425,25 @@ python3 "$VISON" ui-diff demo.png /tmp/screenshot.png "对比差异"
 - 没有跳过阶段 0 的规范加载？
 - 没有跳过视觉验证？
 - 没有引入项目规范之外的依赖？
+
+## 文档维护职责
+
+本 agent 负责维护 `docs/design-system.md`。在以下情况下必须更新此文档：
+
+### 触发时机
+- 编码阶段引入了新的 UI 组件（安装或创建了新组件）→ 更新组件清单
+- 编码阶段新增了 CSS 变量或 Tailwind token → 更新设计 Token 章节
+- 编码阶段修改了样式约束规则 → 更新样式约束章节
+
+### 更新方式
+1. 编辑 {project_root}/docs/design-system.md
+2. 更新对应章节的表格内容
+3. 在「变更历史」表格中新增一行（日期、更新来源、变更摘要）
+4. git commit 时包含此文件的变更
+
+### 不需要更新的情况
+- 仅修改了已有组件的内部逻辑（未新增组件/token）
+- 仅修复了样式 bug（未改变 token/约束）
 
 ## 关于 summary.md
 

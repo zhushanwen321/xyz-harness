@@ -33,6 +33,8 @@ model: llm-simple-router/glm-5.1
 - [ ] spec.md 存在且非空
 - [ ] plan.md 存在且非空
 - [ ] plan.md 包含至少 1 个 Task 标题
+- [ ] CLAUDE.md 包含「文档索引」章节（向后兼容：无此章节时警告不阻塞）
+- [ ] 文档索引中列出的「标准」类型文档存在且非空
 - [ ] `.xyz-harness/gate/stage-01.pass` 存在
 - **失败回退：** 无（第一阶段，由用户确认点反馈）
 
@@ -52,6 +54,7 @@ model: llm-simple-router/glm-5.1
   - [ ] 无 Tailwind 硬编码颜色（grep `bg-\(red\|blue\|green\|gray\|yellow\)-\d` 无结果）
   - [ ] 无 magic spacing（grep `\[\d+px\]` 在 Tailwind 类中无结果）
   - [ ] 组件行数不超限（`<template>` ≤ 400, `<script>` ≤ 300）
+  - [ ] 如果 task 涉及前端 UI 变更且 docs/design-system.md 存在，design-system.md 的组件清单与实际 components/ui/ 目录一致
 - **失败回退：** → 阶段 ③ 重新派遣执行 subagent（task 内修复）
 
 ### 阶段 ④ 编码评审

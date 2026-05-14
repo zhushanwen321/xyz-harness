@@ -77,13 +77,16 @@ description: >
 
 | 层级 | 加载方式 | 内容 | 冲突优先级 |
 |------|---------|------|-----------|
-| L1 会话常驻 | 每次会话自动加载 | 项目 CLAUDE.md | **最高**（覆盖 L2） |
+| L0 标准文档 | subagent 主动读取 | docs/standards.md（编码规范） | **最高**（覆盖 L1/L2） |
+| L1 会话常驻 | 每次会话自动加载 | 项目 CLAUDE.md（入口 + 索引） | 高（覆盖 L2） |
 | L2 阶段常驻 | 编码阶段③加载 | 本 skill（xyz-harness-coding-skill） | 默认值 |
 | L3 按需加载 | subagent 主动读取 | specs/ 下的分层规范文件 | 补充 |
 
 冲突处理规则：
-- 本 skill 的规范与项目 CLAUDE.md 冲突时，以 CLAUDE.md 为准
-- 本 skill 未覆盖的层或规范，由项目 CLAUDE.md 补充
+- 编码规范优先从 docs/standards.md 读取（新格式）
+- docs/standards.md 不存在时回退从 CLAUDE.md 读取编码规范章节（旧格式向后兼容）
+- 本 skill 的规范与项目文档冲突时，以项目文档为准
+- 本 skill 未覆盖的层或规范，由项目文档补充
 - 项目 CLAUDE.md 可以覆盖本 skill 的任何默认规则（参见 spec.md 决策 D4）
 
 ---

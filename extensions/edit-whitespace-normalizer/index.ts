@@ -174,13 +174,13 @@ function resolveFileInfo(
   let projectRoot = cwd;
   let dir = path.dirname(absolutePath);
   for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(dir, ".git"))) {
-      projectRoot = dir;
-      break;
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+  if (fs.existsSync(path.join(dir, ".git")) || fs.existsSync(path.join(dir, ".bare"))) {
+    projectRoot = dir;
+    break;
+  }
+  const parent = path.dirname(dir);
+  if (parent === dir) break;
+  dir = parent;
   }
 
   const relativePath = path.relative(projectRoot, absolutePath);

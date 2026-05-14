@@ -115,6 +115,8 @@ This structure informs the task decomposition. Each task should produce self-con
 - "Run the tests and make sure they pass" - step
 - "Commit" - step
 
+> **Harness 模式下的注意：** 在 xyz-harness Phase 2 中，Task 内部不需要细化到上述 5 步。TDD coder subagent 和 executor subagent 会自动执行"写失败测试→实现"的 TDD 流程。Plan 中的 Task 粒度应与 subagent 调度粒度对齐——每个 Task 对应一次 TDD coder → executor → reviewer 的完整 subagent 链。不要把一个 subagent 的工作拆成多个 Task。
+
 ## Plan Document Header
 
 **Every plan MUST start with this header:**

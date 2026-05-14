@@ -47,7 +47,7 @@ get_prerequisites() {
 
 # 有 L1 门禁的阶段（gate-script.sh 会生成 .pass 文件）
 is_l1_stage() {
-    case "$1" in 1|3|5|7|8|9) return 0 ;; *) return 1 ;; esac
+    case "$1" in 1|2|3|5|7|8|9) return 0 ;; *) return 1 ;; esac
 }
 
 # ── 工具函数 ──────────────────────────────────────────────────────

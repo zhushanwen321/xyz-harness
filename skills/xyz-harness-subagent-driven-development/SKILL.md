@@ -46,6 +46,26 @@ Execute plan by dispatching fresh subagent per task: TDD coder (writes failing t
 
 **Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
+## 铁律：主 Agent 禁码
+
+主 agent（调度器）**不允许直接使用 edit、write 工具编写实现代码**。
+所有编码必须通过派遣 subagent 完成。
+
+违反此规则 = 跳过 TDD = Phase 2 流程违规。
+
+**允许的操作：**
+- 使用 read 查看文件
+- 使用 bash 运行测试、git 操作
+- 使用 subagent 派遣编码 agent
+- 使用 loop_task_tracker / todolist 追踪进度
+
+**禁止的操作：**
+- 直接 edit/write 实现代码文件
+- 跳过 harness-tdd-coder 直接编码
+- 跳过 spec 合规检查直接标记 task 完成
+
+**自检规则：** 如果发现自己正在用 edit/write 编写 `.py`、`.ts`、`.rs` 等实现代码（非测试文件），必须立即停止，回退，先派遣 TDD coder subagent。没有例外。"task 太简单"不是跳过 TDD 的理由。
+
 ## When to Use
 
 ```dot
@@ -80,7 +100,7 @@ digraph process {
 
     subgraph cluster_per_task {
         label="Per Task";
-        "Dispatch TDD coder (harness-tdd-coder)" [shape=box];
+    "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)" [shape=box style=filled fillcolor=lightyellow];
         "TDD coder writes failing tests" [shape=box];
         "Dispatch implementer (harness-executor)" [shape=box];
         "Implementer subagent asks questions?" [shape=diamond];
@@ -96,7 +116,7 @@ digraph process {
     "More tasks remain?" [shape=diamond];
     "Use merge-worktree skill" [shape=box style=filled fillcolor=lightgreen];
 
-    "Read plan, extract all tasks with full text, note context, create_tasks" -> "Dispatch TDD coder (harness-tdd-coder)";
+  "Read plan, extract all tasks with full text, note context, create_tasks" -> "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)";
     "Dispatch TDD coder (harness-tdd-coder)" -> "TDD coder writes failing tests";
     "TDD coder writes failing tests" -> "Dispatch implementer (harness-executor)";
     "Dispatch implementer (harness-executor)" -> "Implementer subagent asks questions?";
@@ -109,7 +129,7 @@ digraph process {
     "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer (harness-reviewer)" [label="re-review"];
     "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via todolist (write spec deviations if any)" [label="yes"];
     "Mark task complete via todolist (write spec deviations if any)" -> "More tasks remain?";
-    "More tasks remain?" -> "Dispatch TDD coder (harness-tdd-coder)" [label="yes"];
+  "More tasks remain?" -> "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)" [label="yes"];
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
@@ -185,7 +205,11 @@ TDD coder subagents report one of three statuses. Handle each appropriately:
 2. If the spec is unclear, clarify with the human
 3. If the task design is fundamentally flawed, escalate to the human
 
-**Never** skip the TDD coder step. Tests-first is a hard requirement.
+**TDD coder is MANDATORY.** Skipping it = skipping tests. No exceptions.
+
+If you catch yourself about to dispatch the implementer without first dispatching the TDD coder, **stop immediately**. Go back and dispatch the TDD coder first. This applies to every single backend task, regardless of perceived simplicity.
+
+**Checkpoint:** Before dispatching implementer, verify: Did TDD coder for this task return DONE? If not, do not proceed to implementer.
 
 ## Handling Implementer Status
 
@@ -366,6 +390,10 @@ Done!
 - Skip review loops (reviewer found issues = implementer fixes = review again)
 - Let implementer self-review replace actual spec review (both are needed)
 - Move to next task while spec review has open issues
+- **Use edit/write to directly write implementation code (non-test files)**
+- **Write code without going through a subagent**
+- **Skip TDD coder "because the task is too simple"**
+- **Start implementer before TDD coder returns DONE**
 
 **If subagent asks questions:**
 - Answer clearly and completely

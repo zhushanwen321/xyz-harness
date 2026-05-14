@@ -36,9 +36,11 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "loop_task_tracker"
 
 进入 Stage 4 前必须验证：
 1. `e2e-test-plan.md` 文件存在于产出目录中
-2. 前端和后端服务可正常启动（运行 `gate-script.sh 04 <project_root>` 检查）
+2. 前端和后端服务可正常启动
 
 前置条件不满足时，停止并报告给用户。
+
+> 注意：E2E 阶段无 L1 门禁脚本，通过 `harness-state.sh pass 4` 直接标记通过。
 
 ## 关键文件路径
 

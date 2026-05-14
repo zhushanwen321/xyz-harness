@@ -1,10 +1,11 @@
 #!/bin/bash
 # gate-script.sh — L1 门禁强制检查
 # 调用方式：gate-script.sh <stage> <project_root> [branch_name] [extra_args...]
-#   stage: 01|03|05|07|08|09
+#   stage: 01|02|03|05|07|08|09
 #   project_root: 项目根目录
 #   branch_name: git 分支名（stage 07 必须）
 #   extra_args: stage 01 传入 spec.md 和 plan.md 的路径
+#              stage 02 传入 branch_base（可选，默认 main）
 #
 # 通过 → 创建 .xyz-harness/gate/stage-{NN}.pass
 # 失败 → 输出失败项，exit 1
@@ -320,6 +321,49 @@ gate_stage_01() {
     fi
 
     pass "stage 01 gate: spec + plan validated"
+}
+
+gate_stage_02() {
+    # TDD 提交顺序检测 — 编码评审阶段的门禁
+    # 验证所有实现文件都有先于它的测试提交
+    local errors=0
+
+    local branch_base="${EXTRA_ARGS[0]:-main}"
+    local tdd_script=""
+
+    # 查找 tdd-order-check.sh
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    for candidate in "$SCRIPT_DIR/tdd-order-check.sh"; do
+        if [[ -f "$candidate" ]]; then
+            tdd_script="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$tdd_script" ]]; then
+        warn "tdd-order-check.sh not found — skipping TDD order check"
+        pass "stage 02 gate: TDD check skipped (script not found)"
+        return
+    fi
+
+    info "Running TDD order check: ${branch_base}..HEAD"
+    local tdd_output
+    tdd_output=$(bash "$tdd_script" "$PROJECT_ROOT" "$branch_base" 2>&1) && rc=$? || rc=$?
+
+    echo "$tdd_output"
+
+    if [[ $rc -ne 0 ]]; then
+        err "TDD order check failed — implementation was committed before tests"
+        errors=$((errors + 1))
+    else
+        ok "TDD order check passed"
+    fi
+
+    if [[ $errors -gt 0 ]]; then
+        fail "${errors} check(s) failed"
+    fi
+
+    pass "stage 02 gate: TDD order verified"
 }
 
 gate_stage_03() {
@@ -748,12 +792,13 @@ rm -f "$GATE_DIR/stage-$(printf '%02d' "$STAGE").pass"
 
 case "$STAGE" in
     01) gate_stage_01 ;;
+    02) gate_stage_02 ;;
     03) gate_stage_03 ;;
     05) gate_stage_05 ;;
     07) gate_stage_07 ;;
     08) gate_stage_08 ;;
     09) gate_stage_09 ;;
     *)
-        fail "unknown stage '${STAGE}'. expected: 01, 03, 05, 07, 08, 09"
+        fail "unknown stage '${STAGE}'. expected: 01, 02, 03, 05, 07, 08, 09"
         ;;
 esac

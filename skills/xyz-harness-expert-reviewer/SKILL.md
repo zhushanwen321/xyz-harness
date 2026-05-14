@@ -40,7 +40,7 @@ dev-flow 通过传入的上下文区分模式。判断规则：
 |------|------|------|
 | spec.md | dev-flow 传入路径 | 是 |
 | plan.md | dev-flow 传入路径 | 是 |
-| CLAUDE.md | 项目根目录 | 架构约束和编码规范部分 |
+| CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分（优先 docs/standards.md + docs/architecture.md） |
 
 ### 检查维度
 
@@ -105,7 +105,7 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
 | spec.md | dev-flow 传入路径 | 是 |
 | plan.md | dev-flow 传入路径 | 是 |
 | git diff（阶段③全部代码变更） | dev-flow 传入 | 是 |
-| CLAUDE.md | 项目根目录 | 架构约束和编码规范部分 |
+| CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分 |
 
 #### 检查维度
 

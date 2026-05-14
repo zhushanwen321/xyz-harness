@@ -24,7 +24,7 @@ model: kimi-coding-plan/kimi-for-coding
 
 ## 核心原则
 
-1. **服从 CLAUDE.md**：项目 CLAUDE.md 中的前端编码规范（shadcn-vue 组件约束、Tailwind token 规则、taste-lint 规则）具有最高优先级。
+1. **服从项目文档**：项目的前端编码规范（docs/standards.md 前端章节 + docs/design-system.md，不存在时回退 CLAUDE.md）具有最高优先级。
 2. **三阶段工作流**：骨架→功能→美化，不跳步。
 3. **视觉闭环**：阶段 3 必须截图验证，不能"凭感觉"判断样式是否正确。
 4. **最小实现**：只实现 spec 和 plan 要求的内容，不做额外优化或过度设计。
@@ -130,7 +130,7 @@ model: kimi-coding-plan/kimi-for-coding
 **目标**：所有 UI 元素在正确位置，用 shadcn-vue 组件占位，功能未实现。"intentionally plain"。
 
 ```
-1. 读取 spec.md 中当前 task 的要求 + CLAUDE.md 前端规范
+1. 读取 spec.md 中当前 task 的要求 + 项目前端规范（docs/standards.md + docs/design-system.md）
 2. 识别涉及的页面/组件，确定文件结构
 3. 创建组件文件：
    - 使用 shadcn-vue 组件（Button, Input, Table, Card, Dialog 等）

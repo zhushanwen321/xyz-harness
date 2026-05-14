@@ -143,7 +143,7 @@ model: llm-simple-router/glm-5.1
 | 代码段限制 | 代码段是否只用于组件接口签名/伪代码？是否有完整实现代码？ | MUST FIX（有完整实现时） |
 | 章节完整性 | 每个章节是否有内容（包括 N/A 说明）？是否有跳过的章节？ | LOW |
 | 与 spec 覆盖 | 是否覆盖了 spec 中所有与前端相关的需求？ | MUST FIX（遗漏时） |
-| 与 CLAUDE.md 合规 | 样式方案、组件库、编码规范是否与项目 CLAUDE.md 一致？ | MUST FIX（冲突时） |
+| 与项目文档合规 | 样式方案、组件库、编码规范是否与 docs/standards.md 和 docs/design-system.md（或 CLAUDE.md）一致？ | MUST FIX（冲突时） |
 
 ## 评审流程
 

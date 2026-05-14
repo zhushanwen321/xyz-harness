@@ -155,8 +155,8 @@ digraph process {
 | 角色 | 必传 | 可选 | 不传 |
 |------|------|------|------|
 | TDD coder | 当前 task 描述、被测接口签名、测试框架信息 | 同文件已有代码 | 完整 spec 背景章节、其他 task |
-| executor | 当前 task 描述、TDD coder 产出的测试文件路径、相关已有代码片段 | CLAUDE.md 编码规范摘要（仅相关部分） | 完整 spec 背景章节、其他 task 描述 |
-| 前端 developer | 当前 task 描述、相关设计稿路径、已有组件代码片段 | CLAUDE.md 前端规范摘要（tokens、组件库约束） | 完整 spec 背景章节、其他 task |
+| executor | 当前 task 描述、TDD coder 产出的测试文件路径、相关已有代码片段 | 编码规范摘要（docs/standards.md 或 CLAUDE.md，仅相关部分） | 完整 spec 背景章节、其他 task 描述 |
+| 前端 developer | 当前 task 描述、相关设计稿路径、已有组件代码片段 | 前端规范摘要（docs/standards.md + docs/design-system.md 或 CLAUDE.md，tokens、组件库约束） | 完整 spec 背景章节、其他 task |
 | spec reviewer | 当前 task 的 spec 验收标准（AC 部分）、git diff（仅当前 task 变更） | plan 中当前 task 的文件变更表 | 完整 spec 背景章节、其他 task 内容 |
 | E2E tester | e2e-test-plan.md、spec.md 验收标准 | 测试环境配置摘要 | 编码过程上下文、其他无关 spec 章节 |
 

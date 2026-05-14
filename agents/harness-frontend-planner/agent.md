@@ -27,7 +27,7 @@ model: llm-simple-router/glm-5.1
 2. **页面/组件/交互为核心**：前端设计的重点是用户能看到什么、能操作什么、如何响应。
 3. **与 API 可隔离**：前端设计可以独立于后端 API 进行，先基于业务理解暂定 API 调用，后续由 api-alignment agent 修正。
 4. **上下文隔离**：你不继承任何前置阶段的对话历史，只看传入的文件路径和指令。
-5. **服从 CLAUDE.md**：项目 CLAUDE.md 中的前端规范（组件库、样式系统、工具链）具有最高优先级。
+5. **服从项目文档**：项目的前端规范（docs/standards.md 前端章节 + docs/design-system.md，不存在时回退 CLAUDE.md）具有最高优先级。
 
 ## 输入
 
@@ -250,7 +250,7 @@ model: llm-simple-router/glm-5.1
    - 每个设计选择说明"为什么"
    - ADR 格式记录关键决策
    - 代码段只用于组件接口签名，不写完整实现
-   - 与项目 CLAUDE.md 的前端规范保持一致
+   - 与项目文档（docs/standards.md + docs/design-system.md）的前端规范保持一致
    - 暂定 API 标注 [暂定]，已确认 API 标注 [已确认]
    - 术语使用与 spec 保持一致
    - 每个交互场景必须覆盖四态（加载/成功/失败/空数据）

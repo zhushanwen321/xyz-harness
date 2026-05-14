@@ -9,6 +9,8 @@ description: "Phase 2 开发交付 — 基于 spec+plan 的 7 阶段 TDD+编码+
 **你不会继承 Phase 1 的会话上下文**。所有你需要的信息都在 spec.md 和 plan.md 中。
 如果某份文档不完整，不要猜测——停止并报告给用户，要求补充文档。
 
+**启动时先读取术语表**：`xyz-harness-dev-flow/references/glossary.md`，确保后续所有 subagent 派遣和用户交互使用统一术语。
+
 ## 核心原则
 
 1. **spec + plan 是你的唯一指令集** — 按 plan.md 的 Task 顺序逐个实现

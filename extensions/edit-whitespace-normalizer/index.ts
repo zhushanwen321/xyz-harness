@@ -166,7 +166,7 @@ function getLanguageDefault(ext: string, name: string): IndentStyle {
 function resolveFileInfo(
   filePath: string,
   cwd: string,
-): { absolutePath: string; projectRoot: string; ext: string; name: string; relativePath: string; isGitProject: boolean } {
+): { absolutePath: string; projectRoot: string; ext: string; name: string; relativePath: string } {
   const absolutePath = path.resolve(cwd, filePath);
   const ext = path.extname(absolutePath).toLowerCase();
   const name = path.basename(absolutePath);
@@ -178,17 +178,21 @@ function resolveFileInfo(
     projectRoot = dir;
     break;
   }
+  // bare repo workspace 容器也作为 projectRoot 候选
+  if (fs.existsSync(path.join(dir, ".bare"))) {
+    projectRoot = dir;
+    break;
+  }
   const parent = path.dirname(dir);
   if (parent === dir) break;
   dir = parent;
   }
 
-  // 未找到 .git → 可能在 bare repo workspace 容器根目录下操作
-  // 不将 cwd 作为 projectRoot，避免在错误位置创建 .editorconfig
-  const resolvedRoot = projectRoot ?? cwd;
-  const relativePath = path.relative(resolvedRoot, absolutePath);
+  if (projectRoot === null) projectRoot = cwd;
 
-  return { absolutePath, projectRoot: resolvedRoot, ext, name, relativePath, isGitProject: projectRoot !== null };
+  const relativePath = path.relative(projectRoot, absolutePath);
+
+  return { absolutePath, projectRoot, ext, name, relativePath };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -573,13 +577,35 @@ export default function editWhitespaceNormalizer(pi: ExtensionAPI) {
   // ── Cache helpers ──
 
   function getOrParseEditorConfig(projectRoot: string): ParsedEditorConfig | null {
-    if (editorConfigCache.has(projectRoot)) {
-      return editorConfigCache.get(projectRoot)!;
+  if (editorConfigCache.has(projectRoot)) {
+    return editorConfigCache.get(projectRoot)!;
+  }
+
+  // 先在 projectRoot 下查找
+  const editorConfigPath = path.join(projectRoot, ".editorconfig");
+  const directParsed = parseEditorConfig(editorConfigPath);
+  if (directParsed !== null) {
+    editorConfigCache.set(projectRoot, directParsed);
+    return directParsed;
+  }
+
+  // 向上查找（.editorconfig 标准行为），直到文件系统根
+  let dir = path.dirname(projectRoot);
+  for (let i = 0; i < 10; i++) {
+    const parentEcPath = path.join(dir, ".editorconfig");
+    const parentParsed = parseEditorConfig(parentEcPath);
+    if (parentParsed !== null) {
+    // 如果遇到 root = true 的 .editorconfig，停止查找
+    editorConfigCache.set(projectRoot, parentParsed);
+    return parentParsed;
     }
-    const editorConfigPath = path.join(projectRoot, ".editorconfig");
-    const parsed = parseEditorConfig(editorConfigPath);
-    editorConfigCache.set(projectRoot, parsed);
-    return parsed;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  editorConfigCache.set(projectRoot, null);
+  return null;
   }
 
   function getOrDetectFileIndent(
@@ -657,8 +683,8 @@ export default function editWhitespaceNormalizer(pi: ExtensionAPI) {
       // Resolve .editorconfig
       const editorConfigParsed = getOrParseEditorConfig(fileInfo.projectRoot);
 
-    // Prompt for .editorconfig creation if missing (only for real git projects)
-    if (fileInfo.isGitProject && editorConfigParsed === null && !promptedProjects.has(fileInfo.projectRoot)) {
+  // Prompt for .editorconfig creation if missing
+  if (editorConfigParsed === null && !promptedProjects.has(fileInfo.projectRoot)) {
         promptedProjects.add(fileInfo.projectRoot);
         await promptCreateEditorConfig(ctx, fileInfo.projectRoot);
         // Re-read cache after potential creation

@@ -30,24 +30,26 @@ description: >
 
 ```
 if 项目根目录/CLAUDE.md 不存在:
-    创建 CLAUDE.md，写入以下骨架（用实际值替换 [xxx]）:
+  创建 CLAUDE.md，写入以下骨架（用实际值替换 [xxx]）:
 
-    # CLAUDE.md
+  # CLAUDE.md
 
-    ## 项目背景
-    [待填写]
+  ## 项目背景
+  [待填写]
 
-    ## 架构约束
-    [待填写]
+  ## 文档索引
+  [待填写 — init skill 会根据项目类型自动生成]
 
-    ## 编码规范
-    [待填写]
+  ## 架构约束
+  [待填写]
 
-    ## 质量门禁
-    [待填写]
+  ## 质量门禁
+  [待填写]
 
-    ## 已知陷阱
-    [待填写]
+  ## 已知陷阱
+  [待填写]
+
+  > 编码规范详见 docs/standards.md，不再内嵌在 CLAUDE.md 中。
 
     向用户说:
     "已创建 CLAUDE.md 骨架文件。接下来我会逐项引导你填写。"
@@ -73,11 +75,57 @@ if 项目根目录/CLAUDE.md 不存在:
   5. 部署配置:
      - 检查 Dockerfile / docker-compose*.yml / deploy.sh / Makefile (含 deploy target)
   6. Lint 配置:
-     - 检查 .eslintrc* / .ruff.toml / clippy.toml / .flake8
-     - 从配置推断 lint 命令
+   - 检查 .eslintrc* / .ruff.toml / clippy.toml / .flake8
+   - 从配置推断 lint 命令
+  7. 项目类型检测:
+   - 前端技术栈: package.json 中有 vue / react / svelte / angular 依赖 → 前端项目
+   - 后端技术栈: Cargo.toml / pyproject.toml / go.mod / pom.xml / build.gradle → 后端项目
+   - 两者都有 → 全栈项目
+   - 两者都没有 → 纯后端（或其他）
 ```
 
 将扫描结果填入 CLAUDE.md 对应章节。**扫描到的内容用 `[已自动检测]` 标注**，让用户知道哪些不需要手动填。
+
+### Step 1.5：按项目类型生成标准文档
+
+根据 Step 1 检测到的项目类型，生成对应的最小文档集：
+
+```
+项目类型判断:
+  纯后端:  CLAUDE.md + docs/standards.md + docs/architecture.md
+  全栈:    CLAUDE.md + docs/standards.md + docs/architecture.md + docs/design-system.md
+  纯前端:  CLAUDE.md + docs/standards.md + docs/design-system.md
+```
+
+**生成流程：**
+
+1. 从 `skills/xyz-harness-dev-flow/references/` 目录读取对应模板:
+   - `standards-template.md` — 所有项目类型都生成
+   - `architecture-template.md` — 纯后端和全栈项目
+   - `design-system-template.md` — 全栈和纯前端项目
+
+2. 用 Step 1 扫描到的信息预填模板中 `[自动检测]` 标注的内容:
+   - 语言/框架/测试目录/测试框架等 → 填入 standards-template.md
+   - 前端组件库/样式方案等 → 填入 design-system-template.md
+   - 后端框架/数据库等 → 填入 architecture-template.md
+
+3. 生成 CLAUDE.md 的「文档索引」章节，只列出本项目类型需要的文档:
+
+```markdown
+   ## 文档索引 **[必需]**
+
+   | 文档 | 路径 | 类型 | 说明 |
+   |------|------|------|------|
+   | 编码规范 | `docs/standards.md` | 标准 | 前后端编码规范、测试规范、命名约定 |
+   | 系统架构 | `docs/architecture.md` | 标准 | 技术栈、领域模型、存储、API 结构 |
+   <!-- 纯前端项目删除上面一行 -->
+   | 前端设计系统 | `docs/design-system.md` | 标准 | 组件库、token、样式约束、参考组件 |
+   <!-- 纯后端项目删除上面一行 -->
+   ```
+
+4. 向用户展示生成的文档清单，确认后写入项目。
+
+**向后兼容：** 如果项目已有 docs/ 目录下的文档，不要覆盖，而是在增量检查中建议更新。
 
 ### Step 2：逐项引导填写缺失信息
 
@@ -113,13 +161,20 @@ if 项目根目录/CLAUDE.md 不存在:
 将每条规则加入禁止事项清单。
 ```
 
-#### 2.3 编码规范（必需）
+#### 2.3 编码规范（引导填写 docs/standards.md）
 
 ```
-展示自动检测到的编码规范（从 lint 配置、已有代码风格推断）。
+编码规范已从 CLAUDE.md 中抽取到 docs/standards.md。
 
-问: "有什么编码规范是 AI 必须遵守的？（说'没有'跳过）"
-引导补充：参数校验方式、统一异常处理、返回值格式、命名约定等。
+如果 docs/standards.md 已在 Step 1.5 中生成:
+  展示已生成的 standards.md 内容，问: "以上编码规范是否正确？需要补充什么？"
+  引导补充：参数校验方式、统一异常处理、返回值格式、命名约定等。
+  更新 docs/standards.md。
+
+如果 docs/standards.md 不存在（旧项目迁移场景）:
+  问: "是否将 CLAUDE.md 中的编码规范迁移到 docs/standards.md？"
+  用户说"是" → 从 CLAUDE.md 提取编码规范内容，迁移到 docs/standards.md，CLAUDE.md 中改为引用
+  用户说"不用" → 保持现状（向后兼容，agent 会回退读 CLAUDE.md）
 ```
 
 #### 2.4 测试规范（必需）
@@ -223,11 +278,13 @@ if 任一检查不通过:
 CLAUDE.md 已配置以下章节：
 - 项目背景：✅
 - 架构约束：✅
-- 编码规范：✅
-- 测试规范：✅
+- 架构约束：✅
+- 文档索引：✅
+- docs/standards.md：✅
+- docs/architecture.md：[✅ / ⬜ 不需要]
+- docs/design-system.md：[✅ / ⬜ 不需要]
 - 质量门禁：✅（3 条命令已验证通过）
 - 部署配置：[✅ / ⬜ 跳过]
-- 高频变更区：[✅ / ⬜ 跳过]
 - 已知陷阱：[✅ / ⬜ 跳过]
 - Loop 模式：✅（force-loop 扩展可用）
 
@@ -250,6 +307,7 @@ CLAUDE.md 已配置以下章节：
   □ 架构约束（至少有分层规则）
   □ 编码规范（至少有测试目录）
   □ 质量门禁（至少有编译和测试命令）
+  □ 文档索引（列出标准文档路径）
   □ 部署配置（可选，缺失不报错）
 
 缺失项:
@@ -261,6 +319,17 @@ CLAUDE.md 已配置以下章节：
   展示已有内容，问"是否需要更新？"
   用户说"是" → 重新引导该项
   用户说"不用" → 跳过
+
+**旧格式识别：**
+  如果 CLAUDE.md 包含"## 编码规范"或"## 测试规范"的内嵌章节（旧格式）:
+  告诉用户: "检测到您的 CLAUDE.md 使用旧格式（编码规范内嵌）。
+  建议迁移到新格式（docs/standards.md），好处：
+  1. 释放 CLAUDE.md 行数限制
+  2. agent 不需要动态检测文档格式
+  3. 文档可独立更新
+  是否迁移？"
+  用户说"是" → 执行迁移（提取内容到 docs/standards.md，更新文档索引）
+  用户说"不用" → 保持现状（向后兼容）
 ```
 
 ---
@@ -303,13 +372,17 @@ CLAUDE.md 已配置以下章节：
 - [ ] 技术栈至少包含语言和框架
 - [ ] 模块结构至少列了第一层目录
 - [ ] 架构约束至少有分层规则
-- [ ] 编码规范至少有测试目录路径
-- [ ] 测试规范包含命名和 mock 策略
+- [ ] 文档索引章节存在（列出标准文档路径）
+- [ ] docs/standards.md 存在（按项目类型生成）
+- [ ] docs/architecture.md 存在（纯后端和全栈项目）
+- [ ] docs/design-system.md 存在（全栈和纯前端项目）
+- [ ] 编码规范至少有测试目录路径（在 docs/standards.md 中）
+- [ ] 测试规范包含命名和 mock 策略（在 docs/standards.md 中）
 - [ ] 质量门禁至少有编译和测试两条命令
 - [ ] 质量门禁命令格式正确（`- 标签: \`命令\``）
 - [ ] 所有质量门禁命令已验证可执行
 - [ ] 已知陷阱章节存在（即使为空）
-- [ ] 文件总行数 ≤ 200 行
+- [ ] CLAUDE.md 文件总行数 ≤ 120 行
 
 <!-- LOCAL-OVERRIDE:START -->
 ## 本地目录覆盖规则

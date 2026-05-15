@@ -102,7 +102,7 @@ digraph process {
         label="Per Task";
     "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)" [shape=box style=filled fillcolor=lightyellow];
         "TDD coder writes failing tests" [shape=box];
-        "Dispatch implementer (harness-executor)" [shape=box];
+        "Dispatch implementer (harness-backend-developer)" [shape=box];
         "Implementer subagent asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
         "Implementer writes code to pass tests, commits, self-reviews" [shape=box];
@@ -118,10 +118,10 @@ digraph process {
 
   "Read plan, extract all tasks with full text, note context, create_tasks" -> "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)";
     "Dispatch TDD coder (harness-tdd-coder)" -> "TDD coder writes failing tests";
-    "TDD coder writes failing tests" -> "Dispatch implementer (harness-executor)";
-    "Dispatch implementer (harness-executor)" -> "Implementer subagent asks questions?";
+    "TDD coder writes failing tests" -> "Dispatch implementer (harness-backend-developer)";
+    "Dispatch implementer (harness-backend-developer)" -> "Implementer subagent asks questions?";
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer (harness-executor)";
+    "Answer questions, provide context" -> "Dispatch implementer (harness-backend-developer)";
     "Implementer subagent asks questions?" -> "Implementer writes code to pass tests, commits, self-reviews" [label="no"];
     "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer (harness-reviewer)";
     "Dispatch spec reviewer (harness-reviewer)" -> "Spec reviewer subagent confirms code matches spec?";
@@ -133,6 +133,26 @@ digraph process {
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
+
+### Wave 模式（按 Execution Groups）
+
+当 plan.md 定义了 Execution Groups 和 Wave Schedule 时，主 agent 按 Wave 派遣：
+
+```
+for each Wave:
+  for each Group in Wave (parallel if Semaphore allows):
+  dispatch subagent for this Group:
+    1. subagent processes all Tasks in this Group sequentially
+    2. each Task follows: TDD coder → executor → reviewer (backend) or frontend-developer → reviewer (frontend)
+    3. git commit after each Task
+  wait for all Groups in Wave
+  proceed to next Wave
+```
+
+**与逐 Task 模式的区别：**
+- 逐 Task 模式：每个 Task 独立派遣 subagent，完全串行
+- Wave 模式：每个 Group 派遣一个 subagent（处理组内所有 Task），同 Wave 的 Group 可并行
+- Wave 模式效率更高，但需要 plan.md 预先定义好 Groups 和依赖关系
 
 ## 主 Agent 上下文管理
 
@@ -152,34 +172,37 @@ digraph process {
 
 每个 subagent 只传入完成任务所需的最小上下文。不要全量传 spec/plan。主 agent 从 spec/plan 中提取必要片段传入，避免 subagent 上下文被无关信息占满。
 
+**Per-Group 上下文提取：** 主 agent 按 Execution Group（而非按单个 Task）提取上下文。一个 Group 包含 1-4 个关联紧密的 Task，共享同一份上下文传给 subagent。
+
 | 角色 | 必传 | 可选 | 不传 |
 |------|------|------|------|
-| TDD coder | 当前 task 描述、被测接口签名、测试框架信息 | 同文件已有代码 | 完整 spec 背景章节、其他 task |
-| executor | 当前 task 描述、TDD coder 产出的测试文件路径、相关已有代码片段 | 编码规范摘要（docs/standards.md 或 CLAUDE.md，仅相关部分） | 完整 spec 背景章节、其他 task 描述 |
-| 前端 developer | 当前 task 描述、相关设计稿路径、已有组件代码片段 | 前端规范摘要（docs/standards.md + docs/design-system.md 或 CLAUDE.md，tokens、组件库约束） | 完整 spec 背景章节、其他 task |
-| spec reviewer | 当前 task 的 spec 验收标准（AC 部分）、git diff（仅当前 task 变更） | plan 中当前 task 的文件变更表 | 完整 spec 背景章节、其他 task 内容 |
-| E2E tester | e2e-test-plan.md、spec.md 验收标准 | 测试环境配置摘要 | 编码过程上下文、其他无关 spec 章节 |
+| TDD coder | 当前 Group 内所有 task 描述、被测接口签名（Group 涉及的所有接口）、测试框架信息 | 同文件已有代码 | 完整 spec 背景章节、其他 task |
+| executor | 当前 Group 内所有 task 描述、TDD coder 产出的测试文件路径（Group 内所有）、相关已有代码片段 | 编码规范摘要（docs/standards.md 或 CLAUDE.md，仅相关部分） | 完整 spec 背景章节、其他 task 描述 |
+| 前端 developer | 当前 Group 内所有 task 描述、相关设计稿路径、已有组件代码片段 | 前端规范摘要（docs/standards.md + docs/design-system.md 或 CLAUDE.md，tokens、组件库约束） | 完整 spec 背景章节、其他 task |
+| spec reviewer | 当前 Group 内所有 task 的 spec 验收标准（AC 部分）、git diff（当前 Group 变更） | plan 中当前 task 的文件变更表 | 完整 spec 背景章节、其他 task 内容 |
+| E2E tester | e2e-test-plan.md、spec.md 验收标准 | 测试环境配置摘要 | 编码过程上下文、其他无关 spec章节 |
 
 **操作方式**：主 agent 在派遣 subagent 前，先 read spec.md 和 plan.md，从中提取当前 task 对应的片段，作为 subagent task 参数的一部分传入。subagent 不需要自己读 spec/plan 文件。
 
 ### L2 复杂度下的额外上下文
 
-当 plan.md 标注为 L2 复杂度时，除了 plan.md 总纲，还存在子设计文档。主 agent 需要根据 task 类型传入额外上下文：
+当 plan.md 标注为 L2 复杂度时，除了 plan.md 总纲，还存在子设计文档。主 agent 需要根据 Group 类型传入额外上下文：
 
-| Task 类型 | 必传额外文档 | 说明 |
+| Group 类型 | 必传额外文档 | 说明 |
 |-----------|-------------|------|
-| 后端 task（API/数据库/业务逻辑） | `plan-backend.md` 对应章节 | 领域模型、状态机、存储设计、数据流等 |
-| 后端 task | `plan-api-contract.md` 相关端点 | API 端点的请求/响应结构 |
-| 前端 task（UI/页面/组件） | `plan-frontend.md` 对应章节 | 组件设计、交互逻辑、暂定 API（已对齐） |
-| 跨前后端 task | 两份文档的相关章节 | 集成点、API 合约 |
+| 后端 Group（API/数据库/业务逻辑） | `plan-backend.md` 对应章节 | 领域模型、状态机、存储设计、数据流等 |
+| 后端 Group | `plan-api-contract.md` 相关端点 | API 端点的请求/响应结构 |
+| 前端 Group（UI/页面/组件） | `plan-frontend.md` 对应章节 | 组件设计、交互逻辑、暂定 API（已对齐） |
 
 **L1 不需要额外文档**——所有设计都在 plan.md 单文件中。
 
-**提取策略**：主 agent 读取子文档后，只提取当前 task 涉及的章节（如 Task 3 涉及 §5 领域模型和 §8 存储设计），不传整个子文档。这避免了 subagent 上下文被无关信息占满。
+**提取策略**：主 agent 读取子文档后，只提取当前 Group 涉及的章节（如 Group BG1 涉及 §5 领域模型和 §8 存储设计），不传整个子文档。这避免了 subagent 上下文被无关信息占满。
 
 ## Model Selection
 
 使用能满足任务要求的最经济模型以节省成本和提升速度。在 pi 环境中使用 `provider/model` 格式指定模型。
+
+**按 Group 选择模型：** 每个 Execution Group 有自己的模型配置（写在 plan.md 中）。主 agent 按 Group 配置派遣，无需自行选择。以下规则适用于 plan.md 编写时的模型建议。
 
 **机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`llm-simple-router/glm-5-turbo`。plan 足够清晰时大部分任务都属于此类。
 
@@ -236,13 +259,13 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 | 角色 | Agent | 职责 |
 |------|-------|------|
 | TDD coder | harness-tdd-coder | 写失败测试（不写实现代码） |
-| 后端实现者 | harness-executor | 写后端代码使测试通过 |
+| 后端实现者 | harness-backend-developer | 写后端代码使测试通过 |
 | 前端实现者 | harness-frontend-developer | 前端三阶段开发（骨架→功能→美化） |
 | Spec 合规检查 | harness-reviewer | 验证代码是否实现 spec 要求 |
 
 ### 前端 task 路由
 
-当 task 涉及 UI 组件、页面、布局、样式时，派遣 `harness-frontend-developer` 而非 `harness-executor`。
+当 task 涉及 UI 组件、页面、布局、样式时，派遣 `harness-frontend-developer` 而非 `harness-backend-developer`。
 
 **判断信号：**
 - 文件路径包含 `frontend/`、`src/components/`、`src/views/`、`src/pages/`
@@ -285,7 +308,7 @@ TDD coder:
   - All 3 tests FAIL as expected
   - Committed test file
 
-[Dispatch implementer subagent via pi subagent tool, agent: harness-executor]
+[Dispatch implementer subagent via pi subagent tool, agent: harness-backend-developer]
 
 Implementer: "Before I begin - should the hook be installed at user or system level?"
 
@@ -316,7 +339,7 @@ TDD coder:
   - All 4 tests FAIL as expected
   - Committed test file
 
-[Dispatch implementer subagent, agent: harness-executor]
+[Dispatch implementer subagent, agent: harness-backend-developer]
 
 Implementer: [No questions, proceeds]
 Implementer:
@@ -395,6 +418,12 @@ Done!
 - **Skip TDD coder "because the task is too simple"**
 - **Start implementer before TDD coder returns DONE**
 
+**If subagent dispatch fails (agent not found / model unavailable):**
+- **Stop immediately.** Do not retry with a different agent or model.
+- Report the exact error to the user: agent name, model, error message.
+- Suggest fix: run `install.py` if agent missing, or update plan.md with correct model.
+- Wait for user confirmation before retrying.
+
 **If subagent asks questions:**
 - Answer clearly and completely
 - Provide additional context if needed
@@ -419,7 +448,7 @@ Done!
 
 **Subagents should use:**
 - **TDD coder** uses harness-tdd-coder agent - writes failing tests only
-- **Implementer** uses harness-executor agent - writes code to pass tests
+- **Implementer** uses harness-backend-developer agent - writes code to pass tests
 
 **Code quality review:**
 - Code quality review is handled by dev-flow Stage 10 的 expert-reviewer skill，不在此流程中执行

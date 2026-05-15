@@ -102,13 +102,13 @@ Stage 3 Spec 评审通过。评审报告：{报告路径}
 编写 plan.md。执行以下子步骤：
 
 1. **评估复杂度等级（L1/L2）** — 5 个维度（领域/存储/数据流/API/非功能性），任一命中 L2 则整体 L2
-2. **编写 plan.md 总纲** — Task 拆分、依赖关系、涉及文件。**每个 Task 必须有足够的上文——要改什么、怎么改、为什么改。对方没有你的对话历史。每个 Task 必须包含：描述、验收标准、文件变更表、风险点。**
+2. **编写 plan.md 总纲** — Task 拆分（每个 Task 标注 type: frontend/backend）、**Execution Groups 分组**（BG*/FG*，每组含 subagent 配置：agent、model、上下文、读写文件）、**Wave Schedule 编排**（组间依赖和执行顺序）。涉及文件。**每个 Task 必须有足够的上文——要改什么、怎么改、为什么改。对方没有你的对话历史。每个 Task 必须包含：描述、验收标准、文件变更表、风险点。**
 3. **L2 额外步骤**（如适用）：
    - 并行派遣 `harness-backend-planner` 和 `harness-frontend-planner`
    - 完成后派遣 `harness-api-alignment` 进行前后端对齐
    - 汇总更新 plan.md 总纲
 
-**完成标志**：plan.md 已写入产出目录。L2 时所有子文档就绪。
+**完成标志**：plan.md 已写入产出目录，包含 Execution Groups 和 Wave Schedule。L2 时所有子文档就绪，Groups 引用子文档章节。
 
 **完成后引导**：
 ```
@@ -176,10 +176,12 @@ Stage 5 Plan 评审通过。评审报告：{报告路径}
 基于 spec.md + plan.md 编写 e2e-test-plan.md。执行以下子步骤：
 
 1. **主 agent 编写整体方案** — 测试概览、环境配置、分组策略、依赖关系图
-2. **subagent 分组生成具体用例** — 每组用例由一个 subagent 生成（并行度 ≤ 3）
-3. **汇总** — 合并所有分组用例到 e2e-test-plan.md
+2. **为每个测试组配置 Subagent** — 每组包含 agent（harness-e2e-tester）、model、注入上下文、读写文件
+3. **编排串行执行调度** — 测试组严格串行执行，定义执行顺序和依赖
+4. **subagent 分组生成具体用例** — 每组用例由一个 subagent 生成（并行度 ≤ 3）
+5. **汇总** — 合并所有分组用例到 e2e-test-plan.md
 
-**完成标志**：e2e-test-plan.md 已写入产出目录，包含完整的环境配置、分组、用例和验证方法。
+**完成标志**：e2e-test-plan.md 已写入产出目录，包含完整的环境配置、分组（含 Subagent 配置）、串行执行调度、用例和验证方法。
 
 **完成后引导**：
 ```

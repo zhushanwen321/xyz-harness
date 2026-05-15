@@ -54,7 +54,7 @@ Produce a single `plan.md` with all tasks inline. Backend design is described wi
 
 ### L2 Flow (Complex)
 
-1. Produce `plan.md` as a **master document** (goal, architecture overview, task list with frontend/backend labels, dependency graph, sub-document index)
+1. Produce `plan.md` as a **master document** (goal, architecture overview, task list with frontend/backend labels, dependency graph, sub-document index, **Execution Groups**, Wave schedule)
 2. Dispatch **harness-backend-planner** agent → produces `plan-backend.md` + `plan-api-contract.md`
 3. Dispatch **harness-frontend-planner** agent → produces `plan-frontend.md`
 4. After both complete, dispatch **harness-api-alignment** agent → aligns `plan-frontend.md` with `plan-api-contract.md`
@@ -64,6 +64,8 @@ Produce a single `plan.md` with all tasks inline. Backend design is described wi
 - Steps 2 and 3 can run in parallel (both read spec.md + plan.md master)
 - Step 4 runs after both 2 and 3 complete
 - Step 5 is part of step 2 (backend-planner updates architecture doc)
+
+L2 Flow 保留子文档模式（plan-backend.md + plan-frontend.md + plan-api-contract.md），但 plan.md 总纲中**必须包含 Execution Groups**。Groups 负责"执行编排"（分组、subagent 配置、Wave 编排），子文档负责"设计细节"。
 
 **L2 plan.md master structure:**
 
@@ -80,12 +82,15 @@ Produce a single `plan.md` with all tasks inline. Backend design is described wi
 - Frontend design: `plan-frontend.md`
 
 ## Task List
-| # | Task | Type | Depends on | Sub-document |
-|---|------|------|-----------|-------------|
-| 1 | ... | backend | — | plan-backend.md §3 |
-| 2 | ... | frontend | 1 | plan-frontend.md §2 |
+| # | Task | Type | Depends on | Group |
+|---|------|------|-----------|-------|
+| 1 | ... | backend | — | BG1 |
+| 2 | ... | frontend | 1 | FG1 |
 
-## Dependency Graph
+## Execution Groups
+{与 L1 格式完全相同，见 Execution Groups 章节}
+
+## Dependency Graph & Wave Schedule
 ...
 ```
 
@@ -94,6 +99,8 @@ The master plan.md does NOT duplicate the detailed design from sub-documents. It
 - Complete task list with dependencies
 - Index to sub-documents for details
 - Integration points between frontend and backend
+
+L2 时 Execution Groups 中的每个 group 的"设计细节"引用子文档章节（如"设计详见 plan-backend.md §3"），L1 时设计细节直接写在 group 内部。
 
 ## File Structure
 
@@ -105,6 +112,15 @@ Before defining tasks, map out which files will be created or modified and what 
 - In existing codebases, follow established patterns. If the codebase uses large files, don't unilaterally restructure - but if a file you're modifying has grown unwieldy, including a split in the plan is reasonable.
 
 This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
+
+File structure 表格必须包含 Group 列，标注每个文件属于哪个 Execution Group：
+
+| File | Type | Group | Description |
+|------|------|-------|-------------|
+| `src/models/user.py` | create | BG1 | 用户模型 |
+| `src/api/user.py` | create | BG1 | 用户 API |
+| `src/views/UserPage.vue` | create | FG1 | 用户管理页面 |
+| `tests/test_user.py` | create | BG1 | 用户模型测试 |
 
 ## Bite-Sized Task Granularity
 
@@ -139,6 +155,8 @@ This structure informs the task decomposition. Each task should produce self-con
 
 ````markdown
 ### Task N: [Component Name]
+
+**Type:** backend | frontend
 
 **Files:**
 - Create: `exact/path/to/file.py`
@@ -194,6 +212,110 @@ Every step must contain the actual content an engineer needs. These are **plan f
 - Exact commands with expected output
 - DRY, YAGNI, TDD, frequent commits
 
+## Execution Groups
+
+Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 Group 绑定一个 subagent 执行。
+
+### 分组原则
+
+1. **按类型分组**：前端 Task 和后端 Task 分到不同的 Group（前端 Group 前缀 `FG`，后端 Group 前缀 `BG`）
+2. **功能关联度**：关联紧密的 Task 放同一组（如用户模型 + 用户 API 放一组）
+3. **文件数上限**：每组新增+修改文件总数 ≤ 10 个。超过则拆分
+4. **独立可执行**：每组内的 Task 可以由一个 subagent 独立完成，不依赖组外的文件变更
+5. **测试文件计算**：TDD 产出的测试文件计入文件数
+
+### Group 内部结构
+
+每个 Group 必须包含以下信息：
+
+```markdown
+#### BG1: {后端分组名}
+
+**Description:** {功能关联说明，为什么这些 task 放一组}
+
+**Tasks:** Task 1, Task 3
+
+**Files (预估):** {N} 个文件（{X} create + {Y} modify）
+
+**Subagent 配置:**
+
+| 配置项 | 值 |
+|--------|---|
+| Agent | `harness-tdd-coder` → `harness-backend-developer` → `harness-reviewer` |
+| Model | `llm-simple-router/glm-5.1`（executor）、`llm-simple-router/glm-5-turbo`（tdd-coder） |
+| 注入上下文 | {列出具体内容：哪些 task 描述、spec 章节、编码规范} |
+| 读取文件 | {列出需要读取的已有文件路径} |
+| 修改/创建文件 | {列出将要创建或修改的文件路径} |
+
+**Execution Flow (BG1 内部):** 串行派遣，每个 Task 走完整 subagent 链后再开始下一个 Task。
+
+  Task 1:
+    1. harness-tdd-coder → 写失败测试
+  2. harness-backend-developer → 写实现代码
+  3. harness-reviewer → spec 合规检查
+
+  Task 3 (depends on Task 1):
+  1. harness-tdd-coder → 写失败测试
+  2. harness-backend-developer → 写实现代码
+    3. harness-reviewer → spec 合规检查
+
+**Dependencies:** {无 | BG1（说明原因）}
+
+**设计细节:** {L1: 直接写在此处 | L2: 见 plan-backend.md §3}
+```
+
+前端 Group 类似，但 Agent 链和 Model 不同：
+
+```markdown
+#### FG1: {前端分组名}
+
+**Subagent 配置:**
+
+| 配置项 | 值 |
+|--------|---|
+| Agent | `harness-frontend-developer` → `harness-reviewer` |
+| Model | `kimi-coding-plan/kimi-for-coding` |
+| 注入上下文 | {task 描述 + spec UI 规格 + 前端规范 + 设计稿路径} |
+| 读取文件 | {参考组件、路由文件等} |
+| 修改/创建文件 | {见 Task Files 列表} |
+
+**Execution Flow (FG1 内部):** 串行派遣，每个 Task 走前端 subagent 链。
+
+  Task 2:
+    1. harness-frontend-developer → 骨架→功能→美化
+    2. harness-reviewer → spec 合规检查
+```
+
+### Wave 编排
+
+Group 之间的依赖关系用 Wave 编排表示。同一 Wave 内的 Group 可以并行执行（Semaphore 允许的前提下），不同 Wave 之间串行。
+
+```markdown
+## Dependency Graph & Wave Schedule
+
+  BG1 (backend基础) ──┬──→ BG2 (backend扩展)
+         │
+         └──→ FG1 (frontend页面) ──→ FG2 (frontend交互)
+
+| Wave | Groups | 说明 |
+|------|--------|------|
+| Wave 1 | BG1 | 后端基础，无依赖 |
+| Wave 2 | BG2, FG1 | BG2 依赖 BG1；FG1 依赖 BG1 API 就绪 |
+| Wave 3 | FG2 | 依赖 FG1 |
+```
+
+**并行约束:**
+- 同一 Wave 内最多 3 个 subagent 并行（Semaphore 限制）
+- 同一文件不允许多个 subagent 同时修改
+- 前端 Group 通常需要对应后端 Group 的 API 已就绪
+
+### Group 模板选择
+
+| Task 类型 | Agent 链 | 说明 |
+|-----------|---------|------|
+| 后端 Group | tdd-coder → executor → reviewer | 标准 TDD 流程 |
+| 前端 Group | frontend-developer → reviewer | 骨架→功能→美化，跳过 TDD |
+
 ## Self-Review
 
 After writing the complete plan, look at the spec with fresh eyes and check the plan against it. This is a checklist you run yourself — not a subagent dispatch.
@@ -212,15 +334,15 @@ After saving the plan, offer execution choice:
 
 **"Plan complete and saved to `.xyz-harness/${主题}/plan.md`. Two execution options:**
 
-**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+**1. Group-Driven (recommended)** - I dispatch subagents per Execution Group, following Wave schedule
 
 **2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
 
 **Which approach?"**
 
-**If Subagent-Driven chosen:**
+**If Group-Driven chosen:**
 - **REQUIRED SUB-SKILL:** Use xyz-harness-subagent-driven-development
-- Fresh subagent per task + spec compliance review
+- Fresh subagent per group + spec compliance review
 
 **If Inline Execution chosen:**
 - **REQUIRED SUB-SKILL:** Use executing-plans

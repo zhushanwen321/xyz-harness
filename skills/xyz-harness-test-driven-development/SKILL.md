@@ -201,7 +201,7 @@ After green only:
 
 Keep tests green. Don't add behavior.
 
-**Harness 流程中的 Refactor 执行者：** 在 xyz-harness Phase 2 中，Refactor 由 `harness-executor` agent 在 Mode A 步骤 5 执行（测试通过后的轻量重构），不单独派遣 subagent。编码评审阶段（Stage 2）的 reviewer 会检查重构质量。
+**Harness 流程中的 Refactor 执行者：** 在 xyz-harness Phase 2 中，Refactor 由 `harness-backend-developer` agent 在 Mode A 步骤 5 执行（测试通过后的轻量重构），不单独派遣 subagent。编码评审阶段（Stage 2）的 reviewer 会检查重构质量。
 
 ### Repeat
 

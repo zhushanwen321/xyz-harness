@@ -79,8 +79,8 @@ description: >
 
 | 角色 | 复用 Agent | 工具权限 | 模型 |
 |------|-----------|---------|------|
-| 执行 subagent | harness-executor | read, edit, write, bash | 简单任务 glm-5-turbo,复杂 glm-5.1 |
-| 代码库扫描 subagent | harness-executor (read-only) | read, bash | glm-5-turbo |
+| 执行 subagent | harness-backend-developer | read, edit, write, bash | 简单任务 glm-5-turbo,复杂 glm-5.1 |
+| 代码库扫描 subagent | general-purpose (read-only) | read, bash | glm-5-turbo |
 | TDD coder subagent | harness-tdd-coder | read, edit, write, bash | glm-5.1 |
 | E2E 测试 subagent | harness-e2e-tester | read, edit, write, bash | glm-5.1 |
 | 评审 subagent | harness-reviewer | read, bash | glm-5.1 |
@@ -92,6 +92,10 @@ description: >
 | 前端设计规划 | harness-frontend-planner | read, bash, write | glm-5.1 |
 | 前端设计评审 | harness-frontend-plan-reviewer | read, bash | glm-5.1 |
 | API 对齐 | harness-api-alignment | read, edit, write, bash | glm-5-turbo |
+
+> **Execution Groups 约定：** plan.md 和 e2e-test-plan.md 中定义了 Execution Groups（BG*/FG*/EG*）。
+> 主 agent 在 Stage 9 编码实现时按 Group 按波次派遣 subagent（详见 xyz-harness-phase2-dev 和 xyz-harness-subagent-driven-development）。
+> Stage 5 Plan 评审时，reviewer 需额外检查 Execution Groups 的分组合理性和 Wave 编排正确性。
 
 ## Subagent 返回值格式
 
@@ -447,7 +451,7 @@ cp commands/dev.md .claude/commands/dev.md
 
 **执行流程：**
 1. 读取项目 CLAUDE.md，理解项目背景和技术栈
-2. **派遣代码库扫描 subagent**（harness-executor read-only, glm-5-turbo），产出 `infrastructure-scan.md`
+2. **派遣代码库扫描 subagent**（general-purpose read-only, glm-5-turbo），产出 `infrastructure-scan.md`
 3. 读取扫描结果，作为后续提问和 spec 编写的基础
 4. 执行 brainstorming skill：
    - 逐一向用户提问（每次一个问题，优先多选）
@@ -474,7 +478,9 @@ cp commands/dev.md .claude/commands/dev.md
    - **评估复杂度等级（L1/L2）**——5 个维度（领域/存储/数据流/API/非功能性），任一命中 L2 则整体 L2
    - 拆分为 bite-sized task，每个 task 标注类型（frontend/backend）
    - 每个 task 必须包含验收标准、风险点、文件变更分类（格式见下方）
-   - 产出 plan.md（L1 单文件 / L2 总纲+子文档索引）
+   - **将 task 按前后端类型分组为 Execution Groups**（BG*/FG*），每组包含 subagent 配置
+   - **编排 Wave Schedule**（组间依赖关系和执行顺序）
+   - 产出 plan.md（L1: 单文件含 Groups / L2: 总纲含 Groups + 子文档索引）
 6. 将 spec.md 和 plan.md 写入 `.xyz-harness/{主题}/`
 7. 初始化 `changes/summary.md`，Stage 1 标记为进行中
 8. 创建 `.xyz-harness/gate/` 目录
@@ -482,6 +488,12 @@ cp commands/dev.md .claude/commands/dev.md
 #### L2 复杂度的额外步骤（并行设计）
 
 如果 writing-plans 评估为 L2，在产出 plan.md 总纲后，主 agent 还需执行以下步骤：
+
+**L2 的 Execution Groups 与子文档共存关系：**
+- plan.md 总纲中包含 Execution Groups（分组、subagent 配置、Wave 编排）
+- 子文档（plan-backend.md、plan-frontend.md、plan-api-contract.md）包含设计细节
+- Execution Groups 中的"设计细节"字段引用子文档章节
+- 主 agent 先写 plan.md 总纲（含 Execution Groups 框架），再并行派遣 planner 生成子文档
 
 **步骤 A：并行派遣设计 subagent**
 
@@ -825,7 +837,7 @@ Stage 1 需求讨论完成。
   │   职责：编写失败测试 → 确认测试 FAIL → 提交测试文件
   │   返回：DONE / NEEDS_CONTEXT / BLOCKED
   │
-  ├─ Step 2: 派遣执行 subagent (harness-executor, 模型按复杂度选择)
+  ├─ Step 2: 派遣执行 subagent (harness-backend-developer, 模型按复杂度选择)
   │   task = "实现 Task N：{task 描述}
   │           spec 相关章节：{spec 章节}
   │           编码规范：{从 docs/standards.md 或 CLAUDE.md 提取的相关规则摘要}
@@ -967,7 +979,7 @@ Stage 1 需求讨论完成。
 
 | 项目 | 值 |
 |------|---|
-| Agent | harness-executor |
+| Agent | general-purpose |
 | 加载 Skill | xyz-harness-unit-test-write |
 | 模型 | glm-5.1 |
 | 输入 | spec.md + plan.md + git diff(阶段 3 代码变更) + 项目根目录 |
@@ -1072,7 +1084,7 @@ Stage 1 需求讨论完成。
 
 | 项目 | 值 |
 |------|---|
-| Agent | harness-executor |
+| Agent | general-purpose |
 | 加载 Skill | zcommit(全局 skill,不加 xyz-harness- 前缀) |
 | 模型 | glm-5-turbo |
 | 输入 | 项目根目录 + 分支名 |
@@ -1122,7 +1134,7 @@ Stage 1 需求讨论完成。
 
 | 项目 | 值 |
 |------|---|
-| Agent | harness-executor |
+| Agent | general-purpose |
 | 加载 Skill | xyz-harness-verification-before-completion |
 | 模型 | glm-5.1 |
 | 输入 | 项目根目录 + CLAUDE.md 中的验证命令 |
@@ -1212,7 +1224,7 @@ CI 结果:{deliverables[1]}
 
 | 项目 | 值 |
 |------|---|
-| Agent | harness-executor |
+| Agent | general-purpose |
 | 加载 Skill | xyz-harness-deploy-verify |
 | 模型 | glm-5.1 |
 | 输入 | 项目根目录 + 部署目标环境 + 部署方式 |

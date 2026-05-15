@@ -96,7 +96,7 @@ Keep it concise — this is a reference, not documentation.
 **Subagent config:**
 | Item | Value |
 |------|-------|
-| Agent | harness-executor (read-only mode) |
+| Agent | general-purpose (read-only mode) |
 | Model | glm-5-turbo (mechanical scan, no complex reasoning) |
 | Tools | read, bash (no write) |
 

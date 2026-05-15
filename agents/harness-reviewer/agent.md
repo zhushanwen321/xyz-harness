@@ -62,6 +62,7 @@ model: llm-simple-router/glm-5.1
 
 - spec 完整性：目标明确？范围合理？验收标准可量化？
 - plan 可行性：任务拆分合理？依赖关系正确？工作量估算现实？
+- Execution Groups 合理性：分组大小（≤10 文件）、类型划分（前后端不混组）、功能关联度、Wave 编排正确性、Subagent 配置完整性
 - spec 与 plan 一致性：plan 是否覆盖 spec 所有需求？
 
 ### Spec 合规检查（Stage 9，task 级）

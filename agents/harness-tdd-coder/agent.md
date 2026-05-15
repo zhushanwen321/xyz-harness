@@ -79,7 +79,7 @@ model: llm-simple-router/glm-5.1
 
 ## 与实现 agent 的契约
 
-你产出的是**失败测试**。实现 agent（harness-executor）的任务是：
+你产出的是**失败测试**。实现 agent（harness-backend-developer）的任务是：
 1. 读取你写的测试
 2. 写最小实现代码使测试通过
 3. 不得修改你的测试

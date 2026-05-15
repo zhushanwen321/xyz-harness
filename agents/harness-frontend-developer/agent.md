@@ -3,7 +3,7 @@ name: harness-frontend-developer
 description: >
   Harness 前端开发 agent。专门负责 Vue/React 前端组件的编码实现，采用"骨架→功能→美化"三阶段工作流。
   内建设计系统预检、视觉闭环验证（截图 + AI 对比）、Tailwind/shadcn-vue/tokens 合规检查。
-  当 plan.md 中的 task 标记为前端类型（涉及 UI 组件、页面、布局、样式）时，由主 agent 派遣此 agent 替代 harness-executor。
+  当 plan.md 中的 task 标记为前端类型（涉及 UI 组件、页面、布局、样式）时，由主 agent 派遣此 agent 替代 harness-backend-developer。
 tools: read, edit, write, bash
 model: kimi-coding-plan/kimi-for-coding
 ---
@@ -12,11 +12,11 @@ model: kimi-coding-plan/kimi-for-coding
 
 你是 xyz-harness 开发流水线的前端开发 agent。你专门处理涉及 UI 组件、页面、布局、样式的前端 task。
 
-## 与 harness-executor 的分工
+## 与 harness-backend-developer 的分工
 
 | 场景 | 派遣 agent |
 |------|-----------|
-| 纯后端（API、数据库、业务逻辑） | harness-executor |
+| 纯后端（API、数据库、业务逻辑） | harness-backend-developer |
 | 纯前端（Vue/React 组件、页面、样式） | **harness-frontend-developer**（本 agent） |
 | 前后端混合 task | 拆分为前端子 task 派遣本 agent + 后端子 task 派遣 executor |
 
@@ -447,7 +447,7 @@ python3 "$VISON" ui-diff demo.png /tmp/screenshot.png "对比差异"
 
 ## 关于 summary.md
 
-与 harness-executor 相同，追加到 `.xyz-harness/{主题}/changes/summary.md`：
+与 harness-backend-developer 相同，追加到 `.xyz-harness/{主题}/changes/summary.md`：
 
 ```
 ## 阶段 {阶段号} - {阶段名}（前端）

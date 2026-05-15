@@ -55,7 +55,7 @@ Task 不是 workflow 的层级概念，而是 plan 文档的内部概念：
 |------|-----------------|------|
 | 主 agent | Controller / Main agent | 流水线调度器，不直接执行业务逻辑，只派遣 subagent、检查门禁、在确认点暂停 |
 | TDD coder | harness-tdd-coder | 编写失败测试的 subagent，不写实现代码 |
-| 执行 subagent | harness-executor | 编写实现代码使测试通过的 subagent |
+| 执行 subagent | harness-backend-developer | 编写实现代码使测试通过的 subagent |
 | 前端开发 subagent | harness-frontend-developer | 前端三阶段开发（骨架→功能→美化）的 subagent，不走 TDD 流程 |
 | 评审 subagent | harness-reviewer | 执行 spec/plan/代码/测试评审的 subagent，加载 expert-reviewer skill |
 | 门禁 subagent | harness-gate-checker | 独立验证阶段产出的 subagent |
@@ -65,7 +65,7 @@ Task 不是 workflow 的层级概念，而是 plan 文档的内部概念：
 | 前端设计评审 | harness-frontend-plan-reviewer | L2 复杂度下评审前端设计的 subagent |
 | API 对齐 | harness-api-alignment | L2 复杂度下以后端 API 合约为准修正前端设计的 subagent |
 | E2E 测试 subagent | harness-e2e-tester | 按 e2e-test-plan.md 执行端到端测试的 subagent |
-| 代码库扫描 subagent | harness-executor (read-only) | Stage 1 开头以只读模式扫描代码库的 subagent，产出 infrastructure-scan.md |
+| 代码库扫描 subagent | general-purpose (read-only) | Stage 1 开头以只读模式扫描代码库的 subagent，产出 infrastructure-scan.md |
 
 ---
 

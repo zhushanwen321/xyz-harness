@@ -7,11 +7,11 @@ description: Use when you have a spec or requirements for a multi-step task, bef
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | ① 需求分析（后半段） |
+| 所在阶段 | Stage 1 需求讨论（后半段） |
 | 触发方式 | 由主 agent 在 brainstorming 完成后直接执行 |
 | 上游 | xyz-harness-brainstorming（产出 spec.md） |
-| 下游（完成后进入） | 产出 plan.md → 由 dev-flow 进入 ② 需求评审（expert-reviewer 计划评审模式） |
-| 回退目标 | 如评审不通过 → 回退到 ① 修改 spec/plan |
+| 下游（完成后进入） | 产出 plan.md → 由 dev-flow 进入 Stage 3 Spec 评审（expert-reviewer 计划评审模式） |
+| 回退目标 | 如评审不通过 → 回退到 Stage 1 修改 spec/plan |
 
 # Writing Plans
 

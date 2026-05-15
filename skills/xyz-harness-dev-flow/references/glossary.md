@@ -5,52 +5,49 @@
 
 ---
 
-## 1. 流程与阶段
+## 1. 流程层级体系
+
+Harness 使用两级执行层级：**Phase > Stage**。Task 是 plan 文档内部的概念，不属于 workflow 层级。
+
+```
+Phase (工作模式)
+ +-- Stage (固定执行阶段，有交付物和门禁)
+
+plan.md / e2e-test-plan.md
+ +-- Task (AI 自行管理的工作拆分，extension 不追踪)
+```
+
+### 核心概念
 
 | 中文 | 英文 | 含义 |
 |------|------|------|
-| Phase 1 需求沟通 | Phase 1 Requirements | 从用户提出需求到产出自包含的 spec + plan 的全过程。使用 `/track` 命令启动，包含 Step 1-7 |
-| Phase 2 开发交付 | Phase 2 Development | 基于 Phase 1 产出物执行编码、测试、部署的全过程。使用 `/loop` 启动，包含 Stage 1-7 |
-| 11 阶段模式 | Single-session mode | 不分 Phase 的完整 11 阶段流水线（阶段 1-11），适用于简单需求 |
-| 阶段 | Stage | 流水线的顶层执行单元。单阶段模式编号 1-11；Phase 2 中编号 Stage 1-7；Phase 1 中编号 Step 1-7 |
-| 步骤 | Step | 阶段内部的调度步骤（如 Step 0-5），或 Phase 1 的固定步骤 |
-| 确认点 | Checkpoint | 流水线中强制暂停、等待用户决策的节点，共 5 个 |
+| 阶段组 | Phase | 工作模式。Phase 1 = 需求沟通 (Stage 1-8)，Phase 2 = 开发交付 (Stage 9-15) |
+| 执行阶段 | Stage | Phase 内的固定执行阶段，有唯一的编号、名称和门禁。共 15 个 Stage |
+| 交付物 | Deliverable | Stage 完成时必须产出的文件。extension 在 Stage 推进时验证交付物存在且内容合规 |
+| 任务 | Task | plan 文档内部的工作拆分。属于 plan.md（开发计划）或 e2e-test-plan.md（测试计划），由 AI 在 Stage 内部自行管理，extension 不追踪 |
+
+### Task 的归属
+
+Task 不是 workflow 的层级概念，而是 plan 文档的内部概念：
+
+| 文档 | Task 含义 | 所在 Stage |
+|------|-----------|------------|
+| plan.md | 开发任务，每个 Task = 一次 TDD coder + executor + reviewer 链 | Stage 9 编码实现 |
+| e2e-test-plan.md | 测试用例/测试组 | Stage 12 E2E 测试 |
+
+### 流程术语
+
+| 中文 | 英文 | 含义 |
+|------|------|------|
+| Phase 1 需求沟通 | Phase 1 Requirements | 从用户提出需求到产出自包含的 spec + plan 的全过程。使用 `/coding-workflow design` 启动，包含 Stage 1-8 |
+| Phase 2 开发交付 | Phase 2 Development | 基于 Phase 1 产出物执行编码、测试、部署的全过程。使用 `/coding-workflow dev` 启动，包含 Stage 9-15 |
+| 确认点 | Checkpoint | 流水线中强制暂停、等待用户决策的节点 |
 | 门禁 | Gate | 阶段完成后的质量关卡，通过后才允许进入下一阶段。分 L1（脚本检查）和 L2（subagent 检查）两级 |
+| 交付物验证 | Deliverable Check | Stage 推进时的交付物存在性+内容检查，验证必需的文件存在且内容合规 |
 | 回退 | Rollback | 门禁或评审不通过时，流水线退回到目标阶段重新执行 |
-| 复盘 | Retrospective | Stage 7 / 阶段 11 的自动分析，回顾回退根因、评审有效性、CLAUDE.md 改进建议 |
-| 回退路由表 | Rollback Routing Table | 定义各类失败场景对应的回退目标阶段的查找表。如编码评审不通过→③，测试评审不通过→⑤ |
-| 评审轮次上限 | Review Round Limit | 各评审模式的循环上限：计划评审 ≤3 轮，编码评审/测试评审 ≤2 轮。超限则升级到人工决策 |
-| 跨需求聚合 | Cross-requirement Aggregation | 扫描 .xyz-harness/ 下所有 metrics.json，聚合累计需求数、平均回退次数、评审有效率等 |
-| /track 命令 | /track command | 启动 Phase 1 需求沟通的 Pi/Claude Code 命令 |
-| /loop 命令 | /loop command | 启动 Phase 2 开发交付或单阶段模式自动执行的命令 |
-| loop_task_tracker | loop_task_tracker | /loop 模式提供的任务追踪工具（create/complete/list），管理阶段级进度。与 subagent 内部的 todolist 是两套独立体系 |
-| 状态机脚本 | harness-state.sh | 管理阶段状态转换的脚本：advance（验证前置已通过）→ gate-script.sh（L1 检查）→ pass（标记通过）。支持 rollback |
-
-### 阶段编号映射
-
-单阶段模式的阶段编号是基准编号，Phase 1/Phase 2 通过映射关系使用：
-
-| Phase 1 Step | 单阶段阶段 | Phase 2 Stage | gate-script.sh 编号 |
-|-------------|-----------|--------------|---------------------|
-| Step 1 代码库扫描 + 需求讨论 | 阶段 1 需求分析 | — | 01 |
-| Step 2 Spec 编写 | 阶段 1 需求分析 | — | 01 |
-| Step 3 引用扫描 | 阶段 1 需求分析 | — | 01 |
-| Step 4 Plan 编写 | 阶段 1 需求分析 | — | 01 |
-| Step 5 E2E 测试计划 | 阶段 1 需求分析 | — | 01 |
-| Step 6 计划评审 | 阶段 2 需求评审 | — | 02 |
-| Step 7 用户确认 | 阶段 2 需求评审 | — | 02 |
-| — | 阶段 3 编码实现 | Stage 1 编码实现 | 03 |
-| — | 阶段 4 编码评审 | Stage 2 编码评审 | 02 |
-| — | 阶段 5 测试编写 | Stage 3 单元测试编写 | 05 |
-| — | — | Stage 4 E2E 测试执行 | 无 L1 gate |
-| — | 阶段 6 测试评审 | Stage 5 测试评审 | 无 L1 gate |
-| — | 阶段 7 代码推送 | Stage 6 推送+CI+部署 | 07 |
-| — | 阶段 8 CI 验证 | Stage 6 推送+CI+部署 | 08 |
-| — | 阶段 9 部署验证 | Stage 6 推送+CI+部署 | 09 |
-| — | 阶段 10 用户确认 | — | — |
-| — | 阶段 11 自动复盘 | Stage 7 自动复盘 | — |
-
----
+| 复盘 | Retrospective | Stage 15 的自动分析，回顾回退根因、评审有效性、CLAUDE.md 改进建议 |
+| 回退路由表 | Rollback Routing Table | 定义各类失败场景对应的回退目标阶段的查找表 |
+| 评审轮次上限 | Review Round Limit | 各评审模式的循环上限。超限则升级到人工决策 |
 
 ## 2. 角色
 
@@ -68,7 +65,7 @@
 | 前端设计评审 | harness-frontend-plan-reviewer | L2 复杂度下评审前端设计的 subagent |
 | API 对齐 | harness-api-alignment | L2 复杂度下以后端 API 合约为准修正前端设计的 subagent |
 | E2E 测试 subagent | harness-e2e-tester | 按 e2e-test-plan.md 执行端到端测试的 subagent |
-| 代码库扫描 subagent | harness-executor (read-only) | 阶段 ① 开头以只读模式扫描代码库的 subagent，产出 infrastructure-scan.md |
+| 代码库扫描 subagent | harness-executor (read-only) | Stage 1 开头以只读模式扫描代码库的 subagent，产出 infrastructure-scan.md |
 
 ---
 
@@ -85,7 +82,7 @@
 | 全流程追溯 | summary.md | 需求从启动到完成的全过程状态记录，每阶段实时更新 |
 | 评审报告 | review_v{N}.md | 评审 subagent 产出的意见列表（MUST FIX / LOW / INFO），版本递增不删除 |
 | 验证证据 | evidence/*.md | 本地验证输出、CI 结果、部署结果的原始记录 |
-| 复盘报告 | retrospective.md | 阶段 11 / Stage 7 产出的回退根因分析和改进建议 |
+| 复盘报告 | retrospective.md | Stage 15 产出的回退根因分析和改进建议 |
 | 运行指标 | metrics.json | 每个需求的 token 消耗、耗时、回退次数等量化指标 |
 | 门禁通过标记 | stage-{NN}.pass | gate-script.sh 生成的通过标记文件，gitignore 不入库 |
 | 基础设施扫描报告 | infrastructure-scan.md | 代码库扫描 subagent 产出的项目结构和代码索引，供 brainstorming 和 spec 编写使用 |
@@ -103,19 +100,19 @@
 
 | 中文 | 英文 | 含义 |
 |------|------|------|
-| 任务 | Task | plan.md 中的最小实现单元，每个 Task 对应一次 TDD coder → executor → reviewer 的完整 subagent 链 |
+| 任务 | Task | plan 文档（plan.md / e2e-test-plan.md）内部的工作拆分，由 AI 在 Stage 内自行管理。不是 workflow 层级概念 |
 | 子任务 | Subtask | todolist 的 expand_step 展开的 Phase 1 Step 内部子步骤 |
 | TDD | Test-Driven Development | 先写失败测试再写实现的红绿重构循环 |
-| Change-driven Testing | Change-driven Testing | 阶段 ⑤ 的测试方法论：分析代码变更，对每个变更接口编写接口级测试，与 TDD（函数级）互补 |
+| Change-driven Testing | Change-driven Testing | Stage 11 的测试方法论：分析代码变更，对每个变更接口编写接口级测试，与 TDD（函数级）互补 |
 | L1 门禁 | L1 Gate | 可程序化验证的质量检查（文件存在、编译、测试、lint），由 gate-script.sh 执行 |
 | L2 门禁 | L2 Gate | 需要判断力的质量检查（内容质量、spec 覆盖度），由 gate-checker subagent 执行 |
 | L1 复杂度 | L1 Complexity | 实现计划只需单文件 plan.md，无并行前端/后端设计 |
 | L2 复杂度 | L2 Complexity | 实现计划需要拆分为 plan-backend.md + plan-api-contract.md + plan-frontend.md |
 | spec 合规检查 | Spec Compliance Check | 验证代码实现是否覆盖 spec 中该 Task 的所有要求，由 reviewer subagent 执行 |
 | 验收标准 | Acceptance Criteria | spec.md 或 plan.md Task 中具体的、可检查的通过条件 |
-| 六要素完整性检查 | Six-element Completeness Check | 阶段 ① 中对 spec 的 Outcomes/Scope/Constraints/Decisions/Verification/行为约束 的逐项检查 |
+| 六要素完整性检查 | Six-element Completeness Check | Stage 1 中对 spec 的 Outcomes/Scope/Constraints/Decisions/Verification/行为约束 的逐项检查 |
 | 引用扫描 | Reference Scan | spec-ref-scan.sh 检查 spec 中提到的代码标识符和文件路径是否存在 |
-| 基础设施扫描 | Infrastructure Scan | 阶段 ① 开头的代码库扫描，产出 infrastructure-scan.md 供后续提问和 spec 编写使用 |
+| 基础设施扫描 | Infrastructure Scan | Stage 1 开头的代码库扫描，产出 infrastructure-scan.md 供后续提问和 spec 编写使用 |
 | Context Diet | Context Diet | 每个 subagent 只传入完成任务所需的最小上下文，不传完整 spec/plan |
 | Compaction | Compaction | 确认点 1 通过后清理交互阶段对话历史，保持调度阶段上下文干净 |
 
@@ -123,9 +120,9 @@
 
 | 中文 | 英文 | 含义 |
 |------|------|------|
-| 计划评审 | Plan Review | 阶段②的评审模式，审 spec + plan 的完整性、可行性和一致性。循环上限 ≤3 轮 |
-| 编码评审 | Code Review | 阶段④的评审模式，审 spec 合规 + 代码质量 + 架构合规 + 安全性能。循环上限 ≤2 轮 |
-| 测试评审 | Test Review | 阶段⑥的评审模式，审测试覆盖度 + 质量 + 可维护性 + 数据构造。循环上限 ≤2 轮 |
+| 计划评审 | Plan Review | Stage 5 的评审模式，审 spec + plan 的完整性、可行性和一致性。循环上限 ≤3 轮 |
+| 编码评审 | Code Review | Stage 10 的评审模式，审 spec 合规 + 代码质量 + 架构合规 + 安全性能。循环上限 ≤2 轮 |
+| 测试评审 | Test Review | Stage 13 的评审模式，审测试覆盖度 + 质量 + 可维护性 + 数据构造。循环上限 ≤2 轮 |
 | 上下文隔离 | Context Isolation | 评审 subagent 的核心原则：不继承执行 subagent 的对话历史和上下文，只看交付物和规范，保证评审客观性 |
 | AC 覆盖矩阵 | AC Coverage Matrix | 测试评审中必须产出的表格，逐条列出 spec 验收标准与测试的覆盖关系（✅完整 / ⚠️部分 / ❌未覆盖） |
 
@@ -150,7 +147,7 @@
 
 ### spec.md 必填章节
 
-spec.md 中以下章节为必填，缺少则在计划评审（阶段②）时标记为 MUST FIX。
+spec.md 中以下章节为必填，缺少则在计划评审（Stage 5）时标记为 MUST FIX。
 
 | 章节名 | 含义 |
 |--------|------|

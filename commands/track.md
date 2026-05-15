@@ -15,7 +15,7 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 ---
 
-### 步骤 1：需求讨论
+### Stage 1：需求讨论
 
 **类型：交互（主 agent 直接执行）**
 **加载 Skill：xyz-harness-brainstorming**
@@ -26,14 +26,14 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 1 需求讨论完成。接下来进入步骤 2：Spec 编写。
+Stage 1 需求讨论完成。接下来进入 Stage 2：Spec 编写。
 我将基于讨论结果编写 spec.md，包含完整的六要素和必填章节。
 ```
 → `todolist complete_step(1)`
 
 ---
 
-### 步骤 2：Spec 编写 + 六要素检查 + 引用扫描
+### Stage 2：Spec 编写 + 六要素检查 + 引用扫描
 
 **类型：交互（主 agent 直接执行）**
 **加载 Skill：xyz-harness-brainstorming（spec completeness check 部分）**
@@ -51,16 +51,16 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 2 Spec 编写完成。产出物：{spec.md 路径}
+Stage 2 Spec 编写完成。产出物：{spec.md 路径}
 
-接下来进入步骤 3：Spec 独立评审。
+接下来进入 Stage 3：Spec 独立评审。
 正在派遣 harness-spec-reviewer subagent 对 spec.md 进行独立评审...
 ```
 → `todolist complete_step(2)`
 
 ---
 
-### 步骤 3：Spec 评审
+### Stage 3：Spec 评审
 
 **类型：自动（派遣 subagent）**
 **Agent：harness-spec-reviewer**
@@ -85,16 +85,16 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 3 Spec 评审通过。评审报告：{报告路径}
+Stage 3 Spec 评审通过。评审报告：{报告路径}
 
-接下来进入步骤 4：Plan 编写。
+接下来进入 Stage 4：Plan 编写。
 我将基于已通过的 spec.md 编写实现计划。
 ```
 → `todolist complete_step(3)`
 
 ---
 
-### 步骤 4：Plan 编写
+### Stage 4：Plan 编写
 
 **类型：交互（主 agent 直接执行，L2 时并行派遣 planner subagent）**
 **加载 Skill：xyz-harness-writing-plans**
@@ -112,16 +112,16 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 4 Plan 编写完成。产出物：{plan.md 路径}[L2 时：+ plan-backend.md + plan-frontend.md + plan-api-contract.md]
+Stage 4 Plan 编写完成。产出物：{plan.md 路径}[L2 时：+ plan-backend.md + plan-frontend.md + plan-api-contract.md]
 
-接下来进入步骤 5：Plan 评审。
+接下来进入 Stage 5：Plan 评审。
 正在派遣 reviewer subagent 对 plan 进行独立评审...
 ```
 → `todolist complete_step(4)`
 
 ---
 
-### 步骤 5：Plan 评审
+### Stage 5：Plan 评审
 
 **类型：自动（派遣 subagent）**
 
@@ -135,7 +135,7 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 | 加载 Skill | xyz-harness-expert-reviewer（计划评审模式） |
 | 输入 | spec.md + plan.md + 项目根目录 |
 
-> **注意**：spec 完整性已在步骤 3（Spec 评审）由 harness-spec-reviewer 独立检查。步骤 5 的 harness-reviewer 应跳过 spec 完整性检查，只关注：plan 可行性（任务拆分/依赖/工作量）和 spec-plan 一致性（plan 是否覆盖 spec 所有需求）。派遣时在 task 中明确说明"跳过 spec 完整性检查，只检查 plan 可行性和一致性"。
+> **注意**：spec 完整性已在 Stage 3（Spec 评审）由 harness-spec-reviewer 独立检查。Stage 5 的 harness-reviewer 应跳过 spec 完整性检查，只关注：plan 可行性（任务拆分/依赖/工作量）和 spec-plan 一致性（plan 是否覆盖 spec 所有需求）。派遣时在 task 中明确说明"跳过 spec 完整性检查，只检查 plan 可行性和一致性"。
 
 **L2 复杂度（并行评审）：**
 
@@ -159,16 +159,16 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 5 Plan 评审通过。评审报告：{报告路径}
+Stage 5 Plan 评审通过。评审报告：{报告路径}
 
-接下来进入步骤 6：E2E 测试计划编写。
+接下来进入 Stage 6：E2E 测试计划编写。
 我将基于 spec.md + plan.md 编写端到端测试计划。
 ```
 → `todolist complete_step(5)`
 
 ---
 
-### 步骤 6：E2E 测试计划编写
+### Stage 6：E2E 测试计划编写
 
 **类型：主 agent 编写框架 + subagent 分组生成用例**
 **加载 Skill：xyz-harness-e2e-test-plan**
@@ -183,16 +183,16 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 6 E2E 测试计划编写完成。产出物：{e2e-test-plan.md 路径}
+Stage 6 E2E 测试计划编写完成。产出物：{e2e-test-plan.md 路径}
 
-接下来进入步骤 7：E2E 测试计划评审。
+接下来进入 Stage 7：E2E 测试计划评审。
 正在派遣 harness-e2e-test-plan-reviewer subagent 进行独立评审...
 ```
 → `todolist complete_step(6)`
 
 ---
 
-### 步骤 7：E2E 测试计划评审
+### Stage 7：E2E 测试计划评审
 
 **类型：自动（派遣 subagent）**
 **Agent：harness-e2e-test-plan-reviewer**
@@ -217,15 +217,15 @@ allowed-tools: ["read", "edit", "write", "bash", "subagent", "todolist"]
 
 **完成后引导**：
 ```
-步骤 7 E2E 测试计划评审通过。评审报告：{报告路径}
+Stage 7 E2E 测试计划评审通过。评审报告：{报告路径}
 
-接下来进入步骤 8：用户最终确认。
+接下来进入 Stage 8：用户最终确认。
 ```
 → `todolist complete_step(7)`
 
 ---
 
-### 步骤 8：用户确认
+### Stage 8：用户确认
 
 **类型：交互（强制暂停）**
 
@@ -252,11 +252,11 @@ Phase 1 全部完成。产出物：
 **流转规则**：
 - 确认 → 输出 Phase 2 启动提示词
 - 有修改意见 → 修复对应文档 → 按修改范围决定回退点：
-  - **spec 改动**（任何修改）→ 回退到步骤 3（Spec 评审），重新走 3→4→5→6→7
-  - **plan 改动**（任何修改）→ 回退到步骤 5（Plan 评审），重新走 5→6→7
-  - **e2e-test-plan 改动**（任何修改）→ 回退到步骤 7（E2E 测试计划评审），重新走 7
+  - **spec 改动**（任何修改）→ 回退到 Stage 3（Spec 评审），重新走 3→4→5→6→7
+  - **plan 改动**（任何修改）→ 回退到 Stage 5（Plan 评审），重新走 5→6→7
+  - **e2e-test-plan 改动**（任何修改）→ 回退到 Stage 7（E2E 测试计划评审），重新走 7
   - 仅格式/拼写修正（不影响语义）→ 无需重新评审，直接重新确认
-- 方向不对 → 回到步骤 1
+- 方向不对 → 回到 Stage 1
 
 → `todolist complete_step(8)`
 
@@ -278,7 +278,7 @@ Phase 1 全部完成。产出物：
 
 ## Phase 2 启动指令
 
-步骤 8 用户确认通过后，**必须读取** `skills/xyz-harness-dev-flow/references/phase2-launch-template.md` 模板文件（绝对路径：`~/.pi/agent/skills/xyz-harness-dev-flow/references/phase2-launch-template.md`），按模板中的变量填充说明逐项替换 `{{变量}}`，然后将完整提示词输出给用户。
+Stage 8 用户确认通过后，**必须读取** `skills/xyz-harness-dev-flow/references/phase2-launch-template.md` 模板文件（绝对路径：`~/.pi/agent/skills/xyz-harness-dev-flow/references/phase2-launch-template.md`），按模板中的变量填充说明逐项替换 `{{变量}}`，然后将完整提示词输出给用户。
 
 **输出格式：**
 

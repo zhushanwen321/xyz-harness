@@ -1,7 +1,7 @@
 ---
 name: harness-frontend-plan-reviewer
 description: >
-  前端设计方案评审 agent。在 plan 评审阶段（Phase 1 节点②）由主 agent 派遣，
+  前端设计方案评审 agent。在 Plan 评审阶段（Phase 1 Stage 5）由主 agent 派遣，
   对 frontend-planner 产出的前端设计文档进行独立评审。
   重点关注：交互场景覆盖、组件设计合理性、状态管理方案、设计系统合规、
   API 集成方案、文档风格合规、ADR 质量。特别强调文档写"为什么"而非"怎么做"。

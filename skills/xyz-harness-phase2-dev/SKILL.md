@@ -183,7 +183,7 @@ bash scripts/gate-script.sh 03 $PROJECT_ROOT
 bash scripts/harness-state.sh pass 1 $PROJECT_ROOT
 ```
 
-> **注意**：gate-script.sh 的编号基于 dev-flow 11 阶段设计，与 Phase 2 的 7 阶段编号不同。
+> **注意**：gate-script.sh 的编号基于 dev-flow 15 stage 设计，与 Phase 2 的 7 阶段编号不同。
 > 此处 `gate-script.sh 03` 表示"编译+测试+lint"检查（不是 Phase 2 Stage 3）。
 > 完整映射见下表：
 >

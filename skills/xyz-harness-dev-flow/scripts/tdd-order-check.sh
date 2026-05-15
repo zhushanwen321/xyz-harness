@@ -23,6 +23,16 @@
 
 set -euo pipefail
 
+# 跨平台 epoch → 日期转换
+epoch_date() {
+  local ts="$1"
+  if date -r "$ts" "+%Y-%m-%d %H:%M" >/dev/null 2>&1; then
+    date -r "$ts" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
+  else
+    date -d "@$ts" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
+  fi
+}
+
 # ── 颜色输出 ──────────────────────────────────────────────────────
 if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
   C_RED='\033[0;31m'
@@ -213,8 +223,8 @@ while IFS= read -r impl_file; do
 
   if [[ "$impl_epoch" -le "$test_epoch" ]]; then
     # 实现文件的首次提交早于或等于测试文件 → TDD 违规
-    impl_date=$(date -r "$impl_epoch" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown")
-    test_date=$(date -r "$test_epoch" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown")
+    impl_date=$(epoch_date "$impl_epoch")
+    test_date=$(epoch_date "$test_epoch")
     err "LATE: $impl_file (first: $impl_date) committed before test $test_file (first: $test_date)"
     FAIL=$((FAIL + 1))
   else

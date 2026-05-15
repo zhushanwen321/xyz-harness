@@ -1,6 +1,6 @@
 #!/bin/bash
 # spec-ref-scan.sh — Spec 引用完整性扫描
-# 在阶段①完成后运行，验证 spec 中提到的代码引用是否完整。
+# 在 Stage 2（Spec 编写）完成后运行，验证 spec 中提到的代码引用是否完整。
 #
 # 调用方式：
 #   spec-ref-scan.sh <project_root> <spec_path>
@@ -53,7 +53,7 @@ echo ""
 # 提取 spec 中的代码标识符
 # 格式：`identifier` 或 ``identifier``
 # 过滤掉太短的（<=2 字符）和 markdown 结构词
-IDENTIFIERS=$(grep -oP '`(\w[\w.:#\-\[\]<>]+)`' "$SPEC_PATH" \
+IDENTIFIERS=$(grep -oE '`[^`]+`' "$SPEC_PATH" \
     | sed "s/\`//g" \
     | sort -u \
     | grep -vE '^.{0,2}$' \
@@ -84,7 +84,7 @@ while IFS= read -r identifier; do
     # 检查 spec 中是否提到了这个标识符的文件列表
     # 尝试从 spec 中找到该标识符附近的文件列表
     SPEC_FILES=$(grep -B2 -A20 "$identifier" "$SPEC_PATH" \
-        | grep -oP '[\w/]+\.(ts|tsx|js|jsx|vue|py|rs|go|java|sql)' \
+        | grep -oE '[a-zA-Z0-9_./]+\.(ts|tsx|js|jsx|vue|py|rs|go|java|sql)' \
         | sort -u \
         || true)
 
@@ -151,7 +151,7 @@ info ""
 info "Checking spec-mentioned files exist..."
 
 # 提取 spec 中提到的所有文件路径
-SPEC_ALL_FILES=$(grep -oP '(?:src|lib|app|test|tests|router|frontend|core|scripts)/[\w/\-\.]+\.(ts|tsx|js|jsx|vue|py|rs|go|java|sql|json|yaml|yml)' "$SPEC_PATH" | sort -u || true)
+SPEC_ALL_FILES=$(grep -oE '(src|lib|app|test|tests|router|frontend|core|scripts)/[a-zA-Z0-9_./-]+\.(ts|tsx|js|jsx|vue|py|rs|go|java|sql|json|yaml|yml)' "$SPEC_PATH" | sort -u || true)
 
 while IFS= read -r sf; do
     [[ -z "$sf" ]] && continue
@@ -168,8 +168,8 @@ info "Checking removal completeness..."
 
 # 从 spec 中提取移除指令
 # 匹配：移除、删除、delete、remove 后面的标识符
-REMOVALS=$(grep -iP '(移除|删除|remove|delete)\s+(?:了|掉|的)?\s*`?(\w[\w.:#]+)`?' "$SPEC_PATH" \
-    | grep -oP '(?<=移除|删除|remove|delete)\s+(?:了|掉|的)?\s*`?\K\w[\w.:#]+' \
+REMOVALS=$(grep -iE '(移除|删除|remove|delete)[[:space:]]+(了|掉|的)?[[:space:]]*`?([a-zA-Z0-9_.:#]+)`?' "$SPEC_PATH" \
+    | sed -n 's/.*\(移除\|删除\|remove\|delete\)[[:space:]]*\(了\|掉\|的\)*[[:space:]]*`\?\([a-zA-Z0-9_.:#]\+\).*/\3/p' \
     | sort -u \
     || true)
 

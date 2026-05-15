@@ -1,7 +1,7 @@
 ---
 name: harness-frontend-planner
 description: >
-  前端设计方案规划 agent。在 plan 阶段（Phase 1 节点③-b）由主 agent 派遣，
+  前端设计方案规划 agent。在 Plan 编写阶段（Phase 1 Stage 4）由主 agent 派遣，
   基于 spec.md 产出前端设计文档（plan-frontend.md）。
   覆盖页面结构、组件设计、交互逻辑、状态管理、路由设计、样式策略等前端关注点。
   与 backend-planner 并行执行，产出后由 api-alignment agent 进行前后端对齐。

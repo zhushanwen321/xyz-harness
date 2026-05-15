@@ -2,18 +2,18 @@
 name: xyz-harness-expert-reviewer
 description: >
   统一评审 skill，支持两种模式：计划评审（审 spec+plan）和执行评审（审代码+测试）。
-  由 dev-flow 编排器在阶段②④⑥自动调用。不独立触发。
+  由 dev-flow 编排器在 Stage 3/10/13 自动调用。不独立触发。
 ---
 
 ## Dev-flow 上下文
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | ② 需求评审 / ④ 编码评审 / ⑥ 测试评审（三种模式） |
+| 所在阶段 | Stage 3 Spec 评审 / Stage 10 编码评审 / Stage 13 测试评审（三种模式） |
 | 触发方式 | 由 dev-flow 派遣评审 subagent 加载 |
-| 上游 | ②←①完成；④←③完成；⑥←⑤完成 |
+| 上游 | Stage 3←Stage 1 完成；Stage 10←Stage 9 完成；Stage 13←Stage 11 完成 |
 | 下游（完成后进入） | 评审报告返回 dev-flow 主 agent，由主 agent 决定流转 |
-| 回退目标 | 不自行决定回退（rollback_target=null）。②不通过→dev-flow回退到①；④不通过→回退到③；⑥不通过→回退到⑤ |
+| 回退目标 | 不自行决定回退（rollback_target=null）。Stage 3 不通过→dev-flow 回退到 Stage 1；Stage 10 不通过→回退到 Stage 9；Stage 13 不通过→回退到 Stage 11 |
 
 # Expert Reviewer
 
@@ -32,7 +32,7 @@ dev-flow 通过传入的上下文区分模式。判断规则：
 
 ---
 
-## 模式一：计划评审（阶段②）
+## 模式一：计划评审（Stage 3 Spec 评审）
 
 ### 输入
 
@@ -96,7 +96,7 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
 
 ## 模式二：执行评审
 
-### 阶段④ 编码评审
+### Stage 10 编码评审
 
 #### 输入
 
@@ -104,7 +104,7 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
 |------|------|------|
 | spec.md | dev-flow 传入路径 | 是 |
 | plan.md | dev-flow 传入路径 | 是 |
-| git diff（阶段③全部代码变更） | dev-flow 传入 | 是 |
+| git diff（Stage 9 全部代码变更） | dev-flow 传入 | 是 |
 | CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分 |
 
 #### 检查维度
@@ -148,14 +148,14 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
   - 数据格式是否匹配消费者期望
   - 数据写入路径是否完整（无断裂/丢失）
 
-### 阶段⑥ 测试评审
+### Stage 13 测试评审
 
 #### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
 | spec.md | dev-flow 传入路径 | 是 |
-| 测试代码 diff（阶段⑤产出） | dev-flow 传入 | 是 |
+| 测试代码 diff（Stage 11 产出） | dev-flow 传入 | 是 |
 | CLAUDE.md | 项目根目录 | 测试相关规范 |
 
 #### 检查维度
@@ -212,8 +212,8 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ### 交付物
 
-- 阶段④：`changes/reviews/code_review_v{N}.md`
-- 阶段⑥：`changes/reviews/test_review_v{N}.md`
+- Stage 10：`changes/reviews/code_review_v{N}.md`
+- Stage 13：`changes/reviews/test_review_v{N}.md`
 
 ---
 

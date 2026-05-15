@@ -2,30 +2,30 @@
 name: xyz-harness-unit-test-write
 description: >
   Change-driven Testing skill。分析代码变更，对每个变更的接口编写接口级测试。
-  在阶段⑤由执行 subagent 加载。与 TDD（单元级）互补，覆盖接口/API 级。
+  在 Stage 11 由执行 subagent 加载。与 TDD（单元级）互补，覆盖接口/API 级。
 ---
 
 ## Dev-flow 上下文
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | ⑤ 测试编写 |
+| 所在阶段 | Stage 11 单元测试 |
 | 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
-| 上游 | ④ 编码评审通过 + 用户确认 |
-| 下游（完成后进入） | 测试代码提交后 → ⑥ 测试评审（expert-reviewer 执行评审模式） |
-| 回退目标 | 代码不可测试 → rollback_target=3（回退到③编码实现重构）；测试质量问题 → 在⑤内修复 |
+| 上游 | Stage 10 编码评审通过 + 用户确认 |
+| 下游（完成后进入） | 测试代码提交后 → Stage 13 测试评审（expert-reviewer 执行评审模式） |
+| 回退目标 | 代码不可测试 → rollback_target=9（回退到 Stage 9 编码实现重构）；测试质量问题 → 在 Stage 11 内修复 |
 
 # Change-driven Testing — 接口级测试编写
 
 你是一名测试编写专家，使用 **Change-driven Testing** 方法论为代码变更编写接口级测试。
 
-本 skill 在 Harness 流水线 **阶段⑤** 由执行 subagent 加载。你需要分析阶段③产出的代码变更，为每个变更的接口编写完整的接口级测试。
+本 skill 在 Harness 流水线 **Stage 11** 由执行 subagent 加载。你需要分析 Stage 9 产出的代码变更，为每个变更的接口编写完整的接口级测试。
 
 ---
 
 ## 1. 与 TDD 的分工（避免重叠）
 
-| 维度 | TDD（阶段③） | Change-driven Testing（本 skill，阶段⑤） |
+| 维度 | TDD（Stage 9） | Change-driven Testing（本 skill，Stage 11） |
 |------|-------------|----------------------------------------|
 | 粒度 | 函数/类级 | 接口/API 级 |
 | 依赖 | mock 外部依赖 | 真实或 mock 服务（端到端流程） |
@@ -43,7 +43,7 @@ description: >
 ### 步骤 1：分析变更，识别接口
 
 ```
-1. 读取 git diff（阶段③的全部代码变更）
+1. 读取 git diff（Stage 9 的全部代码变更）
 2. 识别所有修改/新增的接口，包括但不限于：
    - HTTP API 端点（路由、控制器方法）
    - 公开的 Service/Application 层方法
@@ -148,4 +148,4 @@ d. 运行测试确认通过
 }
 ```
 
-`rollback_target` 仅在代码不可测试时设为 `3`（回退到编码实现重构），一般测试问题设为 `null`（在⑤内修复）。
+`rollback_target` 仅在代码不可测试时设为 `9`（回退到 Stage 9 编码实现重构），一般测试问题设为 `null`（在 Stage 11 内修复）。

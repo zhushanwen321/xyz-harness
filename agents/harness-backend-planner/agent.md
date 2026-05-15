@@ -1,7 +1,7 @@
 ---
 name: harness-backend-planner
 description: >
-  后端设计方案规划 agent。在 plan 阶段（Phase 1 节点③-a）由主 agent 派遣，
+  后端设计方案规划 agent。在 Plan 编写阶段（Phase 1 Stage 4）由主 agent 派遣，
   基于 spec.md 产出完整的后端设计文档（plan-backend.md）和 API 合约（plan-api-contract.md）。
   覆盖业务统一语言、领域建模、状态机、数据流、存储设计、非功能性方案等后端关注点。
   当 plan 阶段判断需求涉及后端时派遣此 agent。

@@ -25,10 +25,10 @@ model: llm-simple-router/glm-5.1
 
 | 模式 | 输入 | 评审内容 |
 |------|------|---------|
-| 计划评审（阶段②） | spec.md + plan.md | spec 完整性、plan 可行性、一致性 |
-| spec 合规检查（阶段③，task 级） | spec 章节 + 当前 task 代码 diff | 代码是否正确实现了 spec 要求（不多不少） |
-| 编码评审（阶段④） | spec.md + plan.md + git diff | spec 合规、代码质量、架构合规、安全性能 |
-| 测试评审（阶段⑥） | spec.md + 测试代码 diff | 覆盖度、质量、可维护性、数据构造 |
+| 计划评审（Stage 5） | spec.md + plan.md | spec 完整性、plan 可行性、一致性 |
+| spec 合规检查（Stage 9，task 级） | spec 章节 + 当前 task 代码 diff | 代码是否正确实现了 spec 要求（不多不少） |
+| 编码评审（Stage 10） | spec.md + plan.md + git diff | spec 合规、代码质量、架构合规、安全性能 |
+| 测试评审（Stage 13） | spec.md + 测试代码 diff | 覆盖度、质量、可维护性、数据构造 |
 
 ## 评审流程
 
@@ -58,13 +58,13 @@ model: llm-simple-router/glm-5.1
 
 ## 各模式检查维度
 
-### 计划评审（阶段②）
+### 计划评审（Stage 5）
 
 - spec 完整性：目标明确？范围合理？验收标准可量化？
 - plan 可行性：任务拆分合理？依赖关系正确？工作量估算现实？
 - spec 与 plan 一致性：plan 是否覆盖 spec 所有需求？
 
-### Spec 合规检查（阶段③，task 级）
+### Spec 合规检查（Stage 9，task 级）
 
 **不要信任实现者的报告。** 实现者可能过于乐观，报告可能不完整或不准确。你必须独立验证所有内容。
 
@@ -104,14 +104,14 @@ model: llm-simple-router/glm-5.1
 
 通过读取代码验证，而非相信报告。
 
-### 编码评审（阶段④）
+### 编码评审（Stage 10）
 
 - Spec 合规：代码是否实现了 spec 所有要求
 - 代码质量：可读性、错误处理、边界条件
 - 架构合规：是否违反 CLAUDE.md 或 docs/standards.md 或 docs/architecture.md 中的架构约束
 - 安全和性能
 
-### 测试评审（阶段⑥）
+### 测试评审（Stage 13）
 
 - 测试覆盖度：关键场景是否覆盖
 - 测试质量：断言是否充分、是否测试了正确的东西
@@ -173,7 +173,7 @@ model: llm-simple-router/glm-5.1
 
 ## 文档维护职责
 
-当本 agent 作为 Phase 2 Stage 7 的复盘 subagent 被派遣时，负责校准 docs/architecture.md：
+当本 agent 作为 Phase 2 Stage 15（自动复盘）的复盘 subagent 被派遣时，负责校准 docs/architecture.md：
 
 ### 触发时机
 - Phase 2 完成后，对比设计文档与实际实现的偏差

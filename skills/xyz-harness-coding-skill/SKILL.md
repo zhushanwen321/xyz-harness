@@ -1,7 +1,7 @@
 ---
 name: xyz-harness-coding-skill
 description: >
-  分层编码规范 skill，基于 Clean Architecture。在编码阶段③由 subagent 加载，
+  分层编码规范 skill，基于 Clean Architecture。在编码阶段 Stage 9 由 subagent 加载，
   提供各层的编码规范和约束。作为 L2 阶段常驻上下文，项目 CLAUDE.md 的规范优先级更高。
 ---
 
@@ -9,7 +9,7 @@ description: >
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | ③ 编码实现（L2 阶段常驻上下文） |
+| 所在阶段 | Stage 9 编码实现（L2 阶段常驻上下文） |
 | 触发方式 | 被执行 subagent 加载为编码规范参考，不独立运行 |
 | 上游 | 由 subagent-driven-development 内部的 task 级 subagent 加载 |
 | 下游（完成后进入） | 无（纯参考文档，不触发下一步 skill） |
@@ -79,7 +79,7 @@ description: >
 |------|---------|------|-----------|
 | L0 标准文档 | subagent 主动读取 | docs/standards.md（编码规范） | **最高**（覆盖 L1/L2） |
 | L1 会话常驻 | 每次会话自动加载 | 项目 CLAUDE.md（入口 + 索引） | 高（覆盖 L2） |
-| L2 阶段常驻 | 编码阶段③加载 | 本 skill（xyz-harness-coding-skill） | 默认值 |
+| L2 阶段常驻 | 编码阶段 Stage 9 加载 | 本 skill（xyz-harness-coding-skill） | 默认值 |
 | L3 按需加载 | subagent 主动读取 | specs/ 下的分层规范文件 | 补充 |
 
 冲突处理规则：

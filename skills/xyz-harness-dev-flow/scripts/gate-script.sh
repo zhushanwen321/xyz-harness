@@ -49,7 +49,7 @@ pass() {
     local stage_padded
     stage_padded=$(printf "%02d" "$STAGE")
     local pass_file="$GATE_DIR/stage-${stage_padded}.pass"
-    echo "pass at $(date -Iseconds)" > "$pass_file"
+    echo "pass at $(date "+%Y-%m-%dT%H:%M:%S%z")" > "$pass_file"
     echo "$1" >> "$pass_file"
     echo -e "${C_GREEN}GATE PASS: stage ${STAGE}${C_RESET}"
     exit 0
@@ -149,32 +149,32 @@ parse_test_count() {
     local output="$1"
 
     # Rust cargo test: "test result: ok. N passed; 0 failed; ..."
-    if echo "$output" | grep -qP 'test result:.*\d+ passed'; then
+    if echo "$output" | grep -qE 'test result:.*[0-9]+ passed'; then
         local passed failed
-        passed=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1)
-        failed=$(echo "$output" | grep -oP '\d+(?= failed)' | tail -1)
+        passed=$(echo "$output" | grep -oE '[0-9]+ passed' | sed 's/ passed//' | tail -1)
+        failed=$(echo "$output" | grep -oE '[0-9]+ failed' | sed 's/ failed//' | tail -1)
         failed=${failed:-0}
         echo "total=$((passed + failed)) passed=${passed} failed=${failed}"
         return 0
     fi
 
     # Jest / Vitest: "Tests: N passed, M failed, Total: T"
-    if echo "$output" | grep -qP 'Tests:.*Total:.*\d+'; then
+    if echo "$output" | grep -qE 'Tests:.*Total:.*[0-9]+'; then
         local total passed failed
-        total=$(echo "$output" | grep -oP '(?<=Total:\s?)\d+' | tail -1)
-        passed=$(echo "$output" | grep -oP '\d+(?=\s+passed)' | tail -1)
-        failed=$(echo "$output" | grep -oP '\d+(?=\s+failed)' | tail -1)
+        total=$(echo "$output" | grep -oE 'Total:[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' | tail -1)
+        passed=$(echo "$output" | grep -oE '[0-9]+[[:space:]]+passed' | grep -oE '^[0-9]+' | tail -1)
+        failed=$(echo "$output" | grep -oE '[0-9]+[[:space:]]+failed' | grep -oE '^[0-9]+' | tail -1)
         failed=${failed:-0}
         echo "total=${total} passed=${passed:-0} failed=${failed}"
         return 0
     fi
 
     # pytest: "N passed, M failed, K errors"
-    if echo "$output" | grep -qP '\d+ passed'; then
+    if echo "$output" | grep -qE '[0-9]+ passed'; then
         local passed failed errors
-        passed=$(echo "$output" | grep -oP '\d+(?= passed)' | tail -1)
-        failed=$(echo "$output" | grep -oP '\d+(?= failed)' | tail -1)
-        errors=$(echo "$output" | grep -oP '\d+(?= error)' | tail -1)
+        passed=$(echo "$output" | grep -oE '[0-9]+ passed' | sed 's/ passed//' | tail -1)
+        failed=$(echo "$output" | grep -oE '[0-9]+ failed' | sed 's/ failed//' | tail -1)
+        errors=$(echo "$output" | grep -oE '[0-9]+ error' | sed 's/ error//' | tail -1)
         failed=${failed:-0}
         errors=${errors:-0}
         local total=$((passed + failed + errors))
@@ -183,10 +183,10 @@ parse_test_count() {
     fi
 
     # Go test: "ok  pkg  0.123s" or "FAIL  pkg  0.123s"
-    if echo "$output" | grep -qP '(ok|FAIL)\s+.*\d+(\.\d+)?s'; then
+    if echo "$output" | grep -qE '(ok|FAIL)[[:space:]]+.*[0-9]+(\.[0-9]+)?s'; then
         local go_passed go_failed
-        go_passed=$(echo "$output" | grep -cP '^ok\s')
-        go_failed=$(echo "$output" | grep -cP '^FAIL\s')
+        go_passed=$(echo "$output" | grep -cE '^ok[[:space:]]')
+        go_failed=$(echo "$output" | grep -cE '^FAIL[[:space:]]')
         echo "total=$((go_passed + go_failed)) passed=${go_passed} failed=${go_failed}"
         return 0
     fi
@@ -415,7 +415,7 @@ gate_stage_03() {
         parsed=$(parse_test_count "$test_output") || true
         info "Test count: ${parsed}"
         local total
-        total=$(echo "$parsed" | grep -oP '(?<=total=)\d+' || echo "0")
+        total=$(echo "$parsed" | grep -oE 'total=[0-9]+' | sed 's/total=//' || echo "0")
         if [[ "${total:-0}" -eq 0 ]]; then
             err "test command ran but 0 tests detected — tests may not be actually running"
             errors=$((errors + 1))
@@ -502,7 +502,7 @@ gate_stage_05() {
             parsed=$(parse_test_count "$test_output") || true
             info "Test count: ${parsed}"
             local total
-            total=$(echo "$parsed" | grep -oP '(?<=total=)\d+' || echo "0")
+            total=$(echo "$parsed" | grep -oE 'total=[0-9]+' | sed 's/total=//' || echo "0")
             if [[ "${total:-0}" -eq 0 ]]; then
                 warn "test command passed but 0 tests detected"
             else
@@ -620,9 +620,9 @@ gate_stage_08() {
             info "Test count: ${parsed}"
 
             local total passed failed
-            total=$(echo "$parsed" | grep -oP '(?<=total=)\d+')
-            passed=$(echo "$parsed" | grep -oP '(?<=passed=)\d+')
-            failed=$(echo "$parsed" | grep -oP '(?<=failed=)\d+')
+            total=$(echo "$parsed" | grep -oE 'total=[0-9]+' | sed 's/total=//')
+            passed=$(echo "$parsed" | grep -oE 'passed=[0-9]+' | sed 's/passed=//')
+            failed=$(echo "$parsed" | grep -oE 'failed=[0-9]+' | sed 's/failed=//')
 
             if [[ "${total:-0}" -eq 0 ]]; then
                 err "0 tests detected — tests did not actually run"
@@ -660,7 +660,7 @@ gate_stage_09() {
     local claude_md="$PROJECT_ROOT/CLAUDE.md"
     if [[ -f "$claude_md" ]]; then
         # 匹配格式如 "健康检查: http://..." 或 "health check: http://..."
-        health_url=$(grep -iP '(健康检查|health\s*check)\s*[:：]\s*\Khttps?://\S+' "$claude_md" | head -1 || true)
+        health_url=$(grep -iE '(健康检查|health[[:space:]]*check)[[:space:]]*[:：][[:space:]]*https?://[^[:space:]]+' "$claude_md" | sed -E 's/.*[:：][[:space:]]*//' | head -1 || true)
     fi
 
     # 方式2：从环境变量获取

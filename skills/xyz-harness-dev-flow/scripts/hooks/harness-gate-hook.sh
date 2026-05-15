@@ -20,7 +20,7 @@ PROJECT_ROOT="${1:-}"
 # 如果没传参数，尝试从 stdin JSON 读取 cwd（hook 输入格式）
 if [[ -z "$PROJECT_ROOT" ]]; then
     INPUT=$(cat)
-    PROJECT_ROOT=$(echo "$INPUT" | grep -oP '"cwd"\s*:\s*"\K[^"]+' || true)
+    PROJECT_ROOT=$(echo "$INPUT" | grep -oE '"cwd"[[:space:]]*:[[:space:]]*"[^"]+"' | sed 's/.*"//; s/"$//' || true)
 fi
 
 if [[ -z "$PROJECT_ROOT" ]]; then

@@ -2,7 +2,7 @@
 name: harness-tdd-coder
 description: >
   Harness TDD 测试编写 agent。只写测试，不写实现代码。
-  在编码阶段（③）的每个 task 中先于实现 agent 执行。
+  在 Stage 9（编码实现）的每个 task 中先于实现 agent 执行。
   严格遵循 TDD 红-绿-重构周期中的 RED 阶段：写失败测试 → 验证失败 → 交付给实现 agent。
 tools: read, edit, write, bash
 model: llm-simple-router/glm-5.1

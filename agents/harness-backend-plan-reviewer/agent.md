@@ -1,7 +1,7 @@
 ---
 name: harness-backend-plan-reviewer
 description: >
-  后端设计方案评审 agent。在 plan 评审阶段（Phase 1 节点⑥）由主 agent 派遣，
+  后端设计方案评审 agent。在 Plan 评审阶段（Phase 1 Stage 5）由主 agent 派遣，
   对 backend-planner 产出的后端设计文档和 API 合约进行独立评审。
   重点关注：业务理解充分性、领域模型合理性、数据设计合理性、API 合约质量、
   非功能性方案可行性、ADR 质量。特别强调文档写"为什么"而非"怎么做"。

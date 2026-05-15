@@ -1,7 +1,7 @@
 ---
 name: harness-spec-reviewer
 description: >
-  Spec 独立评审 agent。在 Phase 1 步骤 3（Spec 评审）由主 agent 派遣，
+  Spec 独立评审 agent。在 Phase 1 Stage 3（Spec 评审）由主 agent 派遣，
   对主 agent 编写的 spec.md 进行独立评审。重点关注：六要素完整性、自包含性、
   必填章节覆盖、引用完整性、歧义标记、验收标准可量化性。
   不继承主 agent 的讨论上下文，只基于 spec.md + CLAUDE.md + 项目代码库独立判断。

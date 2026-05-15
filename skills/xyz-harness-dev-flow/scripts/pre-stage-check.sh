@@ -12,6 +12,8 @@ set -euo pipefail
 
 STAGE="$1"
 PROJECT_ROOT="$2"
+# 去除前导零，避免八进制解析问题（09 → 9）
+STAGE=$((10#$STAGE))
 GATE_DIR="$PROJECT_ROOT/.xyz-harness/gate"
 
 # ── 颜色 ──────────────────────────────────────────────────────────
@@ -24,22 +26,19 @@ info()  { echo -e "${C_BOLD}[PRE-CHECK]${C_RESET} $*"; }
 ok()    { echo -e "${C_GREEN}[OK]${C_RESET} $*"; }
 err()   { echo -e "${C_RED}[BLOCKED]${C_RESET} $*"; }
 
-# ── 阶段依赖定义（兼容 bash 3.x） ────────────────────────────────
+# ── 阶段定义 ────────────────────────────────────────────────────
+ALL_STAGES=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15)
+
+# 返回指定阶段的所有前置阶段（1 到 stage-1，不允许跳步）
 get_requires() {
-    case "$1" in
-        1)  echo "" ;;
-        2)  echo "1" ;;
-        3)  echo "2" ;;
-        4)  echo "3" ;;
-        5)  echo "4" ;;
-        6)  echo "5" ;;
-        7)  echo "6" ;;
-        8)  echo "7" ;;
-        9)  echo "8" ;;
-        10) echo "9" ;;
-        11) echo "10" ;;
-        *)  echo "" ;;
-    esac
+  local stage="$1"
+  local result=""
+  for s in "${ALL_STAGES[@]}"; do
+    if [[ "$s" -lt "$stage" ]]; then
+      result="${result}${s} "
+    fi
+  done
+  echo "$result"
 }
 
 # ── 检查逻辑 ──────────────────────────────────────────────────────

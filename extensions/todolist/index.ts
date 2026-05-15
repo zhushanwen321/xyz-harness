@@ -327,7 +327,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 		name: "todolist",
 		label: "Todo Step Tracker",
 		description:
-			"管理 /track 模式的固定步骤清单和自由任务列表。" +
+			"管理 todolist 模式的固定步骤清单和自由任务列表。" +
 			"固定模式：7 个步骤按序执行，使用 start 初始化、complete_step 标记、list_steps 查看进度。" +
 			"支持 expand_step 给当前步骤追加子任务，complete_subtask 完成子任务。" +
 			"自由任务模式：使用 create_tasks 创建任务列表、complete_task 标记完成、list_tasks 查看进度。" +
@@ -383,7 +383,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 
 				case "complete_step": {
 					if (!state.isActive || state.mode !== "fixed") {
-						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /todolist <需求描述> 启动。" }] };
 					}
 					if (params.stepId === undefined) {
 						throw new Error("complete_step requires stepId");
@@ -445,7 +445,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 
 				case "list_steps": {
 					if (!state.isActive || state.mode !== "fixed") {
-						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /todolist <需求描述> 启动。" }] };
 					}
 					const lines: string[] = [];
 					lines.push("需求: " + (state.requirementSummary || "(未设置)"));
@@ -479,7 +479,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 
 				case "validate_outputs": {
 					if (!state.isActive || state.mode !== "fixed") {
-						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /track <需求描述> 启动。" }] };
+						return { content: [{ type: "text", text: "固定步骤模式未激活。使用 /todolist <需求描述> 启动。" }] };
 					}
 					if (params.stepId === undefined) {
 						throw new Error("validate_outputs requires stepId");
@@ -608,7 +608,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 					// 如果固定步骤模式已激活，不允许使用自由任务模式
 					if (state.isActive && state.mode === "fixed") {
 						return {
-							content: [{ type: "text", text: "当前处于固定步骤模式，不能创建自由任务。请先完成固定步骤或使用 /track abort 中止。" }],
+							content: [{ type: "text", text: "当前处于固定步骤模式，不能创建自由任务。请先完成固定步骤或使用 /todolist abort 中止。" }],
 						};
 					}
 
@@ -872,17 +872,17 @@ export default function todolistExtension(pi: ExtensionAPI) {
 		ctx.ui.setWidget("todolist", lines);
 	}
 
-	// ── Command: /track ─────────────────────────────────
+	// ── Command: /todolist ─────────────────────────────────
 
-	pi.registerCommand("track", {
-		description: "需求沟通阶段追踪：/track <需求描述> | /track status | /track abort | /track resume | /track redo <stepId>",
+	pi.registerCommand("todolist", {
+		description: "需求沟通阶段追踪：/todolist <需求描述> | /todolist status | /todolist abort | /todolist resume | /todolist redo <stepId>",
 
 		handler: async (args, ctx) => {
 			const trimmed = args.trim().toLowerCase();
 
 			if (trimmed === "status") {
 				if (!state.isActive) {
-					ctx.ui.notify("Todo 模式未激活。使用 /track <需求描述> 启动。", "info");
+					ctx.ui.notify("Todo 模式未激活。使用 /todolist <需求描述> 启动。", "info");
 					return;
 				}
 				if (state.mode === "free") {
@@ -908,7 +908,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 
 			if (trimmed === "resume") {
 				if (!state.isActive) {
-					ctx.ui.notify("Todo 未激活。请先使用 /track <需求描述> 启动。", "warning");
+					ctx.ui.notify("Todo 未激活。请先使用 /todolist <需求描述> 启动。", "warning");
 					return;
 				}
 				if (state.mode === "free") {
@@ -935,7 +935,7 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			const redoMatch = trimmed.match(/^redo\s+(\d+)$/);
 			if (redoMatch) {
 				if (!state.isActive || state.mode !== "fixed") {
-					ctx.ui.notify("固定步骤模式未激活。请先使用 /track <需求描述> 启动。", "warning");
+					ctx.ui.notify("固定步骤模式未激活。请先使用 /todolist <需求描述> 启动。", "warning");
 					return;
 				}
 				const redoStepId = parseInt(redoMatch[1]!, 10);
@@ -983,11 +983,11 @@ export default function todolistExtension(pi: ExtensionAPI) {
 			}
 
 			if (!args.trim()) {
-				ctx.ui.notify("用法: /track <需求描述> | /track status | /track abort | /track resume | /track redo <stepId>", "warning");
+				ctx.ui.notify("用法: /todolist <需求描述> | /todolist status | /todolist abort | /todolist resume | /todolist redo <stepId>", "warning");
 				return;
 			}
 
-			// 启动 track 模式
+			// 启动 todolist 模式
 			const requirement = args.trim();
 			const today = new Date().toISOString().slice(0, 10);
 			const topicSlug = requirement

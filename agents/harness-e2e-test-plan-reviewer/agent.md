@@ -1,7 +1,7 @@
 ---
 name: harness-e2e-test-plan-reviewer
 description: >
-  E2E 测试计划独立评审 agent。在 Phase 1 步骤 7（E2E 测试计划评审）由主 agent 派遣，
+  E2E 测试计划独立评审 agent。在 Phase 1 Stage 7（E2E 测试计划评审）由主 agent 派遣，
   对 e2e-test-plan.md 进行独立评审。重点关注：spec 验收标准覆盖、四层验证策略合理性、
   步骤可执行性（命令精确度）、依赖关系正确性、测试环境配置完整性、前端元素定位策略。
   不继承主 agent 的讨论上下文，只基于 e2e-test-plan.md + spec.md + 项目信息独立判断。

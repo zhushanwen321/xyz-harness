@@ -1,7 +1,7 @@
 ---
 name: harness-api-alignment
 description: >
-  前后端 API 对齐 agent。在 plan 阶段（Phase 1 节点④）由主 agent 派遣，
+  前后端 API 对齐 agent。在 plan 阶段（Phase 1 Stage 4）由主 agent 派遣，
   在后端设计和前端设计并行完成后执行。读取后端产出的 API 合约（plan-api-contract.md）
   和前端暂定的 API 调用（plan-frontend.md），修正前端设计使其与后端 API 完全对齐。
   同时检查后端 API 是否遗漏了前端需要的能力。

@@ -7,7 +7,7 @@ description: Subagent-driven-development 编码模式参考。主 agent 按 plan
 
 **本 skill 是参考模式文档，不作为 skill 加载到任何 subagent 的上下文中。**
 
-由 dev-flow 主 agent（纯调度器）在阶段 ③ 开始时读取，理解分 task 迭代调度的流程后，直接使用 subagent tool 派遣 subagent。
+由 dev-flow 主 agent（纯调度器）在 Stage 9 开始时读取，理解分 task 迭代调度的流程后，直接使用 subagent tool 派遣 subagent。
 
 **不允许的调用链：** 主 agent → 派 executor → executor 加载本文档 → executor 再派 subagent ❌
 
@@ -17,11 +17,11 @@ description: Subagent-driven-development 编码模式参考。主 agent 按 plan
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | ③ 编码实现 |
-| 触发方式 | 由 dev-flow 主 agent 在阶段 ③ 开始时读取（作为调度参考，不加载到 subagent 上下文） |
-| 上游 | ② 需求评审通过 + 用户确认 |
-| 下游（完成后进入） | 所有 task 完成后由主 agent 进入 ④ 编码评审 |
-| 回退目标 | spec 合规不通过 → 当前 task 内修复；编码评审不通过 → 回退到 ③ 重新派遣 |
+| 所在阶段 | Stage 9 编码实现 |
+| 触发方式 | 由 dev-flow 主 agent 在 Stage 9 开始时读取（作为调度参考，不加载到 subagent 上下文） |
+| 上游 | Stage 3 Spec 评审通过 + 用户确认 |
+| 下游（完成后进入） | 所有 task 完成后由主 agent进入 Stage 10 编码评审 |
+| 回退目标 | spec 合规不通过 → 当前 task 内修复；编码评审不通过 → 回退到 Stage 9 重新派遣 |
 
 # Subagent-Driven Development
 
@@ -367,7 +367,7 @@ Done!
 - Self-review catches issues before handoff
 - Spec compliance review prevents over/under-building
 - Review loops ensure fixes actually work
-- Code quality review is handled separately by dev-flow 阶段④的 expert-reviewer skill
+- Code quality review is handled separately by dev-flow Stage 10 的 expert-reviewer skill
 - Spec deviation tracking ensures spec.md stays in sync with implementation, preventing false positives in later reviews
 
 **Cost:**
@@ -422,7 +422,7 @@ Done!
 - **Implementer** uses harness-executor agent - writes code to pass tests
 
 **Code quality review:**
-- Code quality review is handled by dev-flow 阶段④的 expert-reviewer skill，不在此流程中执行
+- Code quality review is handled by dev-flow Stage 10 的 expert-reviewer skill，不在此流程中执行
 
 <!-- LOCAL-OVERRIDE:START -->
 ## 本地目录覆盖规则

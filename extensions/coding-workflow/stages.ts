@@ -33,7 +33,6 @@ Ask one question at a time. Propose 2-3 approaches with trade-offs when appropri
 - Behavioral constraints/行为约束 (Always/Ask First/Never)
 - 已有基础设施
 - Verification/验收标准
-Run spec-ref-scan.sh after writing to check reference integrity.
 Output: .xyz-harness/{topicDir}/spec.md`,
   deliverables: [
     {

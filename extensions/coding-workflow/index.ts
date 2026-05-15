@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { WORKFLOW_STAGES } from "./stages.js";
 import { StateManager } from "./state-manager.js";
 import { GateRunner } from "./gate-runner.js";
+import { verifyGateL2 } from "./gate-verifier.js";
 import { WidgetManager } from "./widget.js";
 import {
   type StageCompleteParams,
@@ -157,13 +158,16 @@ export default function workflowController(pi: ExtensionAPI) {
   throw new Error(`Unknown stage: ${state.currentStage}`);
   }
 
-  // 前置检查：如果当前阶段已经标记为 gate 失败，拒绝推进
+  // 前置检查：如果当前阶段已经标记为 gate 失败，清除状态后重新验证
+  // 不拒绝推进 — gate 会再次运行，如果问题未修复会再次失败
   const preCheck = state.stages.find((s) => s.number === state.currentStage);
   if (preCheck?.status === "fail") {
-  throw new Error(
-    `Stage ${state.currentStage} previously failed gate check. ` +
-    `Fix the issues and retry. Previous failure: ${preCheck.gateOutput ?? "unknown"}`
-  );
+  stateMgr.updateStage(state, state.currentStage, {
+    status: "active",
+    gateResult: undefined,
+    gateOutput: undefined,
+  });
+  stateMgr.save(state, ctx.cwd);
   }
 
     onUpdate?.({
@@ -207,21 +211,65 @@ export default function workflowController(pi: ExtensionAPI) {
   }
 
   // 4. L1 Gate 检查
-    const gateScripts =
-    currentStageDef.gateScripts ??
-    (currentStageDef.gateScript ? [currentStageDef.gateScript] : []);
-    for (const gateNum of gateScripts) {
-    const gateResult = await gateRunner.run(gateNum, ctx.cwd, signal);
-    if (!gateResult.passed) {
-      stateMgr.updateStage(state, state.currentStage, {
-      status: "fail",
-      gateResult: "fail",
-      gateOutput: gateResult.output,
-      });
-      stateMgr.save(state, ctx.cwd);
-      throw new Error(`L1 Gate ${gateNum} failed:\n${gateResult.output}`);
+  const gateScripts =
+  currentStageDef.gateScripts ??
+  (currentStageDef.gateScript ? [currentStageDef.gateScript] : []);
+  const gateResults: Array<{ passed: boolean; output: string }> = [];
+  for (const gateNum of gateScripts) {
+  const gateResult = await gateRunner.run(gateNum, ctx.cwd, signal);
+  gateResults.push(gateResult);
+  if (!gateResult.passed) {
+    stateMgr.updateStage(state, state.currentStage, {
+    status: "fail",
+    gateResult: "fail",
+    gateOutput: gateResult.output,
+    });
+    stateMgr.save(state, ctx.cwd);
+    throw new Error(`L1 Gate ${gateNum} failed:\n${gateResult.output}`);
+  }
+  }
+
+  // 4b. L2 Gate 验证（防伪造检查）— L1 全部通过后执行
+  if (gateResults.length > 0) {
+  const deliverablesForL2: Array<{ path: string; content: string }> = [];
+  if (currentStageDef.deliverables) {
+    for (const d of currentStageDef.deliverables) {
+    if (!d.required) continue;
+    const pattern = d.path.replace("{topicDir}", state.topicDir);
+    const fullPath = resolve(ctx.cwd, pattern);
+    try {
+    const content = readFileSync(fullPath, "utf-8").slice(0, 5000);
+    deliverablesForL2.push({ path: pattern, content });
+    } catch {
+    // 交付物在前面已验证过存在性，这里 glob 精确路径不匹配时静默跳过
     }
     }
+  }
+
+  const gateOutput = gateResults.map((r) => r.output).join("\n---\n").slice(0, 4000);
+
+  try {
+    const l2Result = await verifyGateL2(
+    gateScripts[gateScripts.length - 1],
+    currentStageDef.name,
+    gateOutput,
+    deliverablesForL2,
+    signal,
+    );
+    if (!l2Result.passed) {
+    throw new Error(
+    `L2 Gate verification failed — possible fabrication detected:\n${l2Result.output}\n\nRe-run the stage with actual execution (not code inspection).`
+    );
+    }
+  } catch (e: unknown) {
+    // L2 验证的明确 FAIL 才抛出；网络错误/超时等降级通过
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("fabrication") || msg.includes("L2 Gate")) {
+    throw e;
+    }
+    // 其他异常（网络/超时）静默降级
+  }
+  }
 
   // 5. 最后一个 stage？
     if (!nextStageDef) {
@@ -594,18 +642,29 @@ pi.registerCommand("harness-status", {
   const remaining = stageState.tasks.filter((t) => t.status !== "pass");
   const nextTask = remaining[0];
   const taskLines = stageState.tasks.map((t) => {
-    const mark = t.status === "pass" ? "done" : "todo";
-    return `  [${mark}] ${t.name}${t.summary ? " — " + t.summary : ""}`;
+  const mark = t.status === "pass" ? "done" : "todo";
+  return `  [${mark}] ${t.name}${t.summary ? " — " + t.summary : ""}`;
   });
   taskBlock = `\n\nTask progress (${done.length}/${stageState.tasks.length}):\n${taskLines.join("\n")}${
-    nextTask ? `\n\nNext task: ${nextTask.name}` : "\n\nAll tasks complete — call harness_stage_complete to advance."
+  nextTask ? `\n\nNext task: ${nextTask.name}` : "\n\nAll tasks complete — call harness_stage_complete to advance."
   }`;
+  }
+
+  // Stage 13 的 E2E 测试强化规则
+  let e2eWarning = "";
+  if (stageDef.number === 13) {
+  e2eWarning = `\n\n**E2E TESTING CRITICAL RULES — READ BEFORE EXECUTING:**
+1. You MUST dispatch harness-e2e-tester subagent (NOT a generic executor).
+2. Every UI smoke test MUST be executed in a real browser using chrome-automation skill.
+3. Screenshots are REQUIRED for every UI test case — save to evidence/ directory.
+4. FABRICATION IS FORBIDDEN. Writing "代码已实现" or "code inspection passed" instead of actual execution will cause gate_12 to FAIL.
+5. If Chrome/browser is not available, mark tests as SKIP with reason. Do not fabricate.`;
   }
 
   return {
   systemPrompt:
     event.systemPrompt +
-  `\n\n[CODING WORKFLOW \u2014 Phase ${stageDef.phase}, Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}${gateFailedMsg}${prevWarning}${taskBlock}\n\nStage management:\n  When this stage is complete, call harness_stage_complete with a summary.\n  ${stageDef.requiresConfirmation ? "This stage requires user confirmation — the extension will ask automatically." : "Call harness_stage_complete when done (no confirmation needed for this stage)."}\n  If harness_stage_complete returns an error, fix the issues and retry.`,
+  `\n\n[CODING WORKFLOW \u2014 Phase ${stageDef.phase}, Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}${gateFailedMsg}${prevWarning}${taskBlock}${e2eWarning}\n\nStage management:\n  When this stage is complete, call harness_stage_complete with a summary.\n  ${stageDef.requiresConfirmation ? "This stage requires user confirmation — the extension will ask automatically." : "Call harness_stage_complete when done (no confirmation needed for this stage)."}\n  If harness_stage_complete returns an error, fix the issues and retry.`,
   };
   });
 

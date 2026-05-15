@@ -240,8 +240,15 @@ Run tests to confirm all pass.`,
   name: "E2E 测试",
   phase: 2,
   type: "automated",
+  gateScript: "12",
   requiresConfirmation: false,
-  prompt: `Execute E2E tests according to e2e-test-plan.md.
+  prompt: `**CRITICAL: Dispatch harness-e2e-tester subagent for all E2E test execution.**
+Use chrome-automation skill for all UI smoke tests.
+NEVER fabricate results by code inspection — every UI test MUST be executed in a real browser with screenshots.
+Fabricated results (writing "代码已实现" without actual execution) will be caught by gate_12 and rejected.
+If a test cannot be executed, mark it as SKIP with explicit reason. DO NOT pass it as "OK".
+
+Execute E2E tests according to e2e-test-plan.md.
 1. Start Chrome CDP (port 9222)
 2. Start backend and frontend services
 3. Prepare test data
@@ -250,11 +257,11 @@ Run tests to confirm all pass.`,
 Output: .xyz-harness/{topicDir}/changes/evidence/e2e-test-report.md
 If blocking failure found, rollback to Stage 10 (coding).`,
   deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/evidence/e2e-test-report.md",
-    label: "e2e test report",
-    required: true,
-    },
+  {
+  path: ".xyz-harness/{topicDir}/changes/evidence/e2e-test-report.md",
+  label: "e2e test report",
+  required: true,
+  },
   ],
   },
   {

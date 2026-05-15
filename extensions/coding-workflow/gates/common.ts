@@ -3,7 +3,7 @@
 // 对标 bash gate-script.sh 中的工具函数，迁移为 TypeScript 实现
 // 注意：所有函数不 exit 进程，由上层调用者决定如何处理结果
 
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
 
@@ -137,7 +137,7 @@ function findFilesByPattern(rootDir: string, pattern: string): string[] {
   const results: string[] = [];
 
   function walk(dir: string): void {
-  let entries: string[];
+  let entries: Dirent[];
   try {
     entries = readdirSync(dir, { withFileTypes: true });
   } catch {
@@ -388,17 +388,17 @@ export function runCommand(
     .join("\n");
   return { ok: true, output };
   } catch (err) {
-  const error = err as import("node:child_process").ExecSyncException;
-  const stderrOutput = error.stderr ? String(error.stderr) : "";
-  const stdoutOutput = error.stdout ? String(error.stdout) : "";
+  const execError = err as { stderr?: Buffer | string; stdout?: Buffer | string; status?: number; message?: string };
+  const stderrOutput = execError.stderr ? String(execError.stderr) : "";
+  const stdoutOutput = execError.stdout ? String(execError.stdout) : "";
   const combined = (stdoutOutput + "\n" + stderrOutput).trim();
 
   // 输出限制 2000 字符
-  const truncated = truncateOutput(combined || error.message || String(err));
+  const truncated = truncateOutput(combined || execError.message || String(err));
   const output = [
-    infoLine,
-    `[FAIL] ${label} (exit ${error.status ?? "unknown"})`,
-    truncated,
+  infoLine,
+  `[FAIL] ${label} (exit ${execError.status ?? "unknown"})`,
+  truncated,
   ]
     .filter(Boolean)
     .join("\n");

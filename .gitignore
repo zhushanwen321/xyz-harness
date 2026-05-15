@@ -1,1 +1,5 @@
 __pycache__/
+
+# Project dependencies (local only)
+node_modules/
+package-lock.json

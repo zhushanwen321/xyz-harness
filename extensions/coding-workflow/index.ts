@@ -170,11 +170,12 @@ export default function workflowController(pi: ExtensionAPI) {
   stateMgr.save(state, ctx.cwd);
   }
 
-    onUpdate?.({
-    content: [
-      { type: "text", text: `Validating stage ${state.currentStage}: ${currentStageDef.name}...` },
-    ],
-    });
+  onUpdate?.({
+  content: [
+    { type: "text", text: `Validating stage ${state.currentStage}: ${currentStageDef.name}...` },
+  ],
+  details: undefined,
+  });
 
     // 1. 检查 task 完成度
     const stageState = state.stages.find((s) => s.number === state.currentStage);
@@ -476,7 +477,7 @@ export default function workflowController(pi: ExtensionAPI) {
     const { join } = await import("node:path");
     const specPath = join(ctx.cwd, ".xyz-harness", state.topicDir, "spec.md");
     const planPath = join(ctx.cwd, ".xyz-harness", state.topicDir, "plan.md");
-    const missing = [];
+  const missing: string[] = [];
     if (!exists(specPath)) missing.push("spec.md");
     if (!exists(planPath)) missing.push("plan.md");
     if (missing.length > 0) {

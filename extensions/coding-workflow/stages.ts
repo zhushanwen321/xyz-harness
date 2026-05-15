@@ -288,9 +288,10 @@ Max 2 review rounds.`,
   gateScripts: ["14"],
   requiresConfirmation: true,
   prompt: `Execute the push-CI-deploy sequence:
-1. git push (use zcommit skill) — L1 gate 07
-2. Wait for CI to pass — L1 gate 08
-3. Deploy and verify health — L1 gate 09
+1. git push (use zcommit skill)
+2. Wait for CI to pass
+3. Deploy and verify health
+L1 gate 14 will verify all three steps automatically.
 Output: .xyz-harness/{topicDir}/changes/evidence/verification_output.md
    .xyz-harness/{topicDir}/changes/evidence/deploy_result.md`,
   deliverables: [

@@ -133,7 +133,6 @@ description: >
 |------|------|----------|
 | `harness-state.sh` | 状态机管理(advance/pass/rollback/status/check) | 每个阶段开始/结束时 |
 | `gate-script.sh` | L1 门禁检查(编译/测试/lint) | 阶段 1,3,5,7,8,9 |
-| `pre-stage-check.sh` | 前置阶段检查 | gate-script.sh 自动调用 |
 | `spec-ref-scan.sh` | Spec 引用完整性扫描 | Stage 1 完成后 |
 
 ### Hook 安装

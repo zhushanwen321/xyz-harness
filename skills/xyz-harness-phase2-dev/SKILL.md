@@ -316,7 +316,6 @@ bash scripts/harness-state.sh pass 1 $PROJECT_ROOT
 | `harness-state.sh` | 状态机：advance（验证前置）→ pass（标记通过）→ rollback（回退）|
 | `gate-script.sh` | L1 门禁检查：文件完整性、TDD 顺序、格式、指定阶段的合规 |
 | `tdd-order-check.sh` | TDD 提交顺序检测（被 gate-script.sh stage 02 调用） |
-| `pre-stage-check.sh` | 前置阶段检查（由 gate-script.sh 自动调用）|
 | `spec-ref-scan.sh` | spec 引用完整性扫描 |
 | `spec-completeness.sh` | spec/plan 自包含检查 |
 

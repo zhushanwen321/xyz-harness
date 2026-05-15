@@ -2,7 +2,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, statSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { WORKFLOW_STAGES } from "./stages.js";
@@ -18,12 +18,12 @@ import {
 } from "./types.js";
 
 const STATE_FILE = ".xyz-harness/workflow-state.json";
-const SCRIPTS_DIR = "skills/xyz-harness-dev-flow/scripts";
+// GateRunner 从扩展自身目录查找 scripts/，无需 SCRIPTS_DIR
 const MAX_SUMMARY_LENGTH = 500; // (#20)
 
 export default function workflowController(pi: ExtensionAPI) {
   const stateMgr = new StateManager(STATE_FILE);
-  const gateRunner = new GateRunner(SCRIPTS_DIR);
+  const gateRunner = new GateRunner();
   const widgetMgr = new WidgetManager(pi, stateMgr);
   let compactInProgress = false; // (#17) compact 去重标志
   let sessionActive = false; // session 维度激活，/new 后自动重置

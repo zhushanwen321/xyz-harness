@@ -605,51 +605,10 @@ pi.registerCommand("harness-status", {
   return {
   systemPrompt:
     event.systemPrompt +
-  `\n\n[CODING WORKFLOW \u2014 Phase ${stageDef.phase}, Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}${gateFailedMsg}${prevWarning}${taskBlock}\n\nRULES:\n1. When this stage is done, call harness_stage_complete with a summary. Do NOT ask the user for permission first.\n2. ${stageDef.requiresConfirmation ? "This stage REQUIRES user confirmation — the extension will ask automatically." : "This stage does NOT require confirmation — call harness_stage_complete directly, do not ask the user."}\n3. If harness_stage_complete returns an error, you MUST fix the issue and retry. Skipping stages or ignoring errors is a critical violation.`,
+  `\n\n[CODING WORKFLOW \u2014 Phase ${stageDef.phase}, Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}${gateFailedMsg}${prevWarning}${taskBlock}\n\nStage management:\n  When this stage is complete, call harness_stage_complete with a summary.\n  ${stageDef.requiresConfirmation ? "This stage requires user confirmation — the extension will ask automatically." : "Call harness_stage_complete when done (no confirmation needed for this stage)."}\n  If harness_stage_complete returns an error, fix the issues and retry.`,
   };
   });
 
-  // context: 每次 LLM 调用前注入 workflow 状态信息
-  pi.on("context", async (event, ctx) => {
-  if (!sessionActive) return;
-  let state: ReturnType<typeof stateMgr.load> = null;
-  try {
-  state = stateMgr.load(ctx.cwd);
-  } catch {
-  return;
-  }
-  if (!state) return;
-  if (state.completed) return;
-
-  const stageDef = findStageDef(state.currentStage);
-  if (!stageDef) return;
-
-  // 构建 task 进度简报
-  let taskBrief = "";
-  const stageState = state.stages.find((s) => s.number === state.currentStage);
-  if (stageState && stageState.tasks.length > 0) {
-  const done = stageState.tasks.filter((t) => t.status === "pass").length;
-  const total = stageState.tasks.length;
-  const nextTask = stageState.tasks.find((t) => t.status !== "pass");
-  taskBrief = ` Tasks: ${done}/${total}${nextTask ? `, next: ${nextTask.name}` : ", all done"}`;
-  }
-
-  // 在消息末尾追加当前 stage 信息，确保 LLM 在长对话中不丢失上下文
-  return {
-  messages: [
-  ...event.messages,
-  {
-  role: "user",
-  content: [
-    {
-    type: "text",
-  text: `[SYSTEM: Coding Workflow — Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: "${stageDef.name}"${taskBrief}. You MUST call harness_stage_complete before proceeding to any other stage.]`,
-      },
-    ],
-    },
-  ],
-  };
-  });
 
   // turn_end: 检查 context 使用率，触发 compact
   pi.on("turn_end", async (_event, ctx) => {

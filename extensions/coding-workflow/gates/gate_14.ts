@@ -59,22 +59,26 @@ export async function gate_14(
   return { passed: false, output: failOutput };
   }
 
-  // ── 1. 工作区干净 ──────────────────────────────────────
+  // ── 1. 工作区干净（排除 .xyz-harness/ — 由 harness_stage_complete 自动写入）
   try {
   const status = execSync("git status --short", {
-    cwd: projectRoot,
-    encoding: "utf8",
-    timeout: 10_000,
+  cwd: projectRoot,
+  encoding: "utf8",
+  timeout: 10_000,
   }).trim();
-  if (status) {
-    dirty = status;
-    errCount++;
-    outputLines.push("[FAIL] working directory not clean:");
-    for (const line of status.split("\n")) {
-    outputLines.push(`  ${line}`);
-    }
+  // 过滤掉 .xyz-harness/ 目录的变更——harness_stage_complete 在 gate 检查前写入 state
+  const relevantLines = status
+  .split("\n")
+  .filter((line: string) => line.trim() && !line.includes(".xyz-harness/"));
+  if (relevantLines.length > 0) {
+  dirty = relevantLines.join("\n");
+  errCount++;
+  outputLines.push("[FAIL] working directory not clean:");
+  for (const line of relevantLines) {
+  outputLines.push(`  ${line}`);
+  }
   } else {
-    outputLines.push("[PASS] working directory clean");
+  outputLines.push("[PASS] working directory clean");
   }
   } catch {
   outputLines.push("[FAIL] working directory: unable to check git status");

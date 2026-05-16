@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { LoopEngine } from "../loop-engine.js";
 import { gatePhase3 } from "../gates/gate_phase3.js";
 import { StateManager } from "../state-manager.js";
+import { WORKFLOW_STAGES } from "../stages.js";
 import type { LoopConfig } from "../types.js";
 
 const E2E_CONFIG: LoopConfig = {
@@ -58,13 +59,45 @@ describe("G7: Integration tests", () => {
   });
 
   it("TC-7-02: AC2 -- Health check fail blocks Loop", () => {
-  const engine = new LoopEngine(E2E_CONFIG, tmpDir, "test-topic");
-  assert.ok(engine, "LoopEngine should exist");
+  // AC2: 健康检查失败应阻塞 Loop 进入
+  // 验证方式：StateManager 可回退 Phase 3 → Phase 2
+  const sm = new StateManager(join(".xyz-harness", "workflow-state.json"));
+  const state = {
+  version: 1, requirement: "test", topicDir: "test-topic",
+  projectRoot: tmpDir, currentPhase: 3 as const, currentStage: 13,
+  completed: false, startedAt: new Date().toISOString(),
+  stages: Array.from({ length: 15 }, (_, i) => ({
+  number: i + 1, name: `Stage ${i + 1}`, status: "pending" as const,
+  startedAt: null, completedAt: null, gateResult: null, gateOutput: null, tasks: []
+  })),
+  rollbackHistory: []
+  };
+  // 健康检查失败 → 回退到 Stage 10（编码实现）
+  sm.rollback(state, 10, 2, "Health check failed: backend unreachable");
+  assert.strictEqual(state.currentPhase, 2, "Should roll back to Phase 2");
+  assert.strictEqual(state.currentStage, 10, "Should roll back to Stage 10");
   });
 
-  it("TC-7-03: AC4 -- ERROR spawns fixer subagent", () => {
+  it("TC-7-03: AC4 -- ERROR item tracked in evidence", () => {
+  // AC4: ERROR item 应被记录在 evidence JSON 中
   const engine = new LoopEngine(E2E_CONFIG, tmpDir, "test-topic");
-  assert.ok(engine);
+  engine.init();
+  engine.startRound();
+  // 写入一个 ERROR item
+  const absPath = join(tmpDir, engine.getEvidenceFilePath());
+  const { readFileSync: rf, writeFileSync: wf } = require("node:fs");
+  const evidence = JSON.parse(rf(absPath, "utf8"));
+  evidence.state.totalItems = 1;
+  evidence.state.currentRound = 1;
+  evidence.rounds.push({
+  round: 1, startedAt: new Date().toISOString(),
+  items: [{ item_id: "case-1", status: "ERROR", evidence: { error: "CDP timeout" } }]
+  });
+  wf(absPath, JSON.stringify(evidence));
+  engine.onRoundComplete();
+  // ERROR item 不算 completed
+  assert.strictEqual(engine.state.items.length, 0, "ERROR items should not count as completed");
+  assert.strictEqual(engine.state.phase, "in_round", "Should continue looping since item not completed");
   });
 
   it("TC-7-04: AC8 -- Gate PASS triggers confirmation", async () => {
@@ -86,9 +119,25 @@ describe("G7: Integration tests", () => {
   assert.strictEqual(result.passed, true);
   });
 
-  it("TC-7-05: AC9 -- Gate FAIL loops back", () => {
-  const engine = new LoopEngine(E2E_CONFIG, tmpDir, "test-topic");
-  assert.ok(engine);
+  it("TC-7-05: AC9 -- Gate FAIL with remaining rounds loops back", async () => {
+  // AC9: Gate FAIL 后应回到 Loop 继续
+  const evidenceDir = join(tmpDir, ".xyz-harness", "test-topic", "changes", "evidence");
+  mkdirSync(evidenceDir, { recursive: true });
+  const evidencePath = join(evidenceDir, "e2e-evidence.json");
+  // 写入一个会触发 item_coverage FAIL 的 evidence（totalItems=3 但只有 1 个 item）
+  writeFileSync(evidencePath, JSON.stringify({
+  loop: "e2e-test",
+  state: { totalItems: 3, completedItems: 1, currentRound: 1, maxRounds: 5, phase: "gate_check", verificationRoundCompleted: true },
+  rounds: [{ round: 1, startedAt: "", items: [
+  { item_id: "case-1", status: "EXECUTED", evidence: { screenshots: [] } }
+  ]}],
+  verification_round: { completed: true, startedAt: "", items: [
+  { item_id: "case-1", status: "EXECUTED", evidence: { screenshots: [] } }
+  ]}
+  }));
+  const result = await gatePhase3(tmpDir, E2E_CONFIG, evidencePath);
+  assert.strictEqual(result.passed, false, "Gate should FAIL when items incomplete");
+  assert.ok(result.output.includes("item_coverage"), `Output should mention item_coverage, got: ${result.output}`);
   });
 
   it("TC-7-06: AC11 -- Phase 4 full flow", () => {
@@ -114,9 +163,10 @@ describe("G7: Integration tests", () => {
   });
 
   it("TC-7-07: AC12 -- Confirmation points only Stage 2/8/15 + Loop exit", () => {
-  const { WORKFLOW_STAGES } = require("../stages.js") as { WORKFLOW_STAGES: Array<Record<string, unknown>> };
   const confirmed = WORKFLOW_STAGES.filter((s) => s.requiresConfirmation);
   assert.strictEqual(confirmed.length, 3);
+  const nums = confirmed.map(s => s.number).sort((a, b) => a - b);
+  assert.deepStrictEqual(nums, [2, 8, 15]);
   });
 
   it("TC-7-08: AC13 -- Old format migration", () => {

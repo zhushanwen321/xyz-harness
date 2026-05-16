@@ -1,0 +1,123 @@
+{
+  "loop": "e2e-testing",
+  "template_version": "1.0",
+  "generated_from": ".xyz-harness/{topicDir}/e2e-test-plan.md",
+  "generated_at_plan_stage": true,
+  "expected_cases": [
+  {
+    "case_id": "TC-1-01",
+    "group": "G1",
+    "name": "currentPhase 类型编译通过",
+    "required_evidence": [],
+    "notes": "编译时验证，不需要 CDP"
+  },
+  {
+    "case_id": "TC-1-02",
+    "group": "G1",
+    "name": "WORKFLOW_STAGES 含 15 条 stage",
+    "required_evidence": [],
+    "notes": "静态检查"
+  },
+  {
+    "case_id": "TC-2-01",
+    "group": "G2",
+    "name": "init() 创建空 evidence JSON",
+    "required_evidence": ["existsSync_result", "readFileSync_content"]
+  },
+  {
+    "case_id": "TC-2-03",
+    "group": "G2",
+    "name": "startRound() → phase=in_round",
+    "required_evidence": ["state_phase_value"]
+  },
+  {
+    "case_id": "TC-2-04",
+    "group": "G2",
+    "name": "onRoundComplete 统计 completedItems",
+    "required_evidence": ["state_completedItems_value"]
+  },
+  {
+    "case_id": "TC-2-07",
+    "group": "G2",
+    "name": "maxRounds 达到未全部 EXECUTED → failed",
+    "required_evidence": ["state_phase_value"]
+  },
+  {
+    "case_id": "TC-3-01",
+    "group": "G3",
+    "name": "item_coverage 全部覆盖 → PASS",
+    "required_evidence": ["pass_value", "output_string"]
+  },
+  {
+    "case_id": "TC-3-02",
+    "group": "G3",
+    "name": "item_coverage 遗漏 1 个 → FAIL",
+    "required_evidence": ["pass_value", "output_string"]
+  },
+  {
+    "case_id": "TC-4-01",
+    "group": "G4",
+    "name": "5 项 L1 全 PASS → Gate PASS",
+    "required_evidence": ["passed_value", "output_string"]
+  },
+  {
+    "case_id": "TC-5-01",
+    "group": "G5",
+    "name": "save/load LoopState 往返",
+    "required_evidence": ["fields_consistent"]
+  },
+  {
+    "case_id": "TC-6-01",
+    "group": "G6",
+    "name": "旧 16-stage state JSON 加载不报错",
+    "required_evidence": ["no_exception"]
+  },
+  {
+    "case_id": "TC-7-01",
+    "group": "G7",
+    "name": "Phase 2→3 自动过渡无确认",
+    "required_evidence": ["currentPhase_value", "confirmation_triggered"]
+  },
+  {
+    "case_id": "TC-7-02",
+    "group": "G7",
+    "name": "健康检查失败阻塞 Loop",
+    "required_evidence": ["phase_blocked", "rollback_target_stage"]
+  },
+  {
+    "case_id": "TC-7-04",
+    "group": "G7",
+    "name": "Gate PASS 触发人工确认",
+    "required_evidence": ["confirmation_triggered"]
+  },
+  {
+    "case_id": "TC-7-05",
+    "group": "G7",
+    "name": "Gate FAIL 回退 Loop",
+    "required_evidence": ["phase_value"]
+  },
+  {
+    "case_id": "TC-7-06",
+    "group": "G7",
+    "name": "Phase 4 全流程收尾",
+    "required_evidence": ["state_completed"]
+  },
+  {
+    "case_id": "TC-7-07",
+    "group": "G7",
+    "name": "确认点分布审计",
+    "required_evidence": ["stage_confirmation_map"]
+  },
+  {
+    "case_id": "TC-7-08",
+    "group": "G7",
+    "name": "旧 format 迁移",
+    "required_evidence": ["migrated_successfully"]
+  }
+  ],
+  "rounds": [],
+  "verification_round": {
+  "completed": false,
+  "cases": []
+  }
+}

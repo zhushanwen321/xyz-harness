@@ -24,7 +24,7 @@ Ask one question at a time. Propose 2-3 approaches with trade-offs when appropri
   name: "Spec 编写",
   phase: 1,
   type: "interactive",
-  requiresConfirmation: true,
+  requiresConfirmation: false,
   prompt: `Write the spec.md based on the discussion. The spec MUST include:
 - Outcomes/目标
 - Scope/范围 (with out-of-scope)
@@ -318,7 +318,7 @@ Output: .xyz-harness/{topicDir}/changes/evidence/verification_output.md
   name: "自动复盘",
   phase: 2,
   type: "automated",
-  requiresConfirmation: false,
+  requiresConfirmation: true,
   prompt: `Dispatch harness-reviewer to analyze the entire workflow:
 - Rollback root causes
 - Review effectiveness

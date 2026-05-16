@@ -3,3 +3,6 @@ __pycache__/
 # Project dependencies (local only)
 node_modules/
 package-lock.json
+
+# Harness working state (auto-generated, should not be committed to gate checks)
+.xyz-harness/gate/

@@ -56,29 +56,34 @@ function readRouterConfig(): RouterConfig | null {
 function getGateGuidance(gateNumber: string): string {
   const guidance: Record<string, string> = {
   "12":
-    "Focus on E2E execution evidence: does the report contain real screenshots, " +
-    "CDP logs, specific error messages? Or is it just 'code implemented' placeholder text?",
+  "Focus on E2E execution evidence: does the report contain real screenshots, " +
+  "CDP logs, specific error messages? Or is it just 'code implemented' placeholder text?",
   "09":
-    "Focus on compilation/test output: does the output look like real compilation " +
-    "or test results? Or is it placeholder text? Are error messages specific with line numbers?",
+  "Focus on compilation/test output: does the output look like real compilation " +
+  "or test results? Or is it placeholder text? Are error messages specific with line numbers?",
   "11":
-    "Focus on test results: are test counts reasonable? Do failing cases have " +
-    "specific assertions? Do test file paths match plan tasks?",
+  "Focus on test results: are test counts reasonable? Do failing cases have " +
+  "specific assertions? Do test file paths match plan tasks?",
+  "10":
+  "The gate output is a mechanical TDD order check (git log — always brief). " +
+  "VERIFY THE DELIVERABLE (code review report) for fabrication evidence. " +
+  "The code review MUST contain: specific file paths, line numbers, concrete findings, " +
+  "and substantive analysis. Fabricated reviews are vague, generic, or lack specifics.",
   "03":
-    "Focus on review report: does it contain specific file paths and line numbers? " +
-    "Do MUST FIX items have substantive content rather than generic advice?",
+  "The gate output is a mechanical file check. VERIFY THE DELIVERABLE (spec review report). " +
+  "Look for: specific file paths, line numbers, MUST FIX items with concrete code references.",
   "05":
-    "Focus on review report: does it contain specific file paths and line numbers? " +
-    "Do MUST FIX items have substantive content rather than generic advice?",
+  "The gate output is a mechanical file check. VERIFY THE DELIVERABLE (plan review report). " +
+  "Look for: specific file paths, line numbers, MUST FIX items with concrete code references.",
   "07":
-    "Focus on review report: does it contain specific file paths and line numbers? " +
-    "Do MUST FIX items have substantive content rather than generic advice?",
+  "The gate output is a mechanical file check. VERIFY THE DELIVERABLE (E2E test plan review). " +
+  "Look for: specific file paths, line numbers, MUST FIX items with concrete code references.",
   "13":
-    "Focus on review report: does it contain specific file paths and line numbers? " +
-    "Do MUST FIX items have substantive content rather than generic advice?",
+  "The gate output is a mechanical file check. VERIFY THE DELIVERABLE (test review report). " +
+  "Look for: specific file paths, line numbers, MUST FIX items with concrete code references.",
   "14":
-    "Focus on deployment verification: is git status real (not fabricated)? " +
-    "Does deploy_result contain actual deployment logs and command outputs?",
+  "Focus on deployment verification: is git status real (not fabricated)? " +
+  "Does deploy_result contain actual deployment logs and command outputs?",
   };
   return (
   guidance[gateNumber] ||
@@ -112,16 +117,18 @@ function buildGatePrompt(
   .join("\n");
 
   return [
-  "You are a gate verification agent. Verify that the following stage output is " +
-    "genuine (not fabricated).\n",
+  "You are a gate verification agent. Your task: verify that the DELIVERABLE CONTENT below " +
+  "shows evidence of genuine execution, not AI fabrication.\n",
+  "IMPORTANT: The 'Gate output' section is a mechanical L1 automated check. " +
+  "It will ALWAYS be brief. Focus your analysis on the DELIVERABLES section " +
+  "for evidence of actual work (file paths, line numbers, specific findings, " +
+  "timestamps, command outputs, screenshots).\n",
   `Stage: ${stageName} (gate ${gateNumber})`,
-  "\nGate output:",
-  truncatedOutput,
-  "\nDeliverables:",
-  sampleDeliverables,
+  "\nDELIVERABLES (focus here for fabrication evidence):",
+  sampleDeliverables || "(no deliverable files found)",
+  "\nMechanical L1 gate output (brief — for context only):",
+  truncatedOutput || "(empty)",
   `\n${getGateGuidance(gateNumber)}`,
-  "\nCheck: does this show evidence of actual execution, or does it look fabricated? " +
-    "Look for: specific error messages, file paths, timestamps, command outputs, screenshots.",
   "\nReturn ONLY: PASS or FAIL (with one-line reason)",
   ].join("\n");
 }
@@ -284,8 +291,11 @@ export async function verifyGateL2(
   if (/^FAIL/i.test(responseText)) {
   const reason = responseText.replace(/^FAIL\s*/i, "").trim();
   return {
-    passed: false,
-    output: `L2 verification failed: ${reason || "gate output appears fabricated"}`,
+  passed: false,
+  output:
+  `L2 verification failed: ${reason || "gate output appears fabricated"}\n\n` +
+  `Full L2 LLM response:\n${responseText.slice(0, 500)}\n\n` +
+  `Re-run the stage with actual execution (not code inspection).`,
   };
   }
 

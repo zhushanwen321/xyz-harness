@@ -290,7 +290,7 @@
       "startedAt": "2026-05-16T13:42:53.939Z",
       "completedAt": null,
       "gateResult": "fail",
-      "gateOutput": "[PASS] working directory clean\n[FAIL] local and remote differ (need git push)\n[INFO] typecheck: npx tsc --noEmit\n[PASS] typecheck\n[INFO] test: echo \"no tests yet\"\n[PASS] test\nno tests yet\n\n[INFO] lint: npx tsc --noEmit\n[PASS] lint\n[FAIL] deploy_result.md: no success indicator\n\n===========================================\n  GATE FAIL: gate 14\n  2 项检查失败\n  ───────────────────────────────────────\n  修复指引：未推送：运行 git push origin xyz-harness-engineering。\n===========================================",
+      "gateOutput": "[FAIL] working directory not clean:\n  M .xyz-harness/workflow-state.json\n[PASS] local HEAD matches origin/xyz-harness-engineering\n[INFO] typecheck: npx tsc --noEmit\n[PASS] typecheck\n[INFO] test: echo \"no tests yet\"\n[PASS] test\nno tests yet\n\n[INFO] lint: npx tsc --noEmit\n[PASS] lint\n[PASS] deploy_result.md: success\n\n===========================================\n  GATE FAIL: gate 14\n  1 项检查失败\n  ───────────────────────────────────────\n  修复指引：工作区不干净：运行 git add + git commit 提交所有变更。\n===========================================",
       "tasks": []
     }
   ],

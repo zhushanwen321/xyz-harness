@@ -17,15 +17,6 @@ export type { EvidenceFileType };
 
 type EvidenceFile = EvidenceFileType;
 
-// ── Gate Check Result ─────────────────────────────────────────
-
-interface GateCheckFn {
-  (evidence: EvidenceFile, config: LoopConfig, cwd?: string, planPath?: string): {
-  pass: boolean;
-  output: string;
-  };
-}
-
 // ── Loop Engine ───────────────────────────────────────────────
 
 export class LoopEngine {
@@ -270,105 +261,14 @@ export class LoopEngine {
   }
 
   // ── Gate 执行 ───────────────────────────────────────
+  // ── Gate 执行（委托给 gatePhase3，消除重复逻辑）──────────
 
   async runGate(
   signal?: AbortSignal,
   ): Promise<{ passed: boolean; output: string }> {
-  const evidence = this.readEvidenceFromDisk();
   const evidencePath = join(this.projectRoot, this.resolvedEvidenceFile);
-  const results: Array<{ name: string; pass: boolean; output: string }> = [];
-
-  // 动态 import L1 check functions
-  const checkModule: Record<string, unknown> = await import("./gates/common.js");
-
-  const checkNames = [
-  "item_coverage",
-  "executed_per_item",
-  "verification_round_completed",
-  "verification_all_executed",
-  "evidence_files_exist",
-  ] as const;
-
-  const checkMap: Record<string, GateCheckFn> = {};
-  for (const name of checkNames) {
-  const fn = checkModule[name];
-  if (typeof fn === "function") {
-  checkMap[name] = fn as GateCheckFn;
-  }
-  }
-
-  // 执行 L1 checks
-  const l1Checks = this.config.gateChecks.filter(
-    (gc) => gc.type === "L1",
-  );
-  for (const check of l1Checks) {
-    const fn = checkMap[check.name];
-    if (!fn) {
-    results.push({
-      name: check.name,
-      pass: false,
-      output: `[FAIL] Unknown L1 check: ${check.name}`,
-    });
-    break;
-    }
-  const result = fn(evidence ?? emptyEvidence(), this.config, this.projectRoot);
-    results.push({ name: check.name, ...result });
-    if (!result.pass) break; // short-circuit on first failure
-  }
-
-  // 如果有 L1 失败，直接返回
-  const l1Fail = results.find((r) => !r.pass);
-  if (l1Fail) {
-    return {
-    passed: false,
-    output: `Gate FAIL: ${l1Fail.name}\n${results.map((r) => r.output).join("\n")}`,
-    };
-  }
-
-  // L2 检查（如果有）
-  const l2Checks = this.config.gateChecks.filter(
-    (gc) => gc.type === "L2",
-  );
-  if (l2Checks.length > 0) {
-    try {
-    const { verifyGateL2 } = await import("./gate-verifier.js");
-    // verifyGateL2 需要 { path, content } 格式的 deliverables
-    const deliverables = [
-      {
-      path: evidencePath,
-      content: existsSync(evidencePath)
-        ? readFileSync(evidencePath, "utf8")
-        : "",
-      },
-    ];
-    const l2Result = await verifyGateL2(
-      this.config.gateScript,
-      "Phase 3 Loop Gate",
-      results.map((r) => r.output).join("\n"),
-      deliverables,
-      signal,
-    );
-    if (!l2Result.passed) {
-      return {
-      passed: false,
-      output: `Gate FAIL: L2 anti-fabrication check\n${l2Result.output}`,
-      };
-    }
-    } catch (err) {
-  // L2 不可用时降级通过 — 不使用 console（避免 TUI 渲染泄漏）
-  const _msg = err instanceof Error ? err.message : String(err);
-  // msg 写入 output 而非 console
-  return {
-  passed: true,
-  output: `Gate PASS (L2 degraded: unavailable)\n${results.map((r) => r.output).join("\n")}`,
-  };
-    }
-  }
-
-  return {
-    passed: true,
-    output: `Gate PASS\n${results.map((r) => r.output).join("\n")}`,
-  };
+  const { gatePhase3 } = await import("./gates/gate_phase3.js");
+  return gatePhase3(this.projectRoot, this.config, evidencePath, signal);
   }
 
   // ── 内部方法 ─────────────────────────────────────────

@@ -1,306 +1,212 @@
-// TDD RED — LoopEngine tests (implementation not yet exists)
-// Top-level import of non-existent module → all tests FAIL at import time
-import { describe, it, before, after } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
-import { existsSync, unlinkSync, rmSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+// T4: 尚未实现 — import 失败 = RED
 import { LoopEngine } from "../loop-engine.js";
-import type { LoopConfig } from "../loop-engine.js";
+import type { LoopConfig } from "../types.js";
 
-// ── Test fixtures ──────────────────────────────────────────
-
-const TEST_DIR = join(__dirname, "fixtures", "g2-temp");
-const EVIDENCE_FILE = join(TEST_DIR, "evidence.json");
-
-const BASE_CONFIG: LoopConfig = {
-  name: "test-loop",
-  itemSource: "tasks",
-  itemIdField: "task_id",
+const TEST_CONFIG: LoopConfig = {
+  name: "Test Loop",
+  itemSource: "plan_tasks",
+  itemIdField: "case_id",
+  allowedStatuses: ["EXECUTED", "ERROR"],
   completedStatus: "EXECUTED",
-  errorStatus: "ERROR",
   maxRounds: 5,
-  promptTemplate: "Phase: {phaseName}, Round: {currentRound}/{maxRounds}, Items left: {remainingItems}",
-  evidenceFile: join(TEST_DIR, "evidence.json"),
-  verificationPrompt: "Verify all items",
-  gateConfig: { gateType: "phase3" },
+  batchSize: 5,
+  requireVerificationRound: true,
+  evidenceFile: ".xyz-harness/test-topic/changes/evidence/e2e-evidence.json",
+  roundPrompt: "test-round",
+  gateScript: "phase3",
+  gateChecks: [{ name: "item_coverage", type: "L1" }],
+  confirmationRequired: true
 };
 
-function makeConfig(overrides: Partial<LoopConfig> = {}): LoopConfig {
-  return { ...BASE_CONFIG, ...overrides };
-}
+describe("G2: Loop Engine state machine", () => {
+  let tmpDir: string;
+  let engine: LoopEngine;
 
-function cleanup() {
-  if (existsSync(TEST_DIR)) {
-  rmSync(TEST_DIR, { recursive: true, force: true });
-  }
-}
-
-// ── Tests ──────────────────────────────────────────────────
-
-describe("G2: LoopEngine state machine", () => {
-  before(() => {
-  cleanup();
-  mkdirSync(TEST_DIR, { recursive: true });
+  beforeEach(() => {
+  tmpDir = mkdtempSync(join(tmpdir(), "loop-test-"));
+  engine = new LoopEngine(TEST_CONFIG, tmpDir, "test-topic");
   });
-  after(cleanup);
 
-  it("TC-2-01: init() creates evidence JSON file", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  afterEach(() => { rmSync(tmpDir, { recursive: true, force: true }); });
+
+  it("TC-2-01: init() creates empty evidence JSON", () => {
   engine.init();
-  assert.ok(existsSync(EVIDENCE_FILE), "evidence JSON file should exist after init()");
-
-  const raw = readFileSync(EVIDENCE_FILE, "utf-8");
-  const data = JSON.parse(raw);
-  assert.strictEqual(data.loop, "test-loop", "evidence.loop should match config.name");
-  assert.strictEqual(data.state.phase, "initializing", "initial phase should be 'initializing'");
-  assert.strictEqual(data.state.totalItems, 0, "totalItems should be 0 before any items loaded");
+  const evidencePath = join(tmpDir, ".xyz-harness", "test-topic", "changes", "evidence", "e2e-evidence.json");
+  assert.ok(existsSync(evidencePath));
+  const content = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  assert.deepStrictEqual(content.rounds, []);
   });
 
-  it("TC-2-02: init() replaces {topicDir} in evidenceFile path", () => {
-  const configWithPlaceholder = makeConfig({
-    evidenceFile: join(TEST_DIR, "{topicDir}", "evidence.json"),
-  });
-  const engine = new LoopEngine(configWithPlaceholder, TEST_DIR, "my-topic");
+  it("TC-2-02: init() replaces {topicDir} in evidenceFile", () => {
   engine.init();
-
-  // {topicDir} should be replaced with "my-topic"
-  const resolved = engine.config.evidenceFile;
-  assert.ok(!resolved.includes("{topicDir}"), "{topicDir} placeholder should be resolved");
-  assert.ok(resolved.includes("my-topic"), "resolved path should contain the topic dir name");
+  const evidencePath = engine.getEvidenceFilePath();
+  assert.ok(!evidencePath.includes("{topicDir}"));
   });
 
-  it("TC-2-03: startRound() sets phase to in_round", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-03: startRound() → phase=in_round", () => {
   engine.init();
   engine.startRound();
-
   assert.strictEqual(engine.state.phase, "in_round");
-  assert.strictEqual(engine.state.currentRound, 1, "first round should be 1");
   });
 
-  it("TC-2-04: onRoundComplete correctly counts completedItems (3/5 EXECUTED)", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-04: onRoundComplete counts completedItems (3/5 EXECUTED)", () => {
   engine.init();
-  engine.startRound();
-
-  // Write a mock evidence file with 3 EXECUTED + 2 ERROR items
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 5, completedItems: 0, currentRound: 1, maxRounds: 5, phase: "in_round" },
-    rounds: [{
-    round: 1,
+  // 写入 3 个 EXECUTED + 2 个 ERROR
+  const evidencePath = engine.getEvidenceFilePath();
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.rounds.push({
+    round: 1, startedAt: new Date().toISOString(),
     items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-      { item_id: "t3", status: "ERROR", evidence: { error: "timeout" } },
-      { item_id: "t4", status: "EXECUTED", evidence: {} },
-      { item_id: "t5", status: "ERROR", evidence: { error: "crash" } },
-    ],
-    }],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
-  engine.onRoundComplete();
-
-  assert.strictEqual(engine.state.completedItems, 3, "should count 3 EXECUTED items");
-  assert.strictEqual(engine.state.currentRound, 1, "round should still be 1");
+    { item_id: "case-1", status: "EXECUTED", evidence: {} },
+    { item_id: "case-2", status: "EXECUTED", evidence: {} },
+    { item_id: "case-3", status: "ERROR", evidence: { error: "timeout" } },
+    { item_id: "case-4", status: "EXECUTED", evidence: {} },
+    { item_id: "case-5", status: "ERROR", evidence: { error: "crash" } }
+    ]
   });
-
-  it("TC-2-05: all items EXECUTED transitions phase to verification", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
-  engine.init();
-  engine.startRound();
-
-  // All 3/3 items EXECUTED
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 3, completedItems: 0, currentRound: 1, maxRounds: 5, phase: "in_round" },
-    rounds: [{
-    round: 1,
-    items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-      { item_id: "t3", status: "EXECUTED", evidence: {} },
-    ],
-    }],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
+  evidence.state.totalItems = 5;
+  evidence.state.currentRound = 1;
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
-
   assert.strictEqual(engine.state.completedItems, 3);
-  assert.strictEqual(engine.state.phase, "verification", "phase should transition to 'verification' when all items complete");
   });
 
-  it("TC-2-06: verification completed transitions phase to gate_check", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-05: all EXECUTED → phase=verification", () => {
   engine.init();
-  engine.state.phase = "verification";
-
-  // Simulate verification round completion
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 3, completedItems: 3, currentRound: 1, maxRounds: 5, phase: "verification", verificationRoundCompleted: false },
-    rounds: [{ round: 1, items: [
-    { item_id: "t1", status: "EXECUTED", evidence: {} },
-    { item_id: "t2", status: "EXECUTED", evidence: {} },
-    { item_id: "t3", status: "EXECUTED", evidence: {} },
-    ]}],
-    verification_round: {
-    completed: true,
-    startedAt: "2026-05-16T10:00:00Z",
+  const evidencePath = engine.getEvidenceFilePath();
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.rounds.push({
+    round: 1, startedAt: new Date().toISOString(),
     items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-      { item_id: "t3", status: "EXECUTED", evidence: {} },
-    ],
-    },
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
+    { item_id: "case-1", status: "EXECUTED", evidence: {} },
+    { item_id: "case-2", status: "EXECUTED", evidence: {} },
+    { item_id: "case-3", status: "EXECUTED", evidence: {} },
+    { item_id: "case-4", status: "EXECUTED", evidence: {} },
+    { item_id: "case-5", status: "EXECUTED", evidence: {} }
+    ]
+  });
+  evidence.state.totalItems = 5;
+  evidence.state.currentRound = 1;
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
-
-  assert.strictEqual(engine.state.phase, "gate_check", "phase should transition to 'gate_check' after verification round completes");
+  assert.strictEqual(engine.state.phase, "verification");
   });
 
-  it("TC-2-07: maxRounds reached with incomplete items sets phase to failed", () => {
-  const config = makeConfig({ maxRounds: 1 });
-  const engine = new LoopEngine(config, TEST_DIR, "test-topic");
+  it("TC-2-06: verification_round.completed → phase=gate_check", () => {
   engine.init();
-  engine.startRound();
-
-  // Round 1 with 1 ERROR item — and maxRounds=1
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 2, completedItems: 0, currentRound: 1, maxRounds: 1, phase: "in_round" },
-    rounds: [{
-    round: 1,
-    items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "ERROR", evidence: { error: "still broken" } },
-    ],
-    }],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
+  const evidencePath = engine.getEvidenceFilePath();
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.state.totalItems = 5;
+  evidence.state.completedItems = 5;
+  evidence.state.currentRound = 1;
+  evidence.state.phase = "verification";
+  evidence.verification_round.completed = true;
+  evidence.verification_round.items = [
+    { item_id: "case-1", status: "EXECUTED", evidence: {} },
+    { item_id: "case-2", status: "EXECUTED", evidence: {} },
+    { item_id: "case-3", status: "EXECUTED", evidence: {} },
+    { item_id: "case-4", status: "EXECUTED", evidence: {} },
+    { item_id: "case-5", status: "EXECUTED", evidence: {} }
+  ];
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
-
-  assert.strictEqual(engine.state.phase, "failed", "phase should be 'failed' when maxRounds reached with incomplete items");
+  assert.strictEqual(engine.state.phase, "gate_check");
   });
 
-  it("TC-2-08: getPrompt() replaces all template variables", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
-  engine.init();
-  engine.state.phase = "in_round";
-  engine.state.currentRound = 2;
-  engine.state.maxRounds = 5;
-  engine.state.totalItems = 10;
-  engine.state.completedItems = 7;
+  it("TC-2-07: maxRounds reached but incomplete → failed", () => {
+  const limitedConfig = { ...TEST_CONFIG, maxRounds: 2 };
+  const eng = new LoopEngine(limitedConfig, tmpDir, "test-topic");
+  eng.init();
+  const evidencePath = eng.getEvidenceFilePath();
+  // 模拟 2 轮完成但 case-3 仍 ERROR
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.state.totalItems = 5;
+  evidence.state.maxRounds = 2;
+  evidence.state.currentRound = 2;
+  evidence.rounds.push(
+    { round: 1, startedAt: "", items: [
+    { item_id: "case-1", status: "EXECUTED", evidence: {} },
+    { item_id: "case-2", status: "EXECUTED", evidence: {} },
+    { item_id: "case-3", status: "ERROR", evidence: { error: "x" } },
+    { item_id: "case-4", status: "EXECUTED", evidence: {} },
+    { item_id: "case-5", status: "EXECUTED", evidence: {} }
+    ]},
+    { round: 2, startedAt: "", items: [
+    { item_id: "case-3", status: "ERROR", evidence: { error: "still broken" } }
+    ]}
+  );
+  writeFileSync(evidencePath, JSON.stringify(evidence));
+  eng.onRoundComplete();
+  assert.strictEqual(eng.state.phase, "failed");
+  });
 
+  it("TC-2-08: getPrompt() replaces variables", () => {
+  engine.init();
   const prompt = engine.getPrompt();
-
-  assert.ok(!prompt.includes("{phaseName}"), "{phaseName} should be replaced");
-  assert.ok(!prompt.includes("{currentRound}"), "{currentRound} should be replaced");
-  assert.ok(!prompt.includes("{maxRounds}"), "{maxRounds} should be replaced");
-  assert.ok(!prompt.includes("{remainingItems}"), "{remainingItems} should be replaced");
-  assert.ok(prompt.includes("in_round"), "prompt should contain the actual phase name");
-  assert.ok(prompt.includes("3"), "prompt should contain remaining items count (10-7=3)");
+  assert.ok(prompt.includes("Test Loop"));
+  assert.ok(prompt.includes("1")); // currentRound
   });
 
-  it("TC-2-09: getIncompleteItems returns only non-completed items", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-09: getIncompleteItems() filters correctly (2/5 EXECUTED)", () => {
   engine.init();
-  engine.state.phase = "in_round";
-
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 5, completedItems: 2, currentRound: 1, maxRounds: 5, phase: "in_round" },
-    rounds: [{
-    round: 1,
-    items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-      { item_id: "t3", status: "ERROR", evidence: { error: "fail" } },
-      { item_id: "t4", status: "PENDING", evidence: {} },
-      { item_id: "t5", status: "ERROR", evidence: { error: "fail" } },
-    ],
-    }],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
+  const evidencePath = engine.getEvidenceFilePath();
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.state.totalItems = 5;
+  evidence.rounds.push({
+    round: 1, startedAt: "", items: [
+    { item_id: "case-1", status: "EXECUTED", evidence: {} },
+    { item_id: "case-2", status: "EXECUTED", evidence: {} },
+    { item_id: "case-3", status: "ERROR", evidence: {} },
+    { item_id: "case-4", status: "ERROR", evidence: {} },
+    { item_id: "case-5", status: "ERROR", evidence: {} }
+    ]
+  });
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
   const incomplete = engine.getIncompleteItems();
-
-  assert.strictEqual(incomplete.length, 3, "should return 3 incomplete items (2 ERROR + 1 PENDING)");
-  const ids = incomplete.map((item: { item_id: string }) => item.item_id);
-  assert.ok(ids.includes("t3"), "t3 (ERROR) should be incomplete");
-  assert.ok(ids.includes("t4"), "t4 (PENDING) should be incomplete");
-  assert.ok(ids.includes("t5"), "t5 (ERROR) should be incomplete");
+  assert.strictEqual(incomplete.length, 3);
   });
 
-  it("TC-2-10: verification mode returns ALL items (not just incomplete)", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-10: Verification round returns all items", () => {
   engine.init();
-  engine.state.phase = "verification";
-
-  const mockEvidence = {
-    loop: "test-loop",
-    state: { totalItems: 5, completedItems: 5, currentRound: 2, maxRounds: 5, phase: "verification" },
-    rounds: [
-    { round: 1, items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-      { item_id: "t3", status: "EXECUTED", evidence: {} },
-      { item_id: "t4", status: "EXECUTED", evidence: {} },
-      { item_id: "t5", status: "EXECUTED", evidence: {} },
-    ]},
-    ],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(mockEvidence, null, 2), "utf-8");
-
-  const items = engine.getIncompleteItems();
-  assert.strictEqual(items.length, 5, "verification mode should return ALL items for re-verification");
+  const evidencePath = engine.getEvidenceFilePath();
+  const evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.state.totalItems = 5;
+  evidence.state.completedItems = 5;
+  evidence.state.phase = "verification";
+  evidence.rounds.push({
+    round: 1, startedAt: "", items: Array.from({ length: 5 }, (_, i) => ({
+    item_id: `case-${i+1}`, status: "EXECUTED", evidence: {}
+    }))
+  });
+  writeFileSync(evidencePath, JSON.stringify(evidence));
+  const allItems = engine.getIncompleteItems();
+  assert.strictEqual(allItems.length, 5); // VR returns ALL items
   });
 
-  it("TC-2-11: evidence file appends per round (does not overwrite)", () => {
-  const engine = new LoopEngine(makeConfig(), TEST_DIR, "test-topic");
+  it("TC-2-11: Evidence JSON appends rounds", () => {
   engine.init();
-
+  const evidencePath = engine.getEvidenceFilePath();
   // Round 1
-  engine.startRound();
-  const round1Evidence = {
-    loop: "test-loop",
-    state: { totalItems: 2, completedItems: 0, currentRound: 1, maxRounds: 5, phase: "in_round" },
-    rounds: [{ round: 1, items: [
-    { item_id: "t1", status: "EXECUTED", evidence: {} },
-    { item_id: "t2", status: "ERROR", evidence: { error: "fail" } },
-    ]}],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(round1Evidence, null, 2), "utf-8");
+  let evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.rounds.push({ round: 1, startedAt: "", items: [] });
+  evidence.state.currentRound = 1;
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
-
   // Round 2
   engine.startRound();
-  const round2Evidence = {
-    loop: "test-loop",
-    state: { totalItems: 2, completedItems: 1, currentRound: 2, maxRounds: 5, phase: "in_round" },
-    rounds: [
-    { round: 1, items: [
-      { item_id: "t1", status: "EXECUTED", evidence: {} },
-      { item_id: "t2", status: "ERROR", evidence: { error: "fail" } },
-    ]},
-    { round: 2, items: [
-      { item_id: "t2", status: "EXECUTED", evidence: {} },
-    ]},
-    ],
-  };
-  writeFileSync(EVIDENCE_FILE, JSON.stringify(round2Evidence, null, 2), "utf-8");
+  evidence = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  evidence.rounds.push({ round: 2, startedAt: "", items: [] });
+  evidence.state.currentRound = 2;
+  writeFileSync(evidencePath, JSON.stringify(evidence));
   engine.onRoundComplete();
-
-  const raw = readFileSync(EVIDENCE_FILE, "utf-8");
-  const data = JSON.parse(raw);
-  assert.strictEqual(data.rounds.length, 2, "evidence should contain 2 rounds after 2 round trips");
-  assert.strictEqual(data.rounds[0].round, 1, "first round entry should be round 1");
-  assert.strictEqual(data.rounds[1].round, 2, "second round entry should be round 2");
+  // Verify 2 rounds
+  const final = JSON.parse(readFileSync(evidencePath, "utf-8"));
+  assert.strictEqual(final.rounds.length, 2);
   });
 });

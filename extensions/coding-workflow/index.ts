@@ -84,12 +84,23 @@ export default function workflowController(pi: ExtensionAPI) {
   if (d.contentChecks && d.contentChecks.length > 0) {
   const content = readFileSync(target, "utf-8");
   for (const check of d.contentChecks) {
-    if (check.type === "must_not_match") {
-    const regex = new RegExp(check.pattern);
-    if (regex.test(content)) {
-    errors.push(`${d.label}: ${check.message} (${target})`);
-    }
-    }
+  if (check.type === "must_not_match") {
+  const regex = new RegExp(check.pattern);
+  if (regex.test(content)) {
+  errors.push(`${d.label}: ${check.message} (${target})`);
+  }
+  } else if (check.type === "yaml_verdict") {
+  // 从 YAML frontmatter 中读取 review.verdict 字段
+  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) {
+  errors.push(`${d.label}: missing YAML frontmatter (${target})`);
+  } else {
+  const vMatch = fm[1].match(/^  verdict:\s*([a-z]+)\s*$/m);
+  if (!vMatch || vMatch[1] !== "pass") {
+  errors.push(`${d.label}: ${check.message} (${target})`);
+  }
+  }
+  }
   }
   }
   }

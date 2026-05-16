@@ -65,11 +65,9 @@ export interface DeliverableCheck {
   contentChecks?: ContentCheck[];
 }
 
-export interface ContentCheck {
-  type: "must_not_match";
-  pattern: string;              // RegExp 字符串
-  message: string;              // 检查失败时的错误提示
-}
+export type ContentCheck =
+  | { type: "must_not_match"; pattern: string; message: string }
+  | { type: "yaml_verdict"; message: string };
 
 // ── Tool Parameters ───────────────────────────────────────────
 

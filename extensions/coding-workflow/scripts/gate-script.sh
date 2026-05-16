@@ -77,9 +77,38 @@ check_file() {
 }
 
 no_must_fix() {
-  local f="$1" count
-  # 统计未解决的 MUST FIX（排除含"已修复"/"已解决"等标记的历史引用）
-  count=$(grep -iE 'MUST\s*FIX|CRITICAL|必须修复' "$f" 2>/dev/null | grep -viE '已修复|已解决|resolved|fixed|不修复则评审不通过' | wc -l | tr -d ' ')
+  local f="$1" verdict must_fix count
+
+  # ── 路径 A：YAML frontmatter（优先） ──
+  if head -1 "$f" 2>/dev/null | grep -q '^---$'; then
+  local yaml
+  yaml=$(sed -n '/^---$/,/^---$/p' "$f" 2>/dev/null | sed '1d;$d')
+
+  if [[ -n "$yaml" ]]; then
+    verdict=$(echo "$yaml" | grep -oP '^\s*verdict:\s*\K[a-z]+' | head -1)
+    if [[ -n "$verdict" ]]; then
+    if [[ "$verdict" == "pass" ]]; then
+      echo "[PASS] review verdict: pass"
+      return 0
+    fi
+    echo "[FAIL] review verdict: $verdict (expected pass)"
+    return 1
+    fi
+
+    must_fix=$(echo "$yaml" | grep -oP '^\s*must_fix:\s*\K\d+' | head -1)
+    if [[ -n "$must_fix" ]]; then
+    if [[ "$must_fix" -eq 0 ]]; then
+      echo "[PASS] 0 unresolved MUST FIX items"
+      return 0
+    fi
+    echo "[FAIL] ${must_fix} unresolved MUST FIX item(s) remain"
+    return 1
+    fi
+  fi
+  fi
+
+  # ── 路径 B：旧正则（回退，向后兼容） ──
+  count=$(grep -iE 'MUST\s*FIX|CRITICAL|必须修复' "$f" 2>/dev/null | grep -viE '已修复|已解决|resolved|fixed|不修复则评审不通过|逐项核查|仅检查|修复情况' | wc -l | tr -d ' ')
   if [[ "$count" -gt 0 ]]; then
   echo "[FAIL] ${count} unresolved MUST FIX/CRITICAL item(s) remain"
   return 1

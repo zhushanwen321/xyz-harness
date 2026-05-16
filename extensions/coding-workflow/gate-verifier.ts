@@ -19,6 +19,38 @@ interface RouterConfig {
   apiKey: string;
 }
 
+interface YamlSummary {
+  verdict: string | null;
+  mustFix: number | null;
+  mustFixResolved: number | null;
+  totalIssues: number | null;
+  issueCount: number;
+}
+
+// ── YAML 摘要提取 ──────────────────────────────────────────
+
+/** 从文件内容中提取 YAML frontmatter 摘要 */
+function extractYamlSummary(content: string): YamlSummary | null {
+  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return null;
+  const yaml = fm[1];
+
+  const verdictMatch = yaml.match(/^  verdict:\s*([a-z]+)\s*$/m);
+  const mustFixMatch = yaml.match(/^  must_fix:\s*(\d+)\s*$/m);
+  const resolvedMatch = yaml.match(/^  must_fix_resolved:\s*(\d+)\s*$/m);
+  const totalMatch = yaml.match(/^  total_issues:\s*(\d+)\s*$/m);
+  // 统计 issues 数组条目数
+  const issueCount = (yaml.match(/^\s*- id:/gm) || []).length;
+
+  return {
+  verdict: verdictMatch?.[1] ?? null,
+  mustFix: mustFixMatch ? parseInt(mustFixMatch[1], 10) : null,
+  mustFixResolved: resolvedMatch ? parseInt(resolvedMatch[1], 10) : null,
+  totalIssues: totalMatch ? parseInt(totalMatch[1], 10) : null,
+  issueCount,
+  };
+}
+
 // ── 配置读取 ─────────────────────────────────────────────────
 
 function readRouterConfig(): RouterConfig | null {
@@ -80,7 +112,7 @@ function getGateGuidance(gateNumber: string): string {
 /**
  * 构建逐文件分析 prompt。
  *
- * 让 LLM 对每个交付物文件单独判断是否真实，返回结构化结果。
+ * 包含 YAML frontmatter 摘要和 Markdown 正文，让 LLM 可以交叉校验。
  */
 function buildGatePrompt(
   gateNumber: string,
@@ -89,18 +121,36 @@ function buildGatePrompt(
   deliverables: Array<{ path: string; content: string }>,
 ): string {
   // 每个文件截取前 1500 字符，最多 5 个文件
-  const files = deliverables.slice(0, 5).map((d) => ({
-  path: d.path,
-  content: d.content.slice(0, 1500),
-  }));
+  const files = deliverables.slice(0, 5).map((d) => {
+  const yaml = extractYamlSummary(d.content);
+  return {
+    path: d.path,
+    content: d.content.slice(0, 1500),
+    yaml,
+  };
+  });
 
   const fileBlocks = files
-  .map((f, i) => `[File ${i + 1}]\nPATH: ${f.path}\nCONTENT:\n${f.content || "(empty)"}`)
+  .map((f, i) => {
+    const yamlInfo = f.yaml
+    ? `[YAML] verdict=${f.yaml.verdict ?? "?"} must_fix=${f.yaml.mustFix ?? "?"} must_fix_resolved=${f.yaml.mustFixResolved ?? "?"} total_issues=${f.yaml.totalIssues ?? "?"}`
+    : "[YAML] no frontmatter found";
+    return `[File ${i + 1}]
+PATH: ${f.path}
+${yamlInfo}
+CONTENT:
+${f.content || "(empty)"}`;
+  })
   .join("\n\n---\n\n");
 
   return [
   "You are a gate verification agent. Analyze EACH deliverable file below and " +
     "judge whether it shows evidence of GENUINE EXECUTION (not AI fabrication).",
+  "",
+  "For files with YAML frontmatter, CROSS-CHECK:",
+  "  1. YAML statistics (must_fix count) must match the issues table in the Markdown body",
+  "  2. YAML issues[] entries must have corresponding descriptions in the body",
+  "  3. verdict must be consistent with actual MUST FIX count in the table",
   "",
   `Stage: ${stageName} (gate ${gateNumber})`,
   "",
@@ -109,7 +159,7 @@ function buildGatePrompt(
   "",
   `Guidance: ${getGateGuidance(gateNumber)}`,
   "",
-  "=== DELIVERABLE FILES (${files.length} file(s)) ===",
+  `=== DELIVERABLE FILES (${files.length} file(s)) ===`,
   fileBlocks,
   "",
   "=== L1 Gate Output (mechanical, for context only) ===",
@@ -118,8 +168,8 @@ function buildGatePrompt(
   "=== RESPONSE FORMAT ===",
   "For EACH file above, respond with exactly:",
   "  FILE: <path>",
-  "  VERDICT: PASS (genuine evidence found) or FAIL (appears fabricated)",
-  "  REASON: <one-line reason citing specific evidence>",
+  "  VERDICT: PASS (genuine evidence found) or FAIL (appears fabricated/YAML inconsistent)",
+  "  REASON: <one-line reason citing specific evidence or inconsistency>",
   "",
   "After all files:",
   "  FINAL: PASS (all files genuine) or FAIL (one or more files appear fabricated)",
@@ -290,13 +340,20 @@ export async function verifyGateL2(
   return { passed: true, output: "L2 skipped (non-localhost baseUrl)" };
   }
 
-  // 2. 构建文件列表（用于输出展示）
+  // 2. 构建文件列表（含 YAML 摘要，用于输出展示）
   const deliverablePaths = deliverables.map((d) => d.path);
+  const fileListLines = [`║ Stage: ${stageName} (gate ${gateNumber})`, `║ Examined ${deliverables.length} deliverable file(s):`];
+  for (let i = 0; i < deliverablePaths.length; i++) {
+  const yaml = extractYamlSummary(deliverables[i].content);
+  let line = `║   ${i + 1}. ${deliverablePaths[i]}`;
+  if (yaml) {
+    line += `  [YAML: verdict=${yaml.verdict ?? "?"}, must_fix=${yaml.mustFix ?? "?"}, resolved=${yaml.mustFixResolved ?? "?"}]`;
+  }
+  fileListLines.push(line);
+  }
   const fileListHeader =
   `\n╔══ L2 Gate Verification ──────────────────────────╗\n` +
-  `║ Stage: ${stageName} (gate ${gateNumber})\n` +
-  `║ Examined ${deliverables.length} deliverable file(s):\n` +
-  deliverablePaths.map((p, i) => `║   ${i + 1}. ${p}`).join("\n") +
+  fileListLines.join("\n") +
   `\n╠══════════════════════════════════════════════════╣`;
 
   // 3. 构建 prompt 并调用 LLM

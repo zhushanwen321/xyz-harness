@@ -243,9 +243,42 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ## 统一输出格式
 
-所有评审报告遵循以下格式：
+所有评审报告必须包含 **YAML frontmatter**（机器可读元数据）和 **Markdown 正文**（人工可读详情）。
+
+### YAML 约束
+
+- `statistics.must_fix` 必须只计数 `status=open` 的 MUST_FIX 问题
+- `review.verdict` 必须是 `pass` 或 `fail`，与 MUST FIX 数量一致
+- `issues` 数组必须包含所有问题（含跨轮次的已解决问题），每个问题的 `id` 唯一
+- 第 2+ 轮评审必须继承上一轮的 `issues`，将已修复项的 `status` 改为 `resolved`
 
 ```markdown
+---
+review:
+  type: {spec_review|plan_review|e2e_review|code_review|test_review}
+  round: {N}
+  timestamp: "{yyyy-MM-ddTHH:mm:ss}"
+  target: "{被评审文件路径}"
+  verdict: {pass|fail}
+  summary: "{评审类型}完成，第{N}轮，{M}条MUST FIX，{通过|需修改后重审}"
+
+statistics:
+  total_issues: {N}
+  must_fix: {N}             # severity=MUST_FIX 且 status=open 的数量
+  must_fix_resolved: {N}    # 历史上是 MUST_FIX，本轮已修复
+  low: {N}
+  info: {N}
+
+issues:                      # 全量问题列表（含已解决）
+  - id: {N}
+  severity: {MUST_FIX|LOW|INFO}
+  location: "{file:line 或 §section}"
+  title: "{一句话描述}"
+  status: {open|resolved|dismissed}
+  raised_in_round: {N}
+  resolved_in_round: {null|N}
+---
+
 # {计划评审 / 编码评审 / 测试评审} v{N}
 
 ## 评审记录
@@ -337,11 +370,11 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ### 步骤
 
-1. **读取输入** — 按 mode 读取必读文件
+1. **读取输入** — 按 mode 读取必读文件。第 2+ 轮还需读取上一轮评审报告的 YAML issues 列表
 2. **独立评审** — 按对应模式的检查维度逐项检查
-3. **问题标注** — 每条问题标注优先级，精确到位置
-4. **判断结论** — 有 MUST FIX → "需修改后重审"；无 MUST FIX → "通过"
-5. **写入报告** — 按统一输出格式写入 `changes/reviews/`
+3. **问题标注** — 每条问题标注优先级，精确到位置。第 2+ 轮继承上一轮的 issues，更新状态
+4. **判断结论** — 有 open MUST FIX → verdict: fail；无 → verdict: pass
+5. **写入报告** — 按统一输出格式（含 YAML frontmatter）写入 `changes/reviews/`
 6. **返回结果** — 按返回值格式返回给 dev-flow
 
 ### 轮次管理

@@ -177,7 +177,11 @@ function globToRegex(pattern: string): RegExp {
 // ── MUST FIX 检查 ─────────────────────────────────────────
 
 /**
- * 检查指定文件中是否存在 MUST FIX / 必须修复 / CRITICAL 标记。
+ * 检查指定文件中是否存在未解决的 MUST FIX 标记。
+ *
+ * 优先解析 YAML frontmatter（机器可读元数据），解析不到时回退旧正则逻辑。
+ * YAML 中 review.verdict 字段或 statistics.must_fix 字段为判定依据。
+ *
  * 对标 bash no_must_fix() 函数。
  *
  * @param filePath - 待检查文件的完整路径
@@ -197,6 +201,63 @@ export function checkNoMustFix(
   return { ok: true, output: "[PASS] no MUST FIX items (unable to read file)" };
   }
 
+  // ── 路径 A：YAML frontmatter（优先） ──
+  const yamlResult = checkYamlVerdict(content);
+  if (yamlResult !== null) return yamlResult;
+
+  // ── 路径 B：旧正则（回退，向后兼容） ──
+  return checkNoMustFixLegacy(content);
+}
+
+// ── YAML Verdict 解析 ───────────────────────────────────
+
+/**
+ * 从文件内容中提取 YAML frontmatter 并解析 verdict / must_fix。
+ *
+ * 解析成功 → 返回判定结果
+ * 解析不到 YAML → 返回 null（调用方回退旧逻辑）
+ */
+function checkYamlVerdict(
+  content: string,
+): { ok: boolean; output: string } | null {
+  // 提取 YAML frontmatter 块（首行 --- 到下一个 ---）
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return null;
+
+  const yaml = fmMatch[1];
+
+  // 1. 读 review.verdict 字段
+  const verdictMatch = yaml.match(/^  verdict:\s*([a-z]+)\s*$/m);
+  if (verdictMatch) {
+  const verdict = verdictMatch[1];
+  if (verdict === "pass") {
+  return { ok: true, output: "[PASS] review verdict: pass" };
+  }
+  return { ok: false, output: `[FAIL] review verdict: ${verdict} (expected pass)` };
+  }
+
+  // 2. 回退：读 statistics.must_fix 字段
+  const mustFixMatch = yaml.match(/^  must_fix:\s*(\d+)\s*$/m);
+  if (mustFixMatch) {
+  const count = parseInt(mustFixMatch[1], 10);
+  if (count === 0) {
+  return { ok: true, output: "[PASS] 0 unresolved MUST FIX items" };
+  }
+  return { ok: false, output: `[FAIL] ${count} unresolved MUST FIX item(s) remain` };
+  }
+
+  // YAML 存在但既无 verdict 也无 statistics.must_fix → 返回 null 回退旧逻辑
+  return null;
+}
+
+// ── 旧正则逻辑（向后兼容） ──────────────────────────────
+
+/**
+ * 旧 MustFix 检查逻辑（纯正则），作为 YAML 解析不到时的回退。
+ */
+function checkNoMustFixLegacy(
+  content: string,
+): { ok: boolean; output: string } {
   // 逐行检查未解决的 MUST FIX（排除含"已修复"/"已解决"等标记的历史引用）
   const lines = content.split("\n");
   let unresolvedCount = 0;

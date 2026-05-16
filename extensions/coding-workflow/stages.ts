@@ -206,7 +206,7 @@ Register all plan tasks with harness_register_tasks at the start. Complete them 
   phase: 2,
   type: "automated",
   gateScript: "10",
-  requiresConfirmation: true,
+  requiresConfirmation: false,
   prompt: `Dispatch harness-reviewer to review all code changes (git diff).
 Check: spec compliance, code quality, architecture adherence, security.
 Output: .xyz-harness/{topicDir}/changes/reviews/code_review_v1.md
@@ -292,7 +292,7 @@ Max 2 review rounds.`,
   phase: 2,
   type: "automated",
   gateScripts: ["14"],
-  requiresConfirmation: true,
+  requiresConfirmation: false,
   prompt: `Execute the push-CI-deploy sequence:
 1. git push (use zcommit skill)
 2. Wait for CI to pass

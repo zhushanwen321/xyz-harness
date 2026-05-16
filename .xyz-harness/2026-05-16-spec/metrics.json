@@ -1,0 +1,88 @@
+{
+  "project": "xyz-harness-engineering",
+  "requirement": "Phase 2/3/4 拆分 + E2E 证据-判定分离",
+  "startedAt": "2026-05-16T11:09:08Z",
+  "completedAt": "2026-05-16T23:30:00Z",
+  "totalDurationMinutes": 741,
+  "phases": [
+  {
+    "name": "Phase 1: 需求沟通",
+    "stages": [1, 2, 3, 4, 5, 6, 7, 8],
+    "durationMinutes": 108,
+    "percentage": 54
+  },
+  {
+    "name": "Phase 2: 编码交付",
+    "stages": [9, 10, 11, 12],
+    "durationMinutes": 43,
+    "percentage": 21
+  },
+  {
+    "name": "Phase 3+: 测试+收尾",
+    "stages": [13, 14, 15, 16],
+    "durationMinutes": 20,
+    "percentage": 10
+  }
+  ],
+  "code": {
+  "newFiles": ["loop-engine.ts", "gate_phase3.ts", "loop-prompts/e2e-loop-round.md"],
+  "modifiedFiles": 83,
+  "newLinesTotal": 1536,
+  "coreImplementation": {
+    "loop-engine.ts": 418,
+    "gate_phase3.ts": 117,
+    "loop-prompts/e2e-loop-round.md": 11
+  },
+  "testFiles": {
+    "g1-types-stages.test.ts": 113,
+    "g2-loop-engine.test.ts": 239,
+    "g3-l1-checks.test.ts": 139,
+    "g4-phase3-gate.test.ts": 123,
+    "g5-state-manager.test.ts": 99,
+    "g6-backward-compat.test.ts": 84,
+    "g7-integration.test.ts": 193
+  }
+  },
+  "tests": {
+  "total": 55,
+  "passed": 55,
+  "failed": 0,
+  "skipped": 0,
+  "passRate": 1.0,
+  "groups": {
+    "G1": { "total": 10, "passed": 10 },
+    "G2": { "total": 11, "passed": 11 },
+    "G3": { "total": 11, "passed": 11 },
+    "G4": { "total": 5, "passed": 5 },
+    "G5": { "total": 7, "passed": 7 },
+    "G6": { "total": 3, "passed": 3 },
+    "G7": { "total": 8, "passed": 8 }
+  },
+  "durationMs": 284
+  },
+  "reviews": {
+  "spec": { "rounds": 3, "mustFix": 0 },
+  "plan": { "rounds": 2, "mustFix": 0 },
+  "e2eTestPlan": { "rounds": 3, "mustFix": 0 },
+  "codeReview": { "rounds": 1, "mustFix": 0 },
+  "testReview": { "rounds": 2, "mustFix": 2, "fixedInRound": 2 }
+  },
+  "rollbacks": 0,
+  "acceptanceCriteria": {
+  "total": 13,
+  "verified": 13,
+  "coverage": 1.0
+  },
+  "issues": {
+  "mustFix": 1,
+  "low": 2,
+  "info": 1,
+  "details": [
+    { "id": 1, "severity": "MUST_FIX", "title": "gate_14 与 harness_stage_complete 竞态" },
+    { "id": 2, "severity": "LOW", "title": "Loop 工具零测试覆盖" },
+    { "id": 3, "severity": "LOW", "title": "runGate() 与 gatePhase3() 重复" },
+    { "id": 4, "severity": "INFO", "title": "Stage 15 timestamp 异常" }
+  ]
+  },
+  "commits": 11
+}

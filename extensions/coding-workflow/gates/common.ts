@@ -197,14 +197,26 @@ export function checkNoMustFix(
   return { ok: true, output: "[PASS] no MUST FIX items (unable to read file)" };
   }
 
-  // 不区分大小写搜索 MUST FIX、必须修复、CRITICAL
-  const pattern = /\bMUST\s+FIX\b|必须修复|CRITICAL/gi;
-  const matches = content.match(pattern);
+  // 逐行检查未解决的 MUST FIX（排除含"已修复"/"已解决"等标记的历史引用）
+  const lines = content.split("\n");
+  let unresolvedCount = 0;
+  const issuePattern = /\bMUST\s+FIX\b|必须修复|CRITICAL/gi;
+  // 如果行中包含已解决标记，视为历史引用而非未解决问题
+  const resolvedPattern = /已修复|已解决|resolved|fixed|✅|不修复则评审不通过/gi;
 
-  if (matches && matches.length > 0) {
+  for (const line of lines) {
+  if (issuePattern.test(line)) {
+    // 排除含已解决标记的行（如 "5 条 MUST FIX 已全部修复"）
+    if (!resolvedPattern.test(line)) {
+    unresolvedCount++;
+    }
+  }
+  }
+
+  if (unresolvedCount > 0) {
   return {
-    ok: false,
-    output: `[FAIL] ${matches.length} MUST FIX/CRITICAL item(s) remain`,
+  ok: false,
+  output: `[FAIL] ${unresolvedCount} unresolved MUST FIX/CRITICAL item(s) remain`,
   };
   }
 

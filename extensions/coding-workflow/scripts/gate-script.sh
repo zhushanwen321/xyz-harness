@@ -78,12 +78,13 @@ check_file() {
 
 no_must_fix() {
   local f="$1" count
-  count=$(grep -ciE 'MUST\s*FIX|必须修复|CRITICAL' "$f" 2>/dev/null || echo "0")
+  # 统计未解决的 MUST FIX（排除含"已修复"/"已解决"等标记的历史引用）
+  count=$(grep -iE 'MUST\s*FIX|CRITICAL|必须修复' "$f" 2>/dev/null | grep -viE '已修复|已解决|resolved|fixed|不修复则评审不通过' | wc -l | tr -d ' ')
   if [[ "$count" -gt 0 ]]; then
-  echo "[FAIL] ${count} MUST FIX/CRITICAL item(s) remain"
+  echo "[FAIL] ${count} unresolved MUST FIX/CRITICAL item(s) remain"
   return 1
   fi
-  echo "[PASS] no MUST FIX items"
+  echo "[PASS] no unresolved MUST FIX items"
 }
 
 find_review() {

@@ -7,6 +7,8 @@
  * 网络错误或超时时降级通过（fail-open），避免阻塞工作流。
  */
 
+import { extractYamlBlock } from "./gates/common.js";
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -29,16 +31,15 @@ interface YamlSummary {
 
 // ── YAML 摘要提取 ──────────────────────────────────────────
 
-/** 从文件内容中提取 YAML frontmatter 摘要 */
+/** 从文件内容中提取 YAML frontmatter 摘要（用于 L2 展示） */
 function extractYamlSummary(content: string): YamlSummary | null {
-  const fm = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!fm) return null;
-  const yaml = fm[1];
+  const yaml = extractYamlBlock(content);
+  if (!yaml) return null;
 
-  const verdictMatch = yaml.match(/^  verdict:\s*([a-z]+)\s*$/m);
-  const mustFixMatch = yaml.match(/^  must_fix:\s*(\d+)\s*$/m);
-  const resolvedMatch = yaml.match(/^  must_fix_resolved:\s*(\d+)\s*$/m);
-  const totalMatch = yaml.match(/^  total_issues:\s*(\d+)\s*$/m);
+  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z]+)\s*$/m);
+  const mustFixMatch = yaml.match(/^\s*must_fix:\s*(\d+)\s*$/m);
+  const resolvedMatch = yaml.match(/^\s*must_fix_resolved:\s*(\d+)\s*$/m);
+  const totalMatch = yaml.match(/^\s*total_issues:\s*(\d+)\s*$/m);
   // 统计 issues 数组条目数
   const issueCount = (yaml.match(/^\s*- id:/gm) || []).length;
 

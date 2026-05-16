@@ -85,7 +85,7 @@ no_must_fix() {
   yaml=$(sed -n '/^---$/,/^---$/p' "$f" 2>/dev/null | sed '1d;$d')
 
   if [[ -n "$yaml" ]]; then
-    verdict=$(echo "$yaml" | grep -oP '^\s*verdict:\s*\K[a-z]+' | head -1)
+  verdict=$(echo "$yaml" | sed -n 's/^[[:space:]]*verdict:[[:space:]]*\([a-z][a-z]*\).*/\1/p' | head -1)
     if [[ -n "$verdict" ]]; then
     if [[ "$verdict" == "pass" ]]; then
       echo "[PASS] review verdict: pass"
@@ -95,7 +95,7 @@ no_must_fix() {
     return 1
     fi
 
-    must_fix=$(echo "$yaml" | grep -oP '^\s*must_fix:\s*\K\d+' | head -1)
+  must_fix=$(echo "$yaml" | sed -n 's/^[[:space:]]*must_fix:[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
     if [[ -n "$must_fix" ]]; then
     if [[ "$must_fix" -eq 0 ]]; then
       echo "[PASS] 0 unresolved MUST FIX items"

@@ -209,25 +209,33 @@ export function checkNoMustFix(
   return checkNoMustFixLegacy(content);
 }
 
-// ── YAML Verdict 解析 ───────────────────────────────────
+// ── YAML 解析工具（导出供 index.ts / gate-verifier.ts 复用） ──────
 
 /**
- * 从文件内容中提取 YAML frontmatter 并解析 verdict / must_fix。
+ * 从文件内容中提取 YAML frontmatter 的原始文本。
+ *
+ * @param content - 完整文件内容
+ * @returns YAML 文本（不含 --- 标记），null 表示无 frontmatter
+ */
+export function extractYamlBlock(content: string): string | null {
+  const fm = content.match(/^---\n([\s\S]*?)\n---/);
+  return fm ? fm[1] : null;
+}
+
+/**
+ * 从 YAML frontmatter 中解析 verdict / must_fix。
  *
  * 解析成功 → 返回判定结果
- * 解析不到 YAML → 返回 null（调用方回退旧逻辑）
+ * 无法判定 → 返回 null（调用方回退旧逻辑）
  */
-function checkYamlVerdict(
+export function checkYamlVerdict(
   content: string,
 ): { ok: boolean; output: string } | null {
-  // 提取 YAML frontmatter 块（首行 --- 到下一个 ---）
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!fmMatch) return null;
+  const yaml = extractYamlBlock(content);
+  if (!yaml) return null;
 
-  const yaml = fmMatch[1];
-
-  // 1. 读 review.verdict 字段
-  const verdictMatch = yaml.match(/^  verdict:\s*([a-z]+)\s*$/m);
+  // 1. 读 review.verdict 字段（支持 2-4 空格缩进）
+  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z]+)\s*$/m);
   if (verdictMatch) {
   const verdict = verdictMatch[1];
   if (verdict === "pass") {
@@ -237,7 +245,7 @@ function checkYamlVerdict(
   }
 
   // 2. 回退：读 statistics.must_fix 字段
-  const mustFixMatch = yaml.match(/^  must_fix:\s*(\d+)\s*$/m);
+  const mustFixMatch = yaml.match(/^\s*must_fix:\s*(\d+)\s*$/m);
   if (mustFixMatch) {
   const count = parseInt(mustFixMatch[1], 10);
   if (count === 0) {
@@ -246,7 +254,6 @@ function checkYamlVerdict(
   return { ok: false, output: `[FAIL] ${count} unresolved MUST FIX item(s) remain` };
   }
 
-  // YAML 存在但既无 verdict 也无 statistics.must_fix → 返回 null 回退旧逻辑
   return null;
 }
 

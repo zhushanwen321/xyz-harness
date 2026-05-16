@@ -24,7 +24,7 @@ Ask one question at a time. Propose 2-3 approaches with trade-offs when appropri
   name: "Spec 编写",
   phase: 1,
   type: "interactive",
-  requiresConfirmation: false,
+  requiresConfirmation: true,
   prompt: `Write the spec.md based on the discussion. The spec MUST include:
 - Outcomes/目标
 - Scope/范围 (with out-of-scope)

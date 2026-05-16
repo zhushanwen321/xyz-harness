@@ -230,21 +230,27 @@ export default function workflowController(pi: ExtensionAPI) {
   }
   }
 
-  // 4b. L2 Gate 验证（防伪造检查）— L1 全部通过后执行
+  // 4b. L2 Gate 验证（防伪造检查）— L1 全部通过后执行，检查所有已完成 stage 的交付物
   if (gateResults.length > 0) {
   const deliverablesForL2: Array<{ path: string; content: string }> = [];
-  if (currentStageDef.deliverables) {
-    for (const d of currentStageDef.deliverables) {
-    if (!d.required) continue;
-    const pattern = d.path.replace("{topicDir}", state.topicDir);
-    const fullPath = resolve(ctx.cwd, pattern);
-    try {
-    const content = readFileSync(fullPath, "utf-8").slice(0, 5000);
-    deliverablesForL2.push({ path: pattern, content });
-    } catch {
-    // 交付物在前面已验证过存在性，这里 glob 精确路径不匹配时静默跳过
-    }
-    }
+  // 收集所有已完成 stage 的交付物（不只是当前 stage）
+  for (const ss of state.stages) {
+  if (ss.status !== "pass" && ss.number !== state.currentStage) continue;
+  const sd = findStageDef(ss.number);
+  if (!sd?.deliverables) continue;
+  for (const d of sd.deliverables) {
+  if (!d.required) continue;
+  const pattern = d.path.replace("{topicDir}", state.topicDir);
+  const fullPath = resolve(ctx.cwd, pattern);
+  // glob 模式支持 * 通配符，取最新匹配的文件
+  const matched = globMatch(fullPath, ctx.cwd);
+  if (matched.length === 0) continue;
+  const target = matched.sort().reverse()[0];
+  try {
+  const content = readFileSync(target, "utf-8").slice(0, 3000);
+  deliverablesForL2.push({ path: pattern, content });
+  } catch { /* skip unreadable files */ }
+  }
   }
 
   const gateOutput = gateResults.map((r) => r.output).join("\n---\n").slice(0, 4000);

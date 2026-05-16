@@ -3,7 +3,7 @@
 ## 项目背景
 
 xyz-harness 开发流水线框架本身的工程仓库。包含：
-- `extensions/coding-workflow/` — Pi 扩展：16-stage 开发流水线控制器，含门禁系统
+- `extensions/coding-workflow/` — Pi 扩展：Phase 1/2/3/4 开发流水线控制器（15 stage + Phase 3 E2E Loop），含门禁系统
 - `extensions/todolist/` — Pi 扩展：任务追踪
 - `extensions/claude-rules-loader/` — Pi 扩展：跨项目规则加载
 - `agents/` — 各阶段 subagent 定义（harness-executor、harness-reviewer、harness-tdd-coder 等）
@@ -36,14 +36,16 @@ xyz-harness 开发流水线框架本身的工程仓库。包含：
 | 文档 | 路径 | 用途 |
 |------|------|------|
 | Gate 系统设计 | `extensions/coding-workflow/gates/common.ts` | 门禁工具函数 API |
-| Stage 定义 | `extensions/coding-workflow/stages.ts` | 16 stage 配置 |
+| Stage 定义 | `extensions/coding-workflow/stages.ts` | 15 stage 配置（4 Phase） |
+| Loop 引擎 | `extensions/coding-workflow/loop-engine.ts` | Phase 3 E2E Loop 状态机 |
 | 状态管理 | `extensions/coding-workflow/state-manager.ts` | 工作流状态持久化 |
 | Workflow 控制器 | `extensions/coding-workflow/index.ts` | 主入口 + 工具注册 |
 | E2E Tester Agent | `agents/harness-e2e-tester/agent.md` | E2E 测试执行规范 |
+| 复盘记录 | `docs/retrospectives/` | 每次 harness 使用的复盘总结，命名格式 `YYYY-MM-DD-主题.md` |
 
 ## 质量门禁
 
 - 类型检查: `npx tsc --noEmit`
-- 测试: `echo "no tests yet"` (本项目暂未编写自动化测试)
+- 测试: `npx tsx --test extensions/coding-workflow/__tests__/*.test.ts`
 - Lint: `npx tsc --noEmit`
 - Bash 语法: `bash -n extensions/coding-workflow/scripts/gate-script.sh`

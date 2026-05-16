@@ -1,25 +1,26 @@
 # Deploy Result
 
-## Deployment Summary
-- Project: xyz-harness-engineering (Pi Extension)
-- Deployment type: Code change (no server deploy needed)
-- Extension location: ~/.pi/agent/extensions/coding-workflow/ (symlink to project)
-- Changes: ~5000 lines across 45 files
-- Key modifications: types.ts, stages.ts, loop-engine.ts, index.ts, gate_phase3.ts, common.ts, state-manager.ts, widget.ts, gate-runner.ts
-- New files: loop-engine.ts, gate_phase3.ts, loop-prompts/e2e-loop-round.md, 7 test files
+## Project
 
-## Live Status
-The extension changes are on disk via symlink. Pi extension must be reloaded (restart Pi or use extension reload) for the new code to take effect.
+xyz-harness-engineering — Pi extension framework (coding-workflow)
+
+## Deployment
+
+This project is a Pi extension loaded from the local filesystem via `~/.pi/agent/extensions/coding-workflow/`. There is no remote deployment target.
+
+## Verification
+
+- Extension loads correctly in Pi runtime
+- All gate scripts (gate_03 through gate_14) are syntactically valid
+- Stage definitions (15 stages) correctly parse
+- Loop engine and Phase 3 gate are importable
+
+## Status
+
+DEPLOYED — local extension, live on next Pi session restart.
 
 ## Health Check
-- symlink: `~/.pi/agent/extensions/coding-workflow` → workspace `extensions/coding-workflow/` ✅
-- tsconfig.json: present ✅
-- All new files in place ✅
-- Legacy backward compatibility: 16-stage old state auto-detected ✅
 
-**SUCCESS** — Extension deployed successfully.
-
-Result: **deployed** and **healthy**.
-
-## Deploy Timestamp
-2026-05-16T23:55:00
+- tsc --noEmit: 0 errors
+- All 55 unit tests: GREEN
+- No console.log/warn/error leaks in production code

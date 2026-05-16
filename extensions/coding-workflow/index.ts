@@ -325,6 +325,35 @@ export default function workflowController(pi: ExtensionAPI) {
   };
   }
 
+  // Phase 3 Stage 13（健康检查）完成后 → 初始化 Loop 引擎
+  if (state.currentStage === 13 && state.currentPhase === 3) {
+  stateMgr.completeStage(state, state.currentStage, summary);
+  stateMgr.save(state, ctx.cwd);
+
+  const { E2E_LOOP_CONFIG } = await import("./stages.js");
+  const engine = new LoopEngine(E2E_LOOP_CONFIG, ctx.cwd, state.topicDir);
+  engine.init();
+  engine.startRound();
+  const prompt = engine.getPrompt();
+
+  state.loopState = engine.state;
+  stateMgr.save(state, ctx.cwd);
+
+  pi.sendMessage(
+    {
+    customType: "loop-start",
+    content: `[Phase 3 E2E Loop] Round 1/${E2E_LOOP_CONFIG.maxRounds}\n\n${prompt}`,
+    display: true,
+    },
+    { triggerTurn: true }
+  );
+
+  return {
+    content: [{ type: "text", text: "Stage 13 passed. Phase 3 E2E Loop started." }],
+    details: { stage: state.currentStage, phase: 3, loopStarted: true },
+  };
+  }
+
   // 5. 最后一个 stage？
   if (!nextStageDef) {
   stateMgr.completeStage(state, state.currentStage, summary);

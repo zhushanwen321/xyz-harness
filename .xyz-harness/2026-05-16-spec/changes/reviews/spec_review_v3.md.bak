@@ -1,0 +1,96 @@
+---
+review:
+  type: spec_review
+  round: 3
+  timestamp: "2026-05-16T22:00:00"
+  target: "spec.md"
+  verdict: pass
+  summary: "Spec评审第3轮（终轮），v2的2条MUST FIX已全部修复并经代码库验证，0条MUST FIX，通过"
+
+statistics:
+  total_issues: 2
+  must_fix: 0
+  low: 1
+  info: 1
+
+issues:
+  - id: 1
+    severity: LOW
+    location: "D12 类型系统扩展"
+    title: "StageDefinition.phase 行号标注为 types.ts:49，实际为 types.ts:51"
+    status: open
+    raised_in_round: 3
+    resolved_in_round: null
+  - id: 2
+    severity: INFO
+    location: "v2 LOW #4 + v2 LOW #3"
+    title: "v2 遗留 LOW 问题仍存在但均不阻塞实现"
+    status: open
+    raised_in_round: 3
+    resolved_in_round: null
+---
+
+# Spec 评审 v3
+
+## 评审记录
+- 评审时间：2026-05-16 22:00
+- 评审类型：Spec 独立评审（第 3 轮 / 终轮）
+- 评审对象：spec.md（二次修复后版本）
+- 评审轮次：第 3 轮
+- v1 报告：spec_review_v1.md（13 条 MUST FIX）
+- v2 报告：spec_review_v2.md（2 条 MUST FIX）
+
+### v2 MUST FIX 修复验证
+
+| v2 # | 问题 | 修复验证 |
+|------|------|---------|
+| 1 | `StateManager.advanceTo` 签名遗漏 4 个参数 | ✅ 已修复。spec 当前写为 `(state, completedStage: number, nextStage: number, nextPhase: 1\|2\|3\|4, summary: string, nextStageName?: string): void`，与代码库 `advanceTo(state, completedStage, nextStage, nextPhase: 1\|2, summary, nextStageName?)` 参数列表完全匹配（`nextPhase` 扩展为 `1\|2\|3\|4` 是 D12 规划的变更，Phase 2 agent 将同步更新类型定义） |
+| 2 | `GateRunner.run` 签名参数列表完全错误 | ✅ 已修复。spec 当前写为 `(gateNumber: string, projectRoot: string, signal?: AbortSignal): Promise<GateResult>`，与代码库 `async run(gateNumber: string, projectRoot: string, signal?: AbortSignal): Promise<GateResult>` 完全一致 |
+
+### 签名抽查验证（维度 5）
+
+额外抽查了 2 个标识符的签名准确度：
+
+| 标识符 | spec 描述 | 代码库实际 | 一致性 |
+|--------|----------|-----------|--------|
+| `verifyGateL2` | `(gateNumber, stageName, gateOutput, deliverables, signal?) => Promise<{passed, output}>` | `(gateNumber: string, stageName: string, gateOutput: string, deliverables: Array<{path: string; content: string}>, signal?: AbortSignal): Promise<{passed: boolean; output: string}>` | ✅ 一致 |
+| `WorkflowState.currentPhase` | `types.ts:12`, 当前值 `1\|2`，改后 `1\|2\|3\|4` | `types.ts:12`, 当前 `1\|2` | ✅ 一致 |
+
+### 六要素覆盖矩阵
+
+| 要素 | 覆盖状态 | 说明 |
+|------|---------|------|
+| Outcomes | ✅ | 明确终态：四阶段重组，AI 只产证据不做判定 |
+| Scope boundaries | ✅ | in-scope 9 项 + out-of-scope 5 项 |
+| Constraints | ✅ | C1-C7 覆盖完整 |
+| Decisions made | ✅ | D1-D13 共 13 项决策，每项有方案和理由 |
+| Verification | ✅ | AC1-AC13，每条有场景和验证方式 |
+| 已有基础设施 | ✅ | 12 项基础设施 + 关键函数签名表（已验证准确）+ 技术债务表 |
+
+### 自包含性检查
+
+无自包含性问题。v1/v2 发现的工具签名缺失、itemSource 解析、数据流、回退机制等问题已全部在 D10-D13 中补充。
+
+### 歧义标记检查
+
+无未解决的 [AMBIGUOUS] 标记。无隐含歧义。
+
+### 发现的问题
+
+| # | 优先级 | 维度 | 位置 | 描述 | 修改建议 |
+|---|--------|------|------|------|---------|
+| 1 | LOW | 准确性 | D12 | `StageDefinition.phase` 标注为 `types.ts:49`，实际在 `types.ts:51`。`currentPhase` 标注 `types.ts:12` 已准确。行号偏差不影响实现。 | 更新为 `types.ts:51` |
+| 2 | INFO | 观察 | v2 遗留 | v2 LOW #3（行号偏差）和 v2 LOW #4（Loop prompt 注入方式未明确说明）仍存在，但均不阻塞 Phase 2 agent 实现。 | 无需操作 |
+
+> 优先级定义：
+> - **MUST FIX**：不修复则评审不通过，会阻塞流程
+> - **LOW**：建议修复，但不阻塞
+> - **INFO**：观察记录，无需操作
+
+### 结论
+
+通过
+
+### Summary
+
+Spec 评审完成，第 3 轮（终轮）。v2 的 2 条 MUST FIX（`StateManager.advanceTo` 和 `GateRunner.run` 函数签名与代码库不一致）已修复并经代码库验证一致。0 条 MUST FIX，1 条 LOW（行号偏差），1 条 INFO（v2 遗留 LOW 观察）。评审通过。

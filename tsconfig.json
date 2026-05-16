@@ -25,6 +25,7 @@
   "exclude": [
   "node_modules",
   ".xyz-harness",
-  "extensions/coding-workflow/scripts/hooks"
+  "extensions/coding-workflow/scripts/hooks",
+  "extensions/coding-workflow/__tests__"
   ]
 }

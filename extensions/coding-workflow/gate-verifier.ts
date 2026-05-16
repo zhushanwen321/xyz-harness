@@ -36,7 +36,7 @@ function extractYamlSummary(content: string): YamlSummary | null {
   const yaml = extractYamlBlock(content);
   if (!yaml) return null;
 
-  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z]+)\s*$/m);
+  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z][a-z0-9_]*)\s*$/m);
   const mustFixMatch = yaml.match(/^\s*must_fix:\s*(\d+)\s*$/m);
   const resolvedMatch = yaml.match(/^\s*must_fix_resolved:\s*(\d+)\s*$/m);
   const totalMatch = yaml.match(/^\s*total_issues:\s*(\d+)\s*$/m);
@@ -335,9 +335,7 @@ export async function verifyGateL2(
   return { passed: true, output: "L2 skipped (invalid baseUrl)" };
   }
   if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "::1") {
-  console.warn(
-    `L2 gate verifier: baseUrl is not localhost (${url.hostname}). Skipping for security.`,
-  );
+  // 非 localhost URL — 安全跳过，不输出到 console（避免 TUI 渲染泄漏）
   return { passed: true, output: "L2 skipped (non-localhost baseUrl)" };
   }
 

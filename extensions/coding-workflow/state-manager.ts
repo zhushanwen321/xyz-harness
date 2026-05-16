@@ -20,7 +20,12 @@ export class StateManager {
   const path = join(projectRoot, this.stateFile);
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as WorkflowState;
+  const state = JSON.parse(readFileSync(path, "utf8")) as WorkflowState;
+  // 检测旧 16-stage 格式并标记，供上层逻辑区分处理
+  if (state.stages.length === 16) {
+    state.legacy = true;
+  }
+  return state;
   } catch (err) {
     // 文件损坏：备份而非静默丢弃 (#1)
     const backupPath = path + ".bak." + Date.now();
@@ -41,9 +46,14 @@ export class StateManager {
   const path = join(projectRoot, this.stateFile);
   const dir = dirname(path);
   mkdirSync(dir, { recursive: true });
+  // 确保 loopState 被正确序列化（显式处理，避免未来字段遗漏）
+  const serialized = {
+  ...state,
+  loopState: state.loopState ?? undefined,
+  };
   // 原子写：先写临时文件再 rename (#2)
   const tmpPath = path + ".tmp";
-  writeFileSync(tmpPath, JSON.stringify(state, null, 2), "utf8");
+  writeFileSync(tmpPath, JSON.stringify(serialized, null, 2), "utf8");
   renameSync(tmpPath, path);
   }
 
@@ -70,7 +80,7 @@ export class StateManager {
 
   // ── 阶段操作 ─────────────────────────────────────────
 
-  startStage(state: WorkflowState, stageNumber: number, phase: 1 | 2, stageName?: string): void {
+  startStage(state: WorkflowState, stageNumber: number, phase: 1 | 2 | 3 | 4, stageName?: string): void {
   const now = new Date().toISOString();
   let stage = state.stages.find((s) => s.number === stageNumber);
   if (!stage) {
@@ -112,7 +122,7 @@ export class StateManager {
   state: WorkflowState,
   completedStage: number,
   nextStage: number,
-  nextPhase: 1 | 2,
+  nextPhase: 1 | 2 | 3 | 4,
   summary: string,
   nextStageName?: string
   ): void {
@@ -198,7 +208,7 @@ export class StateManager {
   rollback(
   state: WorkflowState,
   targetStage: number,
-  targetPhase: 1 | 2,
+  targetPhase: 1 | 2 | 3 | 4,
   reason: string
   ): void {
   state.rollbackHistory.push({

@@ -39,8 +39,7 @@ export async function gate_10(
 
   // 2. 检查 tdd-order-check.sh 是否存在
   if (!existsSync(TDD_SCRIPT_PATH)) {
-  console.warn(`[WARN] tdd-order-check.sh not found — skipping TDD check`);
-  console.warn(`       Expected at: ${TDD_SCRIPT_PATH}`);
+  // TDD check script missing — skip silently (already handled by createPassFile below)
   return createPassFile(projectRoot, "10", "TDD check skipped (script missing)");
   }
 
@@ -53,7 +52,6 @@ export async function gate_10(
     timeout: 120_000,
     maxBuffer: 10 * 1024 * 1024,
   });
-  console.log(stdout);
   return createPassFile(projectRoot, "10", "TDD order verified");
   } catch (err) {
   const error = err as {
@@ -61,8 +59,7 @@ export async function gate_10(
     stderr?: Buffer | string;
     message?: string;
   };
-  const output = (error.stdout ?? error.stderr ?? error.message ?? String(err)).toString();
-  console.log(output);
+  const _output = (error.stdout ?? error.stderr ?? error.message ?? String(err)).toString();
   return {
     passed: false,
     output: formatFailMessage("10", "TDD 提交顺序违规", FIX_HINT),

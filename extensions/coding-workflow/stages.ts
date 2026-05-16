@@ -161,7 +161,7 @@ Wait for user approval before proceeding to Phase 2.`,
   deliverables: [],
   },
 
-  // ── Phase 2: 开发交付 (Stage 9-16) ─────────────────────
+  // ── Phase 2: 编码交付 (Stage 9-12) ─────────────────────
   {
   number: 9,
   name: "TDD 测试编写",
@@ -177,11 +177,11 @@ For each task:
 Register all tasks with harness_register_tasks at the start.
 Output: test files in the project source tree`,
   deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/evidence/tdd-red-report.md",
-    label: "TDD red report",
-    required: true,
-    },
+  {
+  path: ".xyz-harness/{topicDir}/changes/evidence/tdd-red-report.md",
+  label: "TDD red report",
+  required: true,
+  },
   ],
   },
   {
@@ -212,14 +212,14 @@ Check: spec compliance, code quality, architecture adherence, security.
 Output: .xyz-harness/{topicDir}/changes/reviews/code_review_v1.md
 Max 2 review rounds. MUST FIX must be resolved before passing.`,
   deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/reviews/code_review_*.md",
-    label: "code review report",
-    required: true,
-    contentChecks: [
-    { type: "yaml_verdict", message: "code review verdict is not 'pass'" },
-    ],
-    },
+  {
+  path: ".xyz-harness/{topicDir}/changes/reviews/code_review_*.md",
+  label: "code review report",
+  required: true,
+  contentChecks: [
+  { type: "yaml_verdict", message: "code review verdict is not 'pass'" },
+  ],
+  },
   ],
   },
   {
@@ -232,64 +232,32 @@ Max 2 review rounds. MUST FIX must be resolved before passing.`,
   prompt: `Write interface-level tests for all changed interfaces (Change-driven Testing).
 Dispatch harness-executor with xyz-harness-unit-test-write skill.
 Tests must cover: normal path, boundary conditions, error paths.
-Run tests to confirm all pass.`,
+Run tests to confirm all pass.
+Also review unit test coverage — this replaces the former separate test review stage.`,
   deliverables: [],
   },
+
+  // ── Phase 3: E2E 测试 (Stage 13 + Loop) ───────────────
   {
   number: 13,
-  name: "E2E 测试",
-  phase: 2,
+  name: "集成健康检查",
+  phase: 3,
   type: "automated",
-  gateScript: "12",
   requiresConfirmation: false,
-  prompt: `**CRITICAL: Dispatch harness-e2e-tester subagent for all E2E test execution.**
-Use chrome-automation skill for all UI smoke tests.
-NEVER fabricate results by code inspection — every UI test MUST be executed in a real browser with screenshots.
-Fabricated results (writing "代码已实现" without actual execution) will be caught by gate_12 and rejected.
-If a test cannot be executed, mark it as SKIP with explicit reason. DO NOT pass it as "OK".
+  prompt: `Run integration health checks before entering the E2E Loop:
+1. Check backend API health endpoint (curl, expect 200)
+2. Check database connectivity
+3. Verify frontend is serving
+If any check fails → rollback to Stage 10.
+If all pass → Phase 3 Loop starts automatically.`,
+  deliverables: [],
+  },
 
-Execute E2E tests according to e2e-test-plan.md.
-1. Start Chrome CDP (port 9222)
-2. Start backend and frontend services
-3. Prepare test data
-4. Execute test groups in dependency order (G1 → G2 → G3)
-5. Record results per test case
-Output: .xyz-harness/{topicDir}/changes/evidence/e2e-test-report.md
-If blocking failure found, rollback to Stage 10 (coding).`,
-  deliverables: [
-  {
-  path: ".xyz-harness/{topicDir}/changes/evidence/e2e-test-report.md",
-  label: "e2e test report",
-  required: true,
-  },
-  ],
-  },
+  // ── Phase 4: 收尾 (Stage 14-15) ─────────────────────────
   {
   number: 14,
-  name: "测试评审",
-  phase: 2,
-  type: "automated",
-  gateScript: "13",
-  requiresConfirmation: false,
-  prompt: `Dispatch harness-reviewer to review unit tests and E2E test results.
-Check: test coverage, assertion quality, E2E pass rate.
-Output: .xyz-harness/{topicDir}/changes/reviews/test_review_v1.md
-Max 2 review rounds.`,
-  deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/reviews/test_review_*.md",
-    label: "test review report",
-    required: true,
-    contentChecks: [
-    { type: "yaml_verdict", message: "test review verdict is not 'pass'" },
-    ],
-    },
-  ],
-  },
-  {
-  number: 15,
   name: "推送+CI+部署",
-  phase: 2,
+  phase: 4,
   type: "automated",
   gateScripts: ["14"],
   requiresConfirmation: false,
@@ -301,22 +269,22 @@ L1 gate 14 will verify all three steps automatically.
 Output: .xyz-harness/{topicDir}/changes/evidence/verification_output.md
    .xyz-harness/{topicDir}/changes/evidence/deploy_result.md`,
   deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/evidence/verification_output.md",
-    label: "verification output",
-    required: true,
-    },
-    {
-    path: ".xyz-harness/{topicDir}/changes/evidence/deploy_result.md",
-    label: "deploy result",
-    required: true,
-    },
+  {
+  path: ".xyz-harness/{topicDir}/changes/evidence/verification_output.md",
+  label: "verification output",
+  required: true,
+  },
+  {
+  path: ".xyz-harness/{topicDir}/changes/evidence/deploy_result.md",
+  label: "deploy result",
+  required: true,
+  },
   ],
   },
   {
-  number: 16,
+  number: 15,
   name: "自动复盘",
-  phase: 2,
+  phase: 4,
   type: "automated",
   requiresConfirmation: true,
   prompt: `Dispatch harness-reviewer to analyze the entire workflow:
@@ -327,16 +295,43 @@ Output: .xyz-harness/{topicDir}/changes/evidence/verification_output.md
 Output: .xyz-harness/{topicDir}/changes/retrospective.md
    .xyz-harness/{topicDir}/metrics.json`,
   deliverables: [
-    {
-    path: ".xyz-harness/{topicDir}/changes/retrospective.md",
-    label: "retrospective.md",
-    required: true,
-    },
-    {
-    path: ".xyz-harness/{topicDir}/metrics.json",
-    label: "metrics.json",
-    required: true,
-    },
+  {
+  path: ".xyz-harness/{topicDir}/changes/retrospective.md",
+  label: "retrospective.md",
+  required: true,
+  },
+  {
+  path: ".xyz-harness/{topicDir}/metrics.json",
+  label: "metrics.json",
+  required: true,
+  },
   ],
   },
 ];
+
+// ── Phase 3 Loop 配置 ──────────────────────────────────────
+
+import type { LoopConfig } from "./types.js";
+
+export const E2E_LOOP_CONFIG: LoopConfig = {
+  name: "E2E 测试",
+  itemSource: "plan_tasks",
+  itemIdField: "case_id",
+  allowedStatuses: ["EXECUTED", "ERROR"],
+  completedStatus: "EXECUTED",
+  maxRounds: 5,
+  batchSize: 5,
+  requireVerificationRound: true,
+  evidenceFile: ".xyz-harness/{topicDir}/changes/evidence/e2e-evidence.json",
+  roundPrompt: "e2e-loop-round",
+  gateScript: "phase3",
+  gateChecks: [
+  { name: "item_coverage", type: "L1" },
+  { name: "executed_per_item", type: "L1" },
+  { name: "evidence_files_exist", type: "L1" },
+  { name: "verification_round_completed", type: "L1" },
+  { name: "verification_all_executed", type: "L1" },
+  { name: "anti_fabrication", type: "L2" },
+  ],
+  confirmationRequired: true,
+};

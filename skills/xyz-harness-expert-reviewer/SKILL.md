@@ -252,31 +252,39 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 - `issues` 数组必须包含所有问题（含跨轮次的已解决问题），每个问题的 `id` 唯一
 - 第 2+ 轮评审必须继承上一轮的 `issues`，将已修复项的 `status` 改为 `resolved`
 
+**重要：门禁系统会解析 YAML frontmatter 来判定评审是否通过。**
+- 必须包含 `verdict` 字段（扁平或嵌套均可）
+- 必须包含 `must_fix` 字段��扁平或嵌套均可）
+- `verdict` 只允许 `pass` 或 `fail`，不允许中间状态（如 `passed_with_fixes`、`issues_found` 等）
+
 ```markdown
 ---
 review:
-  type: {spec_review|plan_review|e2e_review|code_review|test_review}
-  round: {N}
-  timestamp: "{yyyy-MM-ddTHH:mm:ss}"
-  target: "{被评审文件路径}"
-  verdict: {pass|fail}
-  summary: "{评审类型}完成，第{N}轮，{M}条MUST FIX，{通过|需修改后重审}"
+  type: spec_review | plan_review | e2e_review | code_review | test_review  # 必填，评审类型
+  round: 1                    # 必填，当前评审轮次，从 1 递增
+  timestamp: "2026-05-16T14:30:00"  # 必填，ISO 8601 格式
+  target: "path/to/reviewed/file"   # 必填，被评审的文件路径
+  verdict: pass | fail        # 必填，只能是 pass 或 fail（禁止其他值）
+                #   pass = 无 open 的 MUST_FIX
+                #   fail = 有 open 的 MUST_FIX
+  summary: "编码评审完成，第1轮，2条MUST FIX，需修改后重审"  # 必填，一句话摘要
 
 statistics:
-  total_issues: {N}
-  must_fix: {N}             # severity=MUST_FIX 且 status=open 的数量
-  must_fix_resolved: {N}    # 历史上是 MUST_FIX，本轮已修复
-  low: {N}
-  info: {N}
+  total_issues: 5            # 必填，所有问题总数（含已解决）
+  must_fix: 2                # 必填，severity=MUST_FIX 且 status=open 的数量
+                #   注意：必须是当前未解决的数量，不是历史总数
+  must_fix_resolved: 1       # 选填，历史 MUST_FIX 已在本轮解决的数量
+  low: 2                     # 必填，severity=LOW 的问题数量
+  info: 1                    # 必填，severity=INFO 的问题数量
 
-issues:                      # 全量问题列表（含已解决）
-  - id: {N}
-  severity: {MUST_FIX|LOW|INFO}
-  location: "{file:line 或 §section}"
-  title: "{一句话描述}"
-  status: {open|resolved|dismissed}
-  raised_in_round: {N}
-  resolved_in_round: {null|N}
+issues:                      # 必填，全量问题列表（含已解决的）
+  - id: 1                    # 必填，唯一数字 ID，跨轮次不变
+  severity: MUST_FIX | LOW | INFO  # 必填，问题严重程度
+  location: "path/to/file:L42"     # 必填，文件:行号 或章节引用
+  title: "一句话描述问题"           # 必填，精炼的问题标题
+  status: open | resolved | dismissed  # 必填，open=未解决, resolved=已解决, dismissed=误报
+  raised_in_round: 1        # 必填，首次提出的轮次
+  resolved_in_round: null | 2  # 必填，解决时的轮次（未解决则为 null）
 ---
 
 # {计划评审 / 编码评审 / 测试评审} v{N}

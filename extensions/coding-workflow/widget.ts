@@ -23,7 +23,7 @@ export class WidgetManager {
 
   // Footer status — 简洁摘要
   const stageDef = WORKFLOW_STAGES.find((s) => s.number === state.currentStage);
-  const phaseLabel = state.currentPhase === 1 ? "Phase 1" : "Phase 2";
+  const phaseLabel = `Phase ${state.currentPhase}`;
   const stageName = stageDef?.name ?? "?";
   ctx.ui.setStatus(
   "coding-workflow",

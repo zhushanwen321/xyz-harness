@@ -69,7 +69,6 @@ export async function gate_11(
   } catch {
   changedFiles = "";
   }
-  console.log(`[INFO] checking test files in single-commit repo (git show HEAD)`);
   } else {
   const range = `HEAD~${Math.min(commitCount - 1, 5)}`;
   try {
@@ -87,14 +86,7 @@ export async function gate_11(
   .split("\n")
   .filter((f) => f.trim() && TEST_FILE_RE.test(f));
 
-  if (testFiles.length === 0) {
-  console.warn("[WARN] no test/spec files found in recent commits");
-  } else {
-    console.log("[PASS] found test/spec files in changes");
-    for (const f of testFiles) {
-    console.log(`  ${f}`);
-    }
-  }
+  // testFiles 检测结果纳入后续测试命令执行的输出中，无需 console 输出
 
   signal?.throwIfAborted();
 
@@ -103,11 +95,7 @@ export async function gate_11(
   const gates = readGates(projectRoot).filter((g) => g.type === "test");
 
   if (gates.length === 0) {
-    console.warn(
-    "[WARN] no test command in CLAUDE.md '## 质量门禁' section",
-    );
-    console.warn("       Add: - 测试: `npm test`");
-    return createPassFile(
+  return createPassFile(
     projectRoot,
     "11",
     "gate 11: unit test gate passed (no test commands configured)",
@@ -121,9 +109,8 @@ export async function gate_11(
   const failures: Array<{ command: string; output: string }> = [];
 
   for (const gate of gates) {
-    const result = runCommand(projectRoot, gate.type, gate.command);
-    console.log(result.output);
-    if (!result.ok) {
+  const result = runCommand(projectRoot, gate.type, gate.command);
+  if (!result.ok) {
     failures.push({ command: gate.command, output: result.output });
     }
   }
@@ -136,8 +123,7 @@ export async function gate_11(
     const failMsg = `${failures.length} 条测试命令失败`;
     const fixHint =
     "检查上述 [FAIL] 测试命令的输出，修复失败的测试用例或代码后重新调用 harness_stage_complete";
-    console.log(formatFailMessage("11", failMsg, fixHint));
-    return { passed: false, output: formatFailMessage("11", failMsg, fixHint) };
+  return { passed: false, output: formatFailMessage("11", failMsg, fixHint) };
   }
 
   return createPassFile(

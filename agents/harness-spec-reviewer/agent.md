@@ -158,7 +158,36 @@ spec.md 必须包含以下章节（按 SKILL.md 规范）。**缺失任何章节
 
 ## 评审报告格式
 
+**重要：报告必须包含 YAML frontmatter**（门禁系统依赖它自动判定评审是否通过）。
+YAML 中 `verdict` 只允许 `pass` 或 `fail`，不允许中间状态（如 `passed_with_fixes`）。
+
 ```markdown
+---
+review:
+  type: spec_review | plan_review | e2e_review | code_review | test_review  # 必填
+  round: 1                    # 必填，当前轮次
+  timestamp: "2026-05-16T14:30:00"  # 必填
+  target: "spec.md"           # 必填
+  verdict: pass | fail        # 必填，只能是 pass 或 fail
+  summary: "Spec评审完成，第1轮，0条MUST FIX，通过"  # 必填
+
+statistics:
+  total_issues: 3             # 必填
+  must_fix: 0                 # 必填，open 状态的 MUST_FIX 数量
+  must_fix_resolved: 0        # 选填
+  low: 2                      # 必填
+  info: 1                     # 必填
+
+issues:
+  - id: 1
+  severity: MUST_FIX | LOW | INFO
+  location: "§section 或 file:line"
+  title: "问题描述"
+  status: open | resolved | dismissed
+  raised_in_round: 1
+  resolved_in_round: null
+---
+
 # Spec 评审 v{N}
 
 ## 评审记录

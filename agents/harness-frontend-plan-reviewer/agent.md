@@ -210,6 +210,32 @@ model: llm-simple-router/glm-5.1
 按统一格式写入 `{output_dir}/frontend_plan_review_v{N}.md`。
 
 ```markdown
+---
+review:
+  type: plan_review           # 必填，评审类型
+  round: 1                    # 必填，当前评审轮次，从 1 开始
+  timestamp: "2026-05-16T14:30:00"  # 必填，ISO 8601
+  target: "plan-frontend.md"   # 必填
+  verdict: pass               # 必填，pass 或 fail
+  summary: "评审摘要"          # 必填
+
+statistics:
+  total_issues: 0             # 必填，所有问题总数
+  must_fix: 0                 # 必填，open 状态的 MUST_FIX 数量
+  must_fix_resolved: 0        # 选填
+  low: 0                      # 必填
+  info: 0                     # 必填
+
+issues:
+  - id: 1
+  severity: MUST_FIX        # MUST_FIX | LOW | INFO
+  location: "file:line 或 §section"
+  title: "问题描述"
+  status: open              # open | resolved | dismissed
+  raised_in_round: 1
+  resolved_in_round: null
+---
+
 # 前端设计方案评审 v{N}
 
 ## 评审记录

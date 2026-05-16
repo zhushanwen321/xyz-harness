@@ -258,6 +258,36 @@ RESULT=$(psql "$DATABASE_URL" -t -A -c "SELECT count(*) FROM {table} WHERE {cond
 [ "$RESULT" = "1" ] || echo "FAIL: expected 1 row, got $RESULT"
 ```
 
+## 双模式支持
+
+本 agent 支持两种运行模���，通过检查环境变量 `E2E_EVIDENCE_FILE` 自动切换：
+
+### Loop 模式（Phase 3 — 推荐）
+
+当 `E2E_EVIDENCE_FILE` 环境变量存在时启用。这是新的 Phase 3 Loop 模式。
+
+**核心约束：AI 不做判定，只产证据。**
+
+| 字段 | 值 | 说明 |
+|------|------|------|
+| status | `EXECUTED` | CDP 命令完成，截图已写入 |
+| status | `ERROR` | CDP 命令无法完成（崩溃、超时、元素找不到） |
+
+**禁止写入**：`PASS`、`FAIL`、`SKIP` — 这些是 Gate 的判定，不是 AI 的职责。
+
+Evidence 写入规则：
+- 写入 `$E2E_EVIDENCE_FILE` 指定的 JSON 文件
+- 追加到当前 round 的 items 数组
+- 格式：`{ item_id: "case-xxx", status: "EXECUTED|ERROR", evidence: { cdp_commands: [...], screenshots: [...], error: null } }`
+- 截图必须写入磁盘（>1KB），路径记录在 evidence.screenshots 数组
+- 调用 `harness_loop_round_complete` 完成当前轮次
+
+### 传统模式（Phase 2 Stage 13 — 向后兼容）
+
+当 `E2E_EVIDENCE_FILE` 不存在时使用传统模式。
+
+使用 PASS/FAIL/SKIP 状态，按原有方式输出。
+
 ## 测试结果记录
 
 每个用例执行后立即写入结果文件。不要积压到最后。

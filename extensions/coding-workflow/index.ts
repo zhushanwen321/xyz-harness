@@ -5,9 +5,10 @@ import { Type } from "typebox";
 import { existsSync, readdirSync, statSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { WORKFLOW_STAGES } from "./stages.js";
+import { WORKFLOW_STAGES, E2E_LOOP_CONFIG } from "./stages.js";
 import { StateManager } from "./state-manager.js";
 import { GateRunner } from "./gate-runner.js";
+import { LoopEngine } from "./loop-engine.js";
 import { verifyGateL2 } from "./gate-verifier.js";
 import { WidgetManager } from "./widget.js";
 import {
@@ -93,9 +94,18 @@ export default function workflowController(pi: ExtensionAPI) {
   } else if (check.type === "yaml_verdict") {
   const result = checkYamlVerdict(content);
   if (result === null) {
-  errors.push(`${d.label}: missing YAML frontmatter (${target})`);
+  // 无 YAML frontmatter
+  errors.push(
+  `${d.label}: file has no YAML frontmatter. Expected:\n` +
+  `    ---\n` +
+  `    verdict: pass\n` +
+  `    must_fix: 0\n` +
+  `    ---\n` +
+  `  File: ${target}`
+  );
   } else if (!result.ok) {
-  errors.push(`${d.label}: ${check.message} (${target})`);
+  // YAML 解析失败（verdict 不对、缺字段等）— result.output 已包含详细诊断
+  errors.push(`${d.label}:\n  ${result.output}\n  File: ${target}`);
   }
   }
   }
@@ -286,8 +296,37 @@ export default function workflowController(pi: ExtensionAPI) {
   }
   }
 
+  // Phase 2→3 自动过渡：Stage 12 完成后，跳过 Stage 13 的普通 stage 推进，
+  // 直接进入 Loop 模式
+  if (state.currentStage === 12 && state.currentPhase === 2) {
+  stateMgr.completeStage(state, state.currentStage, summary);
+  stateMgr.save(state, ctx.cwd);
+
+  // 推进到 Phase 3 Stage 13（集成健康检查）
+  const s13 = findStageDef(13);
+  if (s13) {
+    stateMgr.startStage(state, 13, s13.phase, s13.name);
+    stateMgr.save(state, ctx.cwd);
+    widgetMgr.update(ctx);
+
+    pi.sendMessage(
+    {
+      customType: "harness-stage-start",
+      content: `[STAGE 13/${WORKFLOW_STAGES.length}: ${s13.name}]\n${s13.prompt}\n\nPhase 3 started automatically. No confirmation needed.`,
+      display: true,
+    },
+    { triggerTurn: true }
+    );
+  }
+
+  return {
+    content: [{ type: "text", text: "Stage 12 passed. Phase 2 complete. Entering Phase 3 (E2E Testing)." }],
+    details: { newStage: 13, phase: 3 },
+  };
+  }
+
   // 5. 最后一个 stage？
-    if (!nextStageDef) {
+  if (!nextStageDef) {
   stateMgr.completeStage(state, state.currentStage, summary);
   state.completed = true;
   stateMgr.save(state, ctx.cwd);
@@ -439,6 +478,131 @@ export default function workflowController(pi: ExtensionAPI) {
     ],
     details: { targetStage: params.targetStage },
     };
+  },
+  });
+
+  // ── Loop 工具 (Phase 3) ─────────────────────────────────
+
+  pi.registerTool({
+  name: "harness_loop_round_complete",
+  label: "Harness Loop Round Complete",
+  description:
+  "Mark the current Loop round as complete. The engine reads the evidence JSON " +
+  "from disk and determines the next state (next round / verification / gate). " +
+  "Only used during Phase 3 Loop execution.",
+  parameters: Type.Object({}),
+  async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
+  const state = stateMgr.load(ctx.cwd);
+  if (!state) {
+    throw new Error("No active workflow.");
+  }
+  if (state.currentPhase !== 3) {
+    throw new Error("Not in Phase 3. harness_loop_round_complete is only for Loop phases.");
+  }
+
+  const config = E2E_LOOP_CONFIG;
+  const engine = new LoopEngine(config, ctx.cwd, state.topicDir);
+  engine.onRoundComplete();
+
+  stateMgr.save(state, ctx.cwd);
+  widgetMgr.update(ctx);
+
+  const s = engine.state;
+  let nextAction: string;
+
+  if (s.phase === "verification") {
+    nextAction = "All items completed. Starting Verification Round — re-execute ALL test cases.";
+    // 发送 verification round prompt
+    const prompt = engine.getPrompt();
+    pi.sendMessage(
+    { customType: "loop-verification", content: `[Phase 3 Verification Round]\n${prompt}`, display: true },
+    { triggerTurn: true }
+    );
+  } else if (s.phase === "gate_check") {
+    nextAction = "Verification complete. Running Gate checks...";
+    const gateResult = await engine.runGate(signal);
+    if (gateResult.passed) {
+    if (config.confirmationRequired) {
+      nextAction = `Gate PASSED. Awaiting user confirmation.\n${gateResult.output}`;
+      // 确认后推进到 Phase 4
+      const s14 = findStageDef(14);
+      if (s14) {
+      stateMgr.advanceTo(state, 13, 14, s14.phase, "Phase 3 Loop gate passed", s14.name);
+      stateMgr.save(state, ctx.cwd);
+      widgetMgr.update(ctx);
+      pi.sendMessage(
+        {
+        customType: "harness-stage-start",
+        content: `[STAGE 14/${WORKFLOW_STAGES.length}: ${s14.name}]\n${s14.prompt}`,
+        display: true,
+        },
+        { triggerTurn: true }
+      );
+      }
+    } else {
+      nextAction = `Gate PASSED. Phase 3 complete.\n${gateResult.output}`;
+    }
+    } else {
+    nextAction = `Gate FAILED.\n${gateResult.output}`;
+    if (s.round < config.maxRounds) {
+      nextAction += `\nRetrying — starting round ${s.round + 1}/${config.maxRounds}`;
+      engine.startRound();
+      const prompt = engine.getPrompt();
+      pi.sendMessage(
+      { customType: "loop-retry", content: `[Phase 3 Loop Retry Round ${s.round}]\n${prompt}`, display: true },
+      { triggerTurn: true }
+      );
+    } else {
+      nextAction += "\nMax rounds reached. Phase 3 FAILED.";
+    }
+    }
+  } else if (s.phase === "failed") {
+    nextAction = `Phase 3 FAILED. Max rounds (${config.maxRounds}) reached with incomplete items.`;
+  } else {
+    // in_round — 继续下一轮
+    engine.startRound();
+    const prompt = engine.getPrompt();
+    nextAction = `Round ${s.round} complete. Starting round ${s.round + 1}/${config.maxRounds}`;
+    pi.sendMessage(
+    { customType: "loop-next-round", content: `[Phase 3 Loop Round ${s.round + 1}]\n${prompt}`, display: true },
+    { triggerTurn: true }
+    );
+  }
+
+  return {
+    content: [{ type: "text", text: nextAction }],
+    details: { loopPhase: s.phase, round: s.round },
+  };
+  },
+  });
+
+  pi.registerTool({
+  name: "harness_loop_exit",
+  label: "Harness Loop Exit",
+  description:
+  "Exit the Loop early with a reason. Use when the Loop cannot continue " +
+  "(e.g., all items are blocked, environment is broken). Only used during Phase 3.",
+  parameters: Type.Object({
+  reason: Type.String({ description: "Reason for early exit" }),
+  }),
+  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  const state = stateMgr.load(ctx.cwd);
+  if (!state) {
+    throw new Error("No active workflow.");
+  }
+  if (state.currentPhase !== 3) {
+    throw new Error("Not in Phase 3.");
+  }
+
+  return {
+    content: [
+    {
+      type: "text",
+      text: `Loop exited early: ${params.reason}. Gate will run with current evidence.`,
+    },
+    ],
+    details: { earlyExit: true },
+  };
   },
   });
 

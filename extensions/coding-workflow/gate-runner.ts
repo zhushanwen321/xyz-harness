@@ -33,8 +33,12 @@ export class GateRunner {
   case "12": return await gate_12(projectRoot, signal);
   case "13": return await gate_13(projectRoot, signal);
   case "14": return await gate_14(projectRoot, signal);
+  // "phase3" 不通过 GateRunner 调度 — LoopEngine.runGate() 直接调用 L1/L2 函数
+  // 此处仅做 fallback 防护
+  case "phase3":
+  return { passed: false, output: "Phase 3 gate must be called via LoopEngine.runGate(), not GateRunner" };
   default:
-  return { passed: false, output: `Unknown gate: ${gateNumber}. Valid: 03 05 07 09 10 11 12 13 14` };
+  return { passed: false, output: `Unknown gate: ${gateNumber}. Valid: 03 05 07 09 10 11 12 14 phase3` };
   }
   } catch (err) {
   const msg = err instanceof Error ? err.message : String(err);

@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
+import type { EvidenceFile, LoopConfig } from "../types.js";
 
 // ── 类型定义 ────────────────────────────────────────────────
 
@@ -203,9 +204,10 @@ export function checkNoMustFix(
 
   // ── 路径 A：YAML frontmatter（优先） ──
   const yamlResult = checkYamlVerdict(content);
+  // checkYamlVerdict 不再返回 null：有 YAML 就返回 ok/fail，无 YAML 返回 null
   if (yamlResult !== null) return yamlResult;
 
-  // ── 路径 B：旧正则（回退，向后兼容） ──
+  // ── 路径 B：旧正则（回退，无 YAML frontmatter 时使用） ──
   return checkNoMustFixLegacy(content);
 }
 
@@ -234,27 +236,70 @@ export function checkYamlVerdict(
   const yaml = extractYamlBlock(content);
   if (!yaml) return null;
 
-  // 1. 读 review.verdict 字段（支持 2-4 空格缩进）
-  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z]+)\s*$/m);
+  // 1. 读 verdict 字段（扁平 `verdict:` 或嵌套 `  verdict:`）
+  //    支持 pass / fail / passed_with_fixes 等带下划线和数字的值
+  const verdictMatch = yaml.match(/^\s*verdict:\s*([a-z][a-z0-9_]*)\s*$/m);
   if (verdictMatch) {
   const verdict = verdictMatch[1];
   if (verdict === "pass") {
   return { ok: true, output: "[PASS] review verdict: pass" };
   }
-  return { ok: false, output: `[FAIL] review verdict: ${verdict} (expected pass)` };
+  // 给出具体的修复指引
+  return {
+  ok: false,
+  output: [
+    `[FAIL] review verdict: "${verdict}" (expected "pass")`,
+    `  修复指引：将 YAML frontmatter 中的 verdict 字段值改为 "pass"`,
+    `  合法值：pass | fail（不允许 passed_with_fixes 等中间状态）`,
+    `  注意：所有 MUST FIX 问题解决后才能设为 pass`,
+  ].join("\n"),
+  };
   }
 
-  // 2. 回退：读 statistics.must_fix 字段
+  // 2. 回退：��� statistics.must_fix 或 must_fix 字段
   const mustFixMatch = yaml.match(/^\s*must_fix:\s*(\d+)\s*$/m);
   if (mustFixMatch) {
   const count = parseInt(mustFixMatch[1], 10);
   if (count === 0) {
   return { ok: true, output: "[PASS] 0 unresolved MUST FIX items" };
   }
-  return { ok: false, output: `[FAIL] ${count} unresolved MUST FIX item(s) remain` };
+  return {
+  ok: false,
+  output: [
+    `[FAIL] ${count} unresolved MUST FIX item(s) remain`,
+    `  修复指引：解决上述所有 MUST FIX 问题后重新生成评审报告`,
+  ].join("\n"),
+  };
   }
 
-  return null;
+  // YAML frontmatter 存在但缺少关键字段 — 给出具体诊断
+  const hasVerdictKey = /^\s*verdict:/m.test(yaml);
+  const hasMustFixKey = /^\s*must_fix:/m.test(yaml);
+  const yamlLines = yaml.split("\n").slice(0, 15).join("\n");
+  const missingFields: string[] = [];
+  if (!hasVerdictKey) missingFields.push("verdict");
+  if (!hasMustFixKey) missingFields.push("must_fix (或 statistics.must_fix)");
+
+  return {
+  ok: false,
+  output: [
+    `[FAIL] YAML frontmatter 存在但缺少必需字段：${missingFields.join(", ")}`,
+    `  期望格式（扁平）：`,
+    `    ---`,
+    `    verdict: pass    # 必需，合法值: pass | fail`,
+    `    must_fix: 0      # 必需，open 状态的 MUST_FIX 数量`,
+    `    ---`,
+    `  或嵌套格式：`,
+    `    ---`,
+    `    review:`,
+    `      verdict: pass  # 必需，合法值: pass | fail`,
+    `    statistics:`,
+    `      must_fix: 0    # 必需，open 状态的 MUST_FIX 数量`,
+    `    ---`,
+    `  实际 YAML 内容（前 15 行）：`,
+    `    ${yamlLines.split("\n").join("\n    ")}`,
+  ].join("\n"),
+  };
 }
 
 // ── 旧正则逻辑（向后兼容） ──────────────────────────────
@@ -500,4 +545,198 @@ function truncateOutput(text: string, maxLen: number = 2000): string {
   const head = text.slice(0, headLen);
   const tail = text.slice(text.length - tailLen);
   return `${head}\n...(truncated)...\n${tail}`;
+}
+
+// ── L1 检查调度器 ────────────────────────────────────────
+
+/**
+ * L1 检查函数映射表。
+ * name → 检查函数，所有函数签名统一为 (evidence, config, cwd?, planPath?) => result。
+ */
+const L1_CHECK_MAP: Record<
+  string,
+  (evidence: EvidenceFile, config: LoopConfig, cwd?: string, planPath?: string) => { pass: boolean; output: string }
+> = {
+  item_coverage,
+  executed_per_item,
+  verification_round_completed,
+  verification_all_executed,
+  evidence_files_exist,
+};
+
+/**
+ * 统一的 L1 检查调度器。
+ * 通过 checkName 查找对应预定义检查函数并执行。
+ *
+ * @param checkName - 检查名称，必须是 L1_CHECK_MAP 中的 key
+ * @param evidence - evidence JSON 数据
+ * @param config - LoopConfig 或检查配置对象
+ * @param cwd - 工作目录（用于文件存在性检查）
+ * @param planPath - 可选的 plan 文件路径（用于 item 覆盖率检查）
+ * @returns `{ pass, output }`
+ */
+export function runL1Check(
+  checkName: string,
+  evidence: EvidenceFile,
+  config: LoopConfig,
+  cwd: string,
+  planPath?: string
+): { pass: boolean; output: string } {
+  const fn = L1_CHECK_MAP[checkName];
+  if (!fn) {
+  return {
+    pass: false,
+    output: `[FAIL] Unknown L1 check: ${checkName}. Available: ${Object.keys(L1_CHECK_MAP).join(", ")}`,
+  };
+  }
+  return fn(evidence, config, cwd, planPath);
+}
+
+// ── Phase 3 L1 预定义检查函数 ────────────────────────────
+
+export function item_coverage(
+  evidence: EvidenceFile,
+  config: LoopConfig,
+  cwd?: string,
+  itemSourcePath?: string
+): { pass: boolean; output: string } {
+  // 从 evidence 中收集所有 item_id
+  const allItems = new Set<string>();
+  for (const round of evidence?.rounds ?? []) {
+  for (const item of round.items ?? []) {
+    allItems.add(item.item_id);
+  }
+  }
+  for (const item of evidence?.verification_round?.items ?? []) {
+  allItems.add(item.item_id);
+  }
+
+  // 从 plan 中提取期望的 item 列表
+  // 目前从 evidence.state.totalItems 推断，未来可从 itemSourcePath 解析
+  const totalExpected = evidence?.state?.totalItems ?? 0;
+  if (allItems.size >= totalExpected && totalExpected > 0) {
+  return { pass: true, output: `[PASS] item_coverage: ${allItems.size}/${totalExpected} items covered` };
+  }
+  return {
+  pass: false,
+  output: `[FAIL] item_coverage: only ${allItems.size}/${totalExpected} items covered. Missing: ${totalExpected - allItems.size} items`
+  };
+}
+
+export function executed_per_item(
+  evidence: EvidenceFile,
+  config: LoopConfig
+): { pass: boolean; output: string } {
+  const completedStatus = config?.completedStatus ?? "EXECUTED";
+  const itemIdField = config?.itemIdField ?? "item_id";
+
+  // 收集每个 item 的所有 status
+  const itemStatuses = new Map<string, Set<string>>();
+  for (const round of evidence?.rounds ?? []) {
+  for (const item of round.items ?? []) {
+    const id = item[itemIdField];
+    if (!id) continue;
+    if (!itemStatuses.has(id)) itemStatuses.set(id, new Set());
+    itemStatuses.get(id)!.add(item.status);
+  }
+  }
+
+  const failed: string[] = [];
+  for (const [id, statuses] of itemStatuses) {
+  if (!statuses.has(completedStatus)) {
+    failed.push(id);
+  }
+  }
+
+  if (failed.length === 0) {
+  return { pass: true, output: `[PASS] executed_per_item: all ${itemStatuses.size} items have ${completedStatus} status` };
+  }
+  return {
+  pass: false,
+  output: `[FAIL] executed_per_item: ${failed.length} items never reached ${completedStatus}: ${failed.join(", ")}`
+  };
+}
+
+export function verification_round_completed(
+  evidence: EvidenceFile,
+  _config: LoopConfig
+): { pass: boolean; output: string } {
+  const completed = evidence?.verification_round?.completed === true;
+  if (completed) {
+  return { pass: true, output: "[PASS] verification_round_completed: true" };
+  }
+  return { pass: false, output: "[FAIL] verification_round_completed: false or missing" };
+}
+
+export function verification_all_executed(
+  evidence: EvidenceFile,
+  config: LoopConfig
+): { pass: boolean; output: string } {
+  const completedStatus = config?.completedStatus ?? "EXECUTED";
+  const items = evidence?.verification_round?.items ?? [];
+
+  if (items.length === 0) {
+  return { pass: false, output: "[FAIL] verification_all_executed: no items in verification round" };
+  }
+
+  const failed = items.filter((item: { status: string }) => item.status !== completedStatus);
+  if (failed.length === 0) {
+  return { pass: true, output: `[PASS] verification_all_executed: all ${items.length} items are ${completedStatus}` };
+  }
+  const failedIds = failed.map((item: { item_id?: string }) => item.item_id ?? "unknown");
+  return {
+  pass: false,
+  output: `[FAIL] verification_all_executed: ${failed.length}/${items.length} items not ${completedStatus}: ${failedIds.join(", ")}`
+  };
+}
+
+export function evidence_files_exist(
+  evidence: EvidenceFile,
+  _config: LoopConfig,
+  cwd?: string
+): { pass: boolean; output: string } {
+  const workDir = cwd ?? process.cwd();
+  const MIN_SIZE = 1024; // 1KB
+
+  // 收集所有证据文件路径
+  const filePaths: string[] = [];
+  for (const round of evidence?.rounds ?? []) {
+  for (const item of round.items ?? []) {
+    const screenshots = item?.evidence?.screenshots ?? [];
+    filePaths.push(...screenshots);
+  }
+  }
+  for (const item of evidence?.verification_round?.items ?? []) {
+  const screenshots = item?.evidence?.screenshots ?? [];
+  filePaths.push(...screenshots);
+  }
+
+  if (filePaths.length === 0) {
+  // 没有声明任何文件，跳过检查
+  return { pass: true, output: "[PASS] evidence_files_exist: no files declared (skipped)" };
+  }
+
+  const missing: string[] = [];
+  const tooSmall: string[] = [];
+
+  for (const relPath of filePaths) {
+  const absPath = join(workDir, relPath);
+  if (!existsSync(absPath)) {
+    missing.push(relPath);
+    continue;
+  }
+  const stat = statSync(absPath);
+  if (stat.size < MIN_SIZE) {
+    tooSmall.push(`${relPath} (${stat.size}B)`);
+  }
+  }
+
+  if (missing.length === 0 && tooSmall.length === 0) {
+  return { pass: true, output: `[PASS] evidence_files_exist: all ${filePaths.length} files verified (>1KB)` };
+  }
+
+  const parts: string[] = [];
+  if (missing.length > 0) parts.push(`Missing: ${missing.join(", ")}`);
+  if (tooSmall.length > 0) parts.push(`Too small: ${tooSmall.join(", ")}`);
+  return { pass: false, output: `[FAIL] evidence_files_exist: ${parts.join("; ")}` };
 }

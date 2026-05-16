@@ -513,8 +513,6 @@ export async function gate_12(
 
   // ── 全部通过 ───────────────────────────────────────────
 
-  console.log(outputLines.join("\n"));
-
   return createPassFile(projectRoot, "12", "gate 12: E2E execution evidence verified");
 }
 

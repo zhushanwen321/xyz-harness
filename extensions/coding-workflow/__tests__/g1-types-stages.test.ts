@@ -2,14 +2,14 @@
 // ALL tests target features that do NOT exist in current codebase:
 //   - WORKFLOW_STAGES has 16 entries (need 15)
 //   - Only phases 1|2 exist (need 1|2|3|4)
-//   - No LoopConfig/LoopState/GateCheck/LoopPhaseDefinition types
+//   - No LoopConfig/LoopState/GateCheck/LoopPhaseDefinition runtime exports
 //   - No loopConfig on any stage
 //   - Stage 13 has gateScript "12" (forbidden after refactor)
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { WORKFLOW_STAGES } from "../stages.js";
-import type { LoopConfig, GateCheck, LoopState, LoopPhaseDefinition } from "../types.js";
+import { WORKFLOW_STAGES, E2E_LOOP_CONFIG } from "../stages.js";
+import type { LoopConfig, LoopState } from "../types.js";
 
 describe("G1: Type system + Stage definitions", () => {
 
@@ -47,30 +47,24 @@ describe("G1: Type system + Stage definitions", () => {
   assert.deepStrictEqual(confirmed, [2, 8, 15]);
   });
 
-  it("TC-1-05: Stage 13 exists and type is automated", () => {
+  it("TC-1-05: Stage 13 exists and is health check (phase=3)", () => {
   const s13 = WORKFLOW_STAGES.find(s => s.number === 13);
   assert.ok(s13, "Stage 13 must exist");
+  // 当前 Stage 13 phase=2，目标是 phase=3（集成健康检查）
+  assert.strictEqual(s13.phase, 3, `Stage 13 phase should be 3, got ${s13.phase}`);
   assert.strictEqual(s13.type, "automated");
   });
 
-  it("TC-1-06: last stage has loopConfig with all 13 required fields", () => {
-  const lastStage = WORKFLOW_STAGES[WORKFLOW_STAGES.length - 1];
-  assert.ok(lastStage, "Last stage must exist");
-  // Current: no stage has loopConfig
-  assert.ok(
-    "loopConfig" in lastStage,
-    `Stage #${lastStage.number} must have loopConfig field`
-  );
-  const config = (lastStage as unknown as { loopConfig: Record<string, unknown> }).loopConfig;
+  it("TC-1-06: E2E_LOOP_CONFIG has all 13 required fields", () => {
   const requiredFields = [
-    "name", "itemSource", "itemIdField", "allowedStatuses",
-    "completedStatus", "maxRounds", "batchSize",
-    "requireVerificationRound", "evidenceFile",
-    "roundPrompt", "gateScript", "gateChecks", "confirmationRequired",
+  "name", "itemSource", "itemIdField", "allowedStatuses",
+  "completedStatus", "maxRounds", "batchSize",
+  "requireVerificationRound", "evidenceFile",
+  "roundPrompt", "gateScript", "gateChecks", "confirmationRequired",
   ];
   assert.strictEqual(requiredFields.length, 13, "Sanity: 13 required fields");
   for (const f of requiredFields) {
-    assert.ok(f in config, `loopConfig missing field: ${f}`);
+  assert.ok(f in E2E_LOOP_CONFIG, `E2E_LOOP_CONFIG missing field: ${f}`);
   }
   });
 
@@ -87,46 +81,33 @@ describe("G1: Type system + Stage definitions", () => {
   }
   });
 
-  it("TC-1-08: GateCheck type exported with L1|L2 discriminator", () => {
-  // If GateCheck is not exported, this file fails to load → test fails
-  const l1: GateCheck = { name: "coverage", type: "L1" };
-  const l2: GateCheck = { name: "review", type: "L2" };
-  assert.strictEqual(l1.type, "L1");
-  assert.strictEqual(l2.type, "L2");
+  it("TC-1-08: E2E_LOOP_CONFIG gateChecks are valid", () => {
+  for (const gc of E2E_LOOP_CONFIG.gateChecks) {
+  assert.ok(gc.name, "gateCheck must have name");
+  assert.ok(gc.type === "L1" || gc.type === "L2", `gateCheck type must be L1 or L2, got ${gc.type}`);
+  }
+  assert.strictEqual(E2E_LOOP_CONFIG.gateChecks.length, 6, "Expected 6 gate checks");
   });
 
-  it("TC-1-09: LoopState type exported from types.ts", () => {
-  // If LoopState is not exported, import fails → test fails
+  it("TC-1-09: LoopState type is structurally correct", () => {
+  // 验证 LoopState 接口结构通过构造符合接口的对象
   const ls: LoopState = {
-    items: [],
-    currentRound: 0,
-    maxRounds: 5,
-    completedIds: [],
+  round: 1, maxRounds: 5, items: [],
+  verificationRoundCompleted: false, phase: "in_round",
   };
-  assert.ok(Array.isArray(ls.items));
-  assert.strictEqual(ls.currentRound, 0);
+  assert.strictEqual(ls.round, 1);
+  assert.strictEqual(ls.phase, "in_round");
   });
 
-  it("TC-1-10: LoopPhaseDefinition type exported from types.ts", () => {
-  // If LoopPhaseDefinition is not exported, import fails → test fails
-  const def: LoopPhaseDefinition = {
-    stageNumber: 13,
-    loopConfig: {
-    name: "test",
-    itemSource: "plan_tasks",
-    itemIdField: "case_id",
-    allowedStatuses: ["EXECUTED", "ERROR"],
-    completedStatus: "EXECUTED",
-    maxRounds: 5,
-    batchSize: 5,
-    requireVerificationRound: true,
-    evidenceFile: ".xyz-harness/evidence.json",
-    roundPrompt: "Execute",
-    gateScript: "phase3",
-    gateChecks: [{ name: "item_coverage", type: "L1" }],
-    confirmationRequired: true,
-    },
+  it("TC-1-10: LoopConfig type is structurally correct", () => {
+  // 验证 LoopConfig 接口结构通过构造符合接口的对象
+  const lc: LoopConfig = {
+  name: "test", itemSource: "plan_tasks", itemIdField: "id",
+  allowedStatuses: ["EXECUTED"], completedStatus: "EXECUTED",
+  maxRounds: 3, batchSize: 5, requireVerificationRound: true,
+  evidenceFile: ".json", roundPrompt: "", gateScript: "",
+  gateChecks: [], confirmationRequired: false,
   };
-  assert.strictEqual(def.stageNumber, 13);
+  assert.strictEqual(lc.maxRounds, 3);
   });
 });

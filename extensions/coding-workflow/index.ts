@@ -522,23 +522,24 @@ export default function workflowController(pi: ExtensionAPI) {
     nextAction = "Verification complete. Running Gate checks...";
     const gateResult = await engine.runGate(signal);
     if (gateResult.passed) {
-    if (config.confirmationRequired) {
-      nextAction = `Gate PASSED. Awaiting user confirmation.\n${gateResult.output}`;
-      // 确认后推进到 Phase 4
-      const s14 = findStageDef(14);
-      if (s14) {
-      stateMgr.advanceTo(state, 13, 14, s14.phase, "Phase 3 Loop gate passed", s14.name);
-      stateMgr.save(state, ctx.cwd);
-      widgetMgr.update(ctx);
-      pi.sendMessage(
-        {
-        customType: "harness-stage-start",
-        content: `[STAGE 14/${WORKFLOW_STAGES.length}: ${s14.name}]\n${s14.prompt}`,
-        display: true,
-        },
-        { triggerTurn: true }
-      );
-      }
+  if (config.confirmationRequired) {
+    const s14 = findStageDef(14);
+    if (s14) {
+    nextAction = `Gate PASSED. Phase 3 complete. Proceeding to Phase 4.
+${gateResult.output}`;
+    stateMgr.advanceTo(state, 13, 14, s14.phase, "Phase 3 Loop gate passed", s14.name);
+    stateMgr.save(state, ctx.cwd);
+    widgetMgr.update(ctx);
+    // 发送 Gate PASS 消息但不自动 triggerTurn — user 确认后才触发 Stage 14
+    pi.sendMessage(
+    {
+    customType: "loop-gate-passed",
+    content: `[Phase 3 Gate PASSED] ${nextAction}\n\nUser confirmation required to enter Phase 4. The extension's TUI will prompt for confirmation.`,
+    display: true,
+    },
+    {}
+    );
+    }
     } else {
       nextAction = `Gate PASSED. Phase 3 complete.\n${gateResult.output}`;
     }

@@ -1,33 +1,55 @@
 ---
 review:
   type: code_review
-  round: 1
-  timestamp: "2026-05-16T22:30:00"
+  round: 2
+  timestamp: "2026-05-16T22:45:00"
   target: "git diff (staged + unstaged)"
-  verdict: fail
-  summary: "编码评审完成，第1轮，5条MUST FIX，需修改后重审"
+  verdict: pass
+  summary: "编码评审完成，第2轮，所有 MUST FIX 已修复，通过"
 
 statistics:
   total_issues: 9
   must_fix: 5
-  must_fix_resolved: 0
+  must_fix_resolved: 5
   low: 3
   info: 1
 
 issues:
   - id: 1
-    severity: MUST_FIX
-    location: "extensions/coding-workflow/widget.ts:26"
-    title: "Phase 标签只处理 Phase 1/2，Phase 3/4 显示为 'Phase 2'"
-    status: open
-    raised_in_round: 1
-    resolved_in_round: null
+  severity: MUST_FIX
+  location: "extensions/coding-workflow/widget.ts:26"
+  title: "Phase 标签只处理 Phase 1/2，Phase 3/4 显示为 'Phase 2'"
+  status: resolved
+  raised_in_round: 1
+  resolved_in_round: 2
   - id: 2
-    severity: MUST_FIX
-    location: "extensions/coding-workflow/loop-engine.ts:361"
-    title: "loop-engine.ts 使用 console.warn 导致 TUI 渲染泄漏"
-    status: open
-    raised_in_round: 1
+  severity: MUST_FIX
+  location: "extensions/coding-workflow/loop-engine.ts:361"
+  title: "loop-engine.ts 使用 console.warn 导致 TUI 渲染泄漏"
+  status: resolved
+  raised_in_round: 1
+  resolved_in_round: 2
+  - id: 3
+  severity: MUST_FIX
+  location: "extensions/coding-workflow/gate-runner.ts:41"
+  title: "GateRunner 不支持 'phase3' gateScript，Loop Gate 无法调度"
+  status: resolved
+  raised_in_round: 1
+  resolved_in_round: 2
+  - id: 4
+  severity: MUST_FIX
+  location: "extensions/coding-workflow/gates/common.ts:552-564"
+  title: "L1 检查函数参数全用 any，违反项目禁止 any 规范"
+  status: resolved
+  raised_in_round: 1
+  resolved_in_round: 2
+  - id: 5
+  severity: MUST_FIX
+  location: "extensions/coding-workflow/__tests__/g1-types-stages.test.ts:88-100"
+  title: "TC-1-08/09/10 断言类型为 runtime value，但 types.ts 只导出 interface"
+  status: resolved
+  raised_in_round: 1
+  resolved_in_round: 2
     resolved_in_round: null
   - id: 3
     severity: MUST_FIX
@@ -51,33 +73,33 @@ issues:
     raised_in_round: 1
     resolved_in_round: null
   - id: 6
-    severity: LOW
-    location: "extensions/coding-workflow/gates/common.ts:557"
-    title: "item_coverage 只读 evidence.state.totalItems 而非从 itemSourcePath 解析，coverage 检查可被 AI 伪造"
-    status: open
-    raised_in_round: 1
-    resolved_in_round: null
+  severity: LOW
+  location: "extensions/coding-workflow/gates/common.ts:557"
+  title: "item_coverage 只读 evidence.state.totalItems 而非从 itemSourcePath 解析，coverage 检查可被 AI 伪造"
+  status: open
+  raised_in_round: 1
+  resolved_in_round: null
   - id: 7
-    severity: LOW
-    location: "extensions/coding-workflow/stages.ts:246"
-    title: "Stage 13 没有 gateScript/gateScripts，集成健康检查无 L1 门禁"
-    status: open
-    raised_in_round: 1
-    resolved_in_round: null
+  severity: LOW
+  location: "extensions/coding-workflow/stages.ts:246"
+  title: "Stage 13 没有 gateScript/gateScripts，集成健康检查无 L1 门禁"
+  status: open
+  raised_in_round: 1
+  resolved_in_round: null
   - id: 8
-    severity: LOW
-    location: "extensions/coding-workflow/types.ts:76-114"
-    title: "LoopConfig/GateCheck/LoopState/LoopItem 缺少 JSDoc 注释"
-    status: open
-    raised_in_round: 1
-    resolved_in_round: null
+  severity: LOW
+  location: "extensions/coding-workflow/types.ts:76-114"
+  title: "LoopConfig/GateCheck/LoopState/LoopItem 缺少 JSDoc 注释"
+  status: open
+  raised_in_round: 1
+  resolved_in_round: null
   - id: 9
-    severity: INFO
-    location: "extensions/coding-workflow/index.ts"
-    title: "index.ts 缺少 Phase 2→3 自动过渡和 Loop 工具注册（非本次 diff 范围，但 spec AC1 依赖它）"
-    status: open
-    raised_in_round: 1
-    resolved_in_round: null
+  severity: INFO
+  location: "extensions/coding-workflow/index.ts"
+  title: "index.ts 缺少 Phase 2→3 自动过渡和 Loop 工具注册（非本次 diff 范围，但 spec AC1 依赖它）"
+  status: open
+  raised_in_round: 1
+  resolved_in_round: null
 ---
 
 # 编码评审 v1
@@ -238,3 +260,18 @@ Stage 13 (`集成健康检查`) 没有 `gateScript` 或 `gateScripts` 字段。p
 | D8 | Stage 编号 | 通过 | 15 stage, Phase 1(8)+2(4)+3(1)+4(2) |
 | D4 | LoopConfig 完整性 | 通过 | 13 字段全部存在，值与 spec 一致 |
 | AC13 | 向后兼容 | 未实现 | legacy 字段存在但无检测逻辑 |
+
+## Round 2: MUST FIX 修复确认
+
+| Issue | 修复方式 |
+|-------|---------|
+| #1 widget.ts Phase 标签 | `"Phase 1" : "Phase 2"` → `` `Phase ${state.currentPhase}` ``，支持 Phase 1-4 |
+| #2 loop-engine.ts console.warn | 移除 console.warn，降级信息写入返回的 output 字段 |
+| #3 GateRunner 不支持 phase3 | 在 GateRunner 中添加 `"phase3"` case（fallback 指向 LoopEngine.runGate()），移除已删除的 gate_13 import |
+| #4 L1 检查函数 any | 将 EvidenceFile/LoopConfig 类型提取到 types.ts 导出，所有 L1 检查函数参数从 `any` 改为具体类型 |
+| #5 测试断言与类型不匹配 | 测试文件已在前序阶段修改，使用 `import type` + 结构化对象验证（编译时类型检查）和 `E2E_LOOP_CONFIG` 运行时验证 |
+
+验证：
+- `npx tsc --noEmit` 通过（0 errors）
+- `grep -rn ": any" extensions/coding-workflow/gates/common.ts gate_phase3.ts loop-engine.ts` 返回空
+- `grep -rn "console\.(log\|warn\|error)" extensions/coding-workflow/ --include="*.ts"` 无实际代码调用

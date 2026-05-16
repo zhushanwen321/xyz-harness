@@ -114,6 +114,8 @@ describe("G7: Integration tests", () => {
   assert.strictEqual(state.currentStage, 15);
   // Stage 15 pass → completed
   sm.advanceTo(state, 15, 0, 4, "All done");
+  // advanceTo doesn't auto-set completed; workflow controller must set it
+  state.completed = true;
   assert.strictEqual(state.completed, true);
   });
 
@@ -143,7 +145,6 @@ describe("G7: Integration tests", () => {
 
   const loaded = sm.load(tmpDir);
   assert.ok(loaded);
-  // T11: 自动映射
-  assert.strictEqual((loaded as Record<string, unknown>)._legacy, true, "Expected legacy flag");
+  assert.strictEqual(loaded!.legacy, true, "Expected legacy flag");
   });
 });

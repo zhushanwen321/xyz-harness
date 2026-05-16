@@ -4,7 +4,7 @@
   "topicDir": "2026-05-16-spec",
   "projectRoot": "/Users/zhushanwen/Code/xyz-harness-engineering-workspace/xyz-harness-engineering",
   "currentPhase": 2,
-  "currentStage": 11,
+  "currentStage": 12,
   "completed": false,
   "startedAt": "2026-05-16T11:09:08.673Z",
   "stages": [
@@ -246,8 +246,18 @@
     {
       "number": 11,
       "name": "编码评审",
-      "status": "active",
+      "status": "pass",
       "startedAt": "2026-05-16T13:17:28.120Z",
+      "completedAt": "2026-05-16T13:28:14.064Z",
+      "gateResult": "pass",
+      "gateOutput": null,
+      "tasks": []
+    },
+    {
+      "number": 12,
+      "name": "单元测试",
+      "status": "active",
+      "startedAt": "2026-05-16T13:28:14.064Z",
       "completedAt": null,
       "gateResult": null,
       "gateOutput": null,

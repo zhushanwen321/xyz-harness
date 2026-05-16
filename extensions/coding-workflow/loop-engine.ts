@@ -67,26 +67,44 @@ export class LoopEngine {
   // ── 初始化 ─────────────────────────────────────────
 
   init(): void {
-  // 创建空 evidence JSON
+  // 创建证据 JSON
   const absPath = join(this.projectRoot, this.resolvedEvidenceFile);
   const dir = dirname(absPath);
   mkdirSync(dir, { recursive: true });
 
-  const initialEvidence: EvidenceFile = {
-    loop: this.config.name.toLowerCase().replace(/\s+/g, "-"),
-    state: {
-    totalItems: 0,
-    completedItems: 0,
-    currentRound: 0,
-    maxRounds: this.config.maxRounds,
-    phase: "initializing",
-    verificationRoundCompleted: false,
-    },
-    rounds: [],
-    verification_round: {
+  // 尝试读取 plan 阶段生成的 template JSON 获取预期目标列表
+  const templatePath = join(this.projectRoot, 
+  `.xyz-harness/${this.topicDir}/changes/evidence/e2e-evidence-template.json`);
+  let totalItems = 0;
+  let initialItems: Array<{item_id: string; plan_ref: string; completed: boolean; firstCompletedRound: null}> = [];
+  try {
+  const template = JSON.parse(readFileSync(templatePath, "utf-8"));
+  if (Array.isArray(template.expected_cases)) {
+    totalItems = template.expected_cases.length;
+    initialItems = template.expected_cases.map((tc: any) => ({
+    item_id: tc.case_id || tc.item_id || `case-${Math.random().toString(36).slice(2,6)}`,
+    plan_ref: tc.group || tc.name || "",
     completed: false,
-    startedAt: null,
-    items: [],
+    firstCompletedRound: null,
+    }));
+  }
+  } catch { /* 无 template 时保持空 evidence */ }
+
+  const initialEvidence: EvidenceFile = {
+  loop: this.config.name.toLowerCase().replace(/\s+/g, "-"),
+  state: {
+  totalItems,
+  completedItems: 0,
+  currentRound: 0,
+  maxRounds: this.config.maxRounds,
+  phase: "initializing",
+  verificationRoundCompleted: false,
+  },
+  rounds: [],
+  verification_round: {
+  completed: false,
+  startedAt: null,
+  items: [],
     },
   };
 
@@ -107,7 +125,11 @@ export class LoopEngine {
   }
 
   onRoundComplete(): "next_round" | "verification" | "gate_check" | "failed" {
-  this.readEvidenceFromDisk();
+  const evidence = this.readEvidenceFromDisk();
+  // 从 evidence 同步 verificationRoundCompleted
+  if (evidence) {
+  this._state.verificationRoundCompleted = evidence.verification_round?.completed ?? false;
+  }
 
   // 统计 completedItems
   const completedStatus = this.config.completedStatus;

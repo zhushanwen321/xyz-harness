@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { WorkflowState, PhaseId, PhaseTransitionState } from "./types.js";
-import { createInitialState } from "./types.js";
+import type { WorkflowState, PhaseId } from "./types.js";
 import { getPhaseConfig, getStageList } from "./stages.js";
 
 const STATE_FILENAME = "workflow-state.json";

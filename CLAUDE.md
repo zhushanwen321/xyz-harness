@@ -1,52 +1,83 @@
 # XYZ Harness Engineering
 
-## Project Background
+## 项目背景
 
-xyz-harness V5 — Loop-Based Phase Architecture. Contains:
-- `extensions/coding-workflow/` — Pi extension: 5-Phase Loop development workflow controller with L1/L2 gate system
-- `extensions/todolist/` — Pi extension: Task tracking
-- `extensions/claude-rules-loader/` — Pi extension: Cross-project rule loading
-- `agents/` — Subagent definitions (harness-retrospect)
-- `skills/` — SKILL.md skill definitions
-- `commands/` — Slash command definitions
+xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 extension 工具或 agent。
+所有的开发流程由用户手动触发 skill 引导 AI 完成。
 
-Tech stack: TypeScript (Pi Extension API), Markdown (agent/skill definitions).
+包含：
+- `extensions/todolist/` — Pi 扩展：任务追踪
+- `extensions/claude-rules-loader/` — Pi 扩展：跨项目规则加载
+- `skills/` — SKILL.md 技能定义（14 个：8 个通用方法论 + 6 个 phase skill）
 
-## Architecture Constraints
+技术栈：TypeScript (Pi Extension API)、Markdown (skill 定义)。
 
-### Extension Architecture
-- Pi Extension compiled via ESBuild (syntax check only, no type checking)
-- Imports use `.js` extension (ESM)
-- Global types from `@mariozechner/pi-coding-agent` (Pi runtime)
-- Extension directory resolved via `import.meta.url`
+## 架构设计
 
-### Gate System (coding-workflow)
-- Each Phase has independent L1 gate (`gates/gate_<phase>.ts`)
-- `common.ts` provides shared utilities (file checks, YAML parsing, test case comparison)
-- `gate-runner.ts` dispatches by phase number
-- `gate-verifier.ts` provides L2 LLM anti-fabrication verification (fail-open)
-- L2 verification runs automatically after L1 passes
+### 哲学
 
-### Script Management
-- Scripts in `extensions/coding-workflow/scripts/`
-- Skill directories use symlinks to extension directory
+- **Pure Skill**：没有强制约束（no auto-gate, no state file, no loop engine）
+- **Manual Control**：用户决定何时开始 phase、何时推进、何时检查 gate
+- **Separate Gate**：gate 检查在独立对话中执行，避免 bias
+- **No Subagent Dispatch**：AI 自主决定是否使用 subagent，不强制
 
-## Document Index
+### 工作流程
 
-| Document | Path | Purpose |
-|----------|------|---------|
-| V5 Spec | `.superpowers/2026-05-16-harness-v5-loop-phases/spec.md` | Architecture design |
-| V5 Plan | `.superpowers/2026-05-16-harness-v5-loop-phases/plan.md` | Implementation plan |
-| Phase Definitions | `extensions/coding-workflow/stages.ts` | 5 Phase config |
-| Gate System | `extensions/coding-workflow/gates/` | Per-phase L1 gates |
-| L2 Verifier | `extensions/coding-workflow/gate-verifier.ts` | LLM anti-fabrication |
-| State Manager | `extensions/coding-workflow/state-manager.ts` | Workflow state persistence |
-| Workflow Controller | `extensions/coding-workflow/index.ts` | Main entry + tool registration |
-| Retrospect Subagent | `agents/harness-retrospect/agent.md` | Phase retrospective |
-| Retrospectives | `docs/retrospectives/` | Post-harness retrospective notes |
+```
+用户: "开始 Phase 1 spec"
+  → Phase 1 skill 加载 → AI 按 guide 工作
+  → 产出 spec.md + spec_review
 
-## Quality Gates
+用户: "检查 gate"（在另一个对话中）
+  → Gate skill 加载 → AI 逐项验证交付物
+  → 报告 PASS/FAIL
 
-- Type check: `npx tsc --noEmit`
-- Test: `npx tsx --test extensions/coding-workflow/__tests__/*.test.ts`
-- Lint: `npx tsc --noEmit`
+用户: "开始 Phase 2 plan"
+  → Phase 2 skill 加载 → AI 按 guide 工作
+  → 产出 plan.md + e2e-test-plan.md + test_cases_template.json + plan_review
+
+用户: "检查 gate"（另一个对话）
+  → Gate skill 验证 Phase 2 交付物
+
+...重复到 Phase 5
+```
+
+### Phase 列表
+
+| Phase | Skill | 产出 |
+|-------|-------|------|
+| 1 spec | xyz-harness-phase-spec | spec.md + spec_review |
+| 2 plan | xyz-harness-phase-plan | plan.md, e2e-test-plan.md, test_cases_template.json, plan_review |
+| 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md + code_review |
+| 4 test | xyz-harness-phase-test | test_execution.json |
+| 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md |
+
+## 文档索引
+
+| 文档 | 路径 | 用途 |
+|------|------|------|
+| Phase 1 Spec | `skills/xyz-harness-phase-spec/SKILL.md` | 用户启动 Phase 1 时加载 |
+| Phase 2 Plan | `skills/xyz-harness-phase-plan/SKILL.md` | 用户启动 Phase 2 时加载 |
+| Phase 3 Dev | `skills/xyz-harness-phase-dev/SKILL.md` | 用户启动 Phase 3 时加载 |
+| Phase 4 Test | `skills/xyz-harness-phase-test/SKILL.md` | 用户启动 Phase 4 时加载 |
+| Phase 5 PR  | `skills/xyz-harness-phase-pr/SKILL.md` | 用户启动 Phase 5 时加载 |
+| Gate Check | `skills/xyz-harness-gate/SKILL.md` | 用户单独对话中加载 |
+| Backend Dev | `skills/xyz-harness-backend-dev/SKILL.md` | AI 编码时参考 |
+| Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | AI 编码时参考 |
+| TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | AI TDD 时参考 |
+| Brainstorming | `skills/xyz-harness-brainstorming/SKILL.md` | Phase 1 brainstorm 时参考 |
+| Plan Writing | `skills/xyz-harness-writing-plans/SKILL.md` | Phase 2 写 plan 时参考 |
+| Expert Reviewer | `skills/xyz-harness-expert-reviewer/SKILL.md` | 评审方法论 |
+| Verification | `skills/xyz-harness-verification-before-completion/SKILL.md` | 提交通用质量检查 |
+| Subagent-Driven Dev | `skills/xyz-harness-subagent-driven-development/SKILL.md` | subagent 调度模式参考 |
+
+## Extension
+
+- `extensions/todolist/` — Todolist 扩展（任务追踪工具）
+- `~/.pi/agent/extensions/force-loop/` — Loop 循环机制（Pi 基础工具）
+
+无其他 harness extension。
+
+## 质量门禁
+
+- 无自动门禁。所有 gate 检查通过 `xyz-harness-gate` skill 在独立 Pi 会话中手动执行。

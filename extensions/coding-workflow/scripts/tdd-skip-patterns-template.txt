@@ -1,9 +1,0 @@
-# TDD Skip Patterns
-# 每行一个 glob 模式，匹配的文件不需要有对应的测试
-# 注释行以 # 开头
-#
-# 示例：
-# migrations/*
-# config/*
-# *.json
-# Dockerfile*

@@ -30,7 +30,20 @@ For each test case (by ID group):
 
 ### 3. Record Results
 
-Create or update `{topicDir}/changes/evidence/test_execution.json` with format:
+Create or update `{topic}/changes/evidence/test_execution.json` with format:
+
+**test_execution.json 字段 Schema：**
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 | 示例 | 常见错误 |
+|------|------|------|--------|------|------|---------|
+| `test_execution` (或 `execution`) | array | 是 | — | 执行记录数组，可改名但必须有数组字段 | — | 用错了字段名（gate 脚本会尝试 `test_execution` 和 `execution` 两种） |
+| `.caseId` | string | 是 | 必须匹配 template 中的 `id` | 用例 ID，gate 用此字段做 cross-reference | `"TC-1-01"` | ID 拼写错误导致 cross-ref 失败（gate 报 missing） |
+| `.round` | number | 是 | 正整数 >= 1 | 执行轮次。gate 检查**最终轮次**是否全部通过 | `1` | 写成了 `"1"`（字符串）；相邻轮次不连续 |
+| `.passed` | boolean | 是 | `true` 或 `false` | **布尔值**。最终轮次必须全部 `true` gate 才通过 | `true` | 写成了 `"true"`（字符串）；写成了 `1`（数字，非布尔） |
+| `.execute_steps` | array | 是 | string 数组 | 实际执行的操作步骤。**不可为空**，gate 会检查 `len(steps) > 0` | `["call GET /api/config"]` | 空数组 `[]`；写成了字符串而不是数组 |
+| `.evidence` | string | 否 | 任意 | 截图路径或测试输出引用 | `"screenshot-p1.png"` | — |
+
+**完整示例：**
 ```json
 {
   "test_execution": [
@@ -42,16 +55,30 @@ Create or update `{topicDir}/changes/evidence/test_execution.json` with format:
         "call GET /api/config",
         "verify 200 response contains config items"
       ],
-      "evidence": "test output or screenshot ref"
+      "evidence": "test output in terminal"
+    },
+    {
+      "caseId": "TC-1-02",
+      "round": 1,
+      "passed": false,
+      "execute_steps": ["call POST /api/config", "verify 400 on invalid input"],
+      "evidence": "expected 400, got 422"
+    },
+    {
+      "caseId": "TC-1-02",
+      "round": 2,
+      "passed": true,
+      "execute_steps": ["call POST /api/config", "verify 400 on invalid input"],
+      "evidence": "fixed validation, now returns 400"
     }
   ]
 }
 ```
-- `caseId` 必须匹配 template 中的 ID
-- `round` 数字，递增（第 1 轮、第 2 轮...）
-- `passed` 必须是布尔值 `true` 或 `false`，gate 只检查最终轮次全部 `true`
-- `execute_steps` 数组，描述实际执行步骤（不可为空）
-- `evidence` 可选，指向截图或测试输出
+
+注意：
+- 同一个 caseId 可以有多个 round 记录（修复后重跑）
+- gate 只检查**最大 round 号那轮**的 `passed` 值
+- `execute_steps` 必须有实际步骤描述，不能是空数组
 
 ### 4. Fix Failures
 

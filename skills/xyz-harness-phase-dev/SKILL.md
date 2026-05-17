@@ -37,6 +37,15 @@ Follow project coding conventions:
 Write code review evidence. Use xyz-harness-expert-reviewer methodology or dispatch a reviewer subagent.
 
 Create `.xyz-harness/{topic}/changes/reviews/code_review_v1.md`:
+
+**code_review YAML 字段说明：**
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 | 示例 | 常见错误 |
+|------|------|------|--------|------|------|---------|
+| `verdict` | string | 是 | `"pass"` | 评审通过标志 | `verdict: pass` | 写成了 `verdict: fail`（有必修项时 gate 不通过） |
+| `must_fix` | number | 是 | `0` | 必须修复的问题数量。**必须为数字 0** gate 才通过 | `must_fix: 0` | 写成了 `must_fix: "0"`（字符串类型，gate 会报错）；写成了 `must_fix: 3`（未修复问题） |
+
+**完整示例：**
 ```
 ---
 verdict: pass
@@ -46,14 +55,24 @@ must_fix: 0
 # Code Review — {topic}
 
 ## Summary
-...
+Code review passed. 0 MUST FIX, 3 LOW suggestions.
+
+## Issues
+- LOW: {minor suggestion}
 ```
-- `verdict` 必须是 `pass`
-- `must_fix` 必须是数字 0（零，或实际的未修复问题数量）
 
 ### 5. Document Test Results
 
 Create `.xyz-harness/{topic}/changes/evidence/test_results.md`:
+
+**test_results.md YAML 字段说明：**
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 | 示例 | 常见错误 |
+|------|------|------|--------|------|------|---------|
+| `verdict` | string | 是 | `"pass"` | 测试通过标志 | `verdict: pass` | 写成了 `verdict: fail` |
+| `all_passing` | boolean | 是 | `true` | **布尔值**，表示全部测试通过。gate 严格检查此值必须是 `true`（布尔类型），不接受字符串 | `all_passing: true` | 写成了 `all_passing: "true"`（字符串，gate 会报错）；写成了 `all_passing: True`（Python 风格语法，YAML 能解析但不符合规范） |
+
+**完整示例：**
 ```
 ---
 verdict: pass
@@ -64,13 +83,22 @@ all_passing: true
 
 ## Backend Tests
 ```
-... test output ...
+cd backend && uv run pytest -v
+...output...
+52 passed in 3.42s
 ```
 
-**All tests passed.**
+**All 52 backend tests passed.**
+
+## Frontend Build
 ```
-- `verdict` 必须是 `pass`
-- `all_passing` 必须是布尔值 `true`（不是字符串 `"true"`）
+cd frontend && pnpm run build
+...output...
+Build successful.
+```
+
+**Frontend build passed.**
+```
 
 ### 6. Self-Check
 

@@ -30,14 +30,24 @@ Replace `{description}` with a concise summary of the feature or fix being commi
 
 - Create a Pull Request on GitHub via `gh pr create` or through the GitHub web UI
 - Write a meaningful PR description that references the spec and plan
-- Create `.xyz-harness/{topic}/changes/evidence/pr_evidence.md` with:
+- Create `.xyz-harness/{topic}/changes/evidence/pr_evidence.md`:
 
+**pr_evidence.md YAML 字段说明：**
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 | 示例 | 常见错误 |
+|------|------|------|--------|------|------|---------|
+| `pr_created` | boolean | 是 | `true` | **布尔值**。PR 是否已创建。gate 严格检查必须是 `true` | `pr_created: true` | 写成了 `pr_created: "true"`（字符串）；写成了 `pr_created: yes`（虽能解析但不是规范写法） |
+| `pr_url` | string | 否 | URL | PR 的 GitHub 链接 | `pr_url: https://github.com/user/repo/pull/123` | — |
+| `pr_title` | string | 否 | 任意 | PR 标题 | `pr_title: "feat: system setting"` | — |
+| `branch` | string | 否 | 任意 | 分支名称 | `branch: feat-system-setting` | — |
+
+**完整示例：**
 ```markdown
 ---
 pr_created: true
-pr_url: {url}
-pr_title: {title}
-branch: {branch-name}
+pr_url: https://github.com/user/repo/pull/123
+pr_title: "feat: system setting"
+branch: feat-system-setting
 ---
 
 # PR Evidence
@@ -48,18 +58,32 @@ PR created and ready for CI.
 ### 3. Wait for CI
 
 - Monitor CI pipeline status (GitHub Actions, CircleCI, etc.)
-- Create `.xyz-harness/{topic}/changes/evidence/ci_results.md` with:
+- Create `.xyz-harness/{topic}/changes/evidence/ci_results.md`:
 
+**ci_results.md YAML 字段说明：**
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 | 示例 | 常见错误 |
+|------|------|------|--------|------|------|---------|
+| `ci_passed` | boolean | 是 | `true` | **布尔值**。CI 是否通过。gate 严格检查必须是 `true` | `ci_passed: true` | 写成了 `ci_passed: \"true\"`（字符串） |
+| `ci_url` | string | 否 | URL | CI 运行的链接 | `ci_url: https://github.com/user/repo/actions/runs/123` | — |
+| `commit_sha` | string | 否 | Git SHA | 通过 CI 的 commit SHA | `commit_sha: abc123...` | — |
+
+**完整示例：**
 ```markdown
 ---
 ci_passed: true
-ci_url: {ci-run-url}
-commit_sha: {sha}
+ci_url: https://github.com/user/repo/actions/runs/123
+commit_sha: abc123def456
 ---
 
 # CI Results
 
 All CI checks passed.
+
+## Checks
+- backend tests: 52 passed ✅
+- frontend build: passed ✅
+- ruff lint: passed ✅
 ```
 
 ### 4. Merge

@@ -81,3 +81,45 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 ## 质量门禁
 
 - 无自动门禁。所有 gate 检查通过 `xyz-harness-gate` skill 在独立 Pi 会话中手动执行。
+
+## Skill YAML Frontmatter 注意事项
+
+SKILL.md 文件的 YAML frontmatter 由 Pi 读取解析，以下陷阱会导致启动报错：
+
+### 描述值必须加引号的场景
+
+如果 `description` 或其他字段的值包含以下内容，**必须**用单引号或双引号包裹：
+
+- **冒号后跟空格**：如 `Trigger: "run gate check"` 中的 `: "`，YAML 会误判为 mapping 嵌套
+- **特殊 YAML 字符**：`{}`, `[]`, `>`, `|`, `!`, `&`, `*` 等
+- **以 YAML 保留字开头**：`true`, `false`, `yes`, `no`, `null`, `on`, `off` 等
+
+### 引号使用规则
+
+| 值中是否含双引号 | 推荐包裹方式 | 示例 |
+|---|---|---|
+| 含双引号 | 外层单引号 | `description: 'Trigger: "check"'` |
+| 不含双引号 | 外层双引号 | `description: "file exists, YAML parses"` |
+| 含单引号 | 外层双引号，内层 escape | `description: "It\'s working"` |
+| 都不含 | 可不加，但含冒号时仍需加 | — |
+
+### 验证命令
+
+修改 SKILL.md 的 frontmatter 后，用以下命令验证 YAML 解析：
+
+```bash
+head -4 <path>/SKILL.md | python3 -c "
+import sys, yaml
+lines = sys.stdin.read()
+parts = lines.split('---')
+if len(parts) >= 3:
+    data = yaml.safe_load(parts[1])
+    print('OK:', data)
+else:
+    print('No valid YAML frontmatter found')
+"
+```
+
+### 历史修复
+
+- 2026-05-17: `xyz-harness-gate/SKILL.md` description 未加引号，内嵌 `Trigger: "run gate check"` 中的 `: ` 被 YAML 误判为 mapping 键值分隔符，导致 Pi 启动报错。用外层单引号包裹修复。

@@ -9,10 +9,33 @@ description: Gate check skill for xyz-harness. Validates deliverables per phase 
 
 Run this skill in a SEPARATE Pi session (new conversation) for unbiased validation.
 
-**How to use:**
-1. User: "Check Phase {N} gate"
-2. AI loads this skill, reads each deliverable file, validates content
-3. AI reports PASS or FAIL with specific errors
+### AI — 入口流程
+
+用户说"检查 gate"时，你先确定以下信息：
+
+**1. 找 topic 目录**
+
+从当前项目目录查找 `.xyz-harness/`：
+```bash
+ls .xyz-harness/
+```
+列出所有 topic（格式 `YYYY-MM-DD-*` 的目录）。如果只有一个，用它。如果有多个，问用户用哪个。
+
+如果不存在 `.xyz-harness/`，问用户在哪个项目目录工作。
+
+**2. 确定 phase**
+
+问用户要检查哪个 phase（1-5）。或者先检测一下当前存在哪些交付物，推断到哪个 phase：
+- 只有 `spec.md` → Phase 1
+- 有 `plan.md` → Phase 2
+- 有 `changes/evidence/test_results.md` → Phase 3
+- 有 `test_execution.json` → Phase 4
+- 有 `pr_evidence.md` → Phase 5
+- 全部都有 → 全检
+
+**3. 开始检查**
+
+确定 topic 和 phase 后，对照下面的清单逐项验证。
 
 ## Phase 1 — Spec Deliverables
 

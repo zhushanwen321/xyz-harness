@@ -1,6 +1,10 @@
 ---
 name: xyz-harness-gate
-description: Gate check skill for xyz-harness. Validates deliverables per phase — file existence, YAML frontmatter correctness, verdict/required fields. Used standalone in a separate Pi session. Trigger: "run gate check", "verify deliverables", "check gate", "validate phase X".
+description: >-
+  Gate check skill for xyz-harness. Validates deliverables per phase —
+  file existence, YAML frontmatter correctness, verdict/required fields.
+  Used standalone in a separate Pi session. Trigger: "run gate check",
+  "verify deliverables", "check gate", "validate phase X".
 ---
 
 # Gate Check

@@ -1,45 +1,43 @@
 ---
 name: xyz-harness-expert-reviewer
 description: >
-  统一评审 skill，支持两种模式：计划评审（审 spec+plan）和执行评审（审代码+测试）。
-  由 dev-flow 编排器在 Stage 3/10/13 自动调用。不独立触发。
+  统一评审 skill，支持三种模式：计划评审（审 spec+plan）、编码评审（审代码变更）、测试评审（审测试代码）。
+  当需要进行 spec/plan 评审、代码评审、或测试评审时使用。
 ---
 
-## Dev-flow 上下文
+## 适用场景
 
-| 项目 | 值 |
-|------|---|
-| 所在阶段 | Stage 3 Spec 评审 / Stage 10 编码评审 / Stage 13 测试评审（三种模式） |
-| 触发方式 | 由 dev-flow 派遣评审 subagent 加载 |
-| 上游 | Stage 3←Stage 1 完成；Stage 10←Stage 9 完成；Stage 13←Stage 11 完成 |
-| 下游（完成后进入） | 评审报告返回 dev-flow 主 agent，由主 agent 决定流转 |
-| 回退目标 | 不自行决定回退（rollback_target=null）。Stage 3 不通过→dev-flow 回退到 Stage 1；Stage 10 不通过→回退到 Stage 9；Stage 13 不通过→回退到 Stage 11 |
+| 模式 | 输入 | 说明 |
+|------|------|------|
+| 计划评审 | spec.md + plan.md | 评审 spec 完整性和 plan 可行性 |
+| 编码评审 | spec.md + git diff | 评审代码实现是否满足 spec |
+| 测试评审 | spec.md + 测试代码 diff | 评审测试覆盖度和质量 |
 
 # Expert Reviewer
 
 你是独立评审专家。你的职责是对 spec、plan、代码、测试进行**独立评审**。
 
-**你不继承任何执行者（编码/测试 subagent）的上下文。** 你只看到 dev-flow 传入的文档和 diff，看不到编码过程中的讨论、尝试和错误。这是刻意的设计——保证评审的客观性。
+**你不继承任何执行者的上下文。** 你只看到传入的文档和 diff，看不到编码过程中的讨论、尝试和错误。这是刻意的设计——保证评审的客观性。
 
 ---
 
 ## 两种评审模式
 
-dev-flow 通过传入的上下文区分模式。判断规则：
+通过传入的上下文区分模式。判断规则：
 - 输入包含 `spec.md` + `plan.md`，**无** git diff → **计划评审**
 - 输入包含 `spec.md` + git diff（代码变更）→ **编码评审**
 - 输入包含 `spec.md` + 测试代码 diff → **测试评审**
 
 ---
 
-## 模式一：计划评审（Stage 3 Spec 评审）
+## 模式一：计划评审
 
 ### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| plan.md | dev-flow 传入路径 | 是 |
+| spec.md | 传入路径 | 是 |
+| plan.md | 传入路径 | 是 |
 | CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分（优先 docs/standards.md + docs/architecture.md） |
 
 ### 检查维度
@@ -95,7 +93,7 @@ dev-flow 通过传入的上下文区分模式。判断规则：
 - 评审前后端集成点（plan.md 中的依赖图是否正确，API 合约是否被正确引用）
 - 汇总 backend-plan-reviewer 的评审结果，产出最终综合评审报告
 
-L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复），只关注整体一致性。
+L2 时不重复检查后端设计细节（避免与后端专项评审重复），只关注整体一致性。
 
 ### 循环上限
 
@@ -107,17 +105,15 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
 
 ---
 
-## 模式二：执行评审
+## 模式二：编码评审
 
-### Stage 10 编码评审
-
-#### 输入
+### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| plan.md | dev-flow 传入路径 | 是 |
-| git diff（Stage 9 全部代码变更） | dev-flow 传入 | 是 |
+| spec.md | 传入路径 | 是 |
+| plan.md | 传入路径 | 是 |
+| git diff（全部代码变更） | 传入 | 是 |
 | CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分 |
 
 #### 检查维度
@@ -161,14 +157,14 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
   - 数据格式是否匹配消费者期望
   - 数据写入路径是否完整（无断裂/丢失）
 
-### Stage 13 测试评审
+## 模式三：测试评审
 
-#### 输入
+### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| 测试代码 diff（Stage 11 产出） | dev-flow 传入 | 是 |
+| spec.md | 传入路径 | 是 |
+| 测试代码 diff | 传入 | 是 |
 | CLAUDE.md | 项目根目录 | 测试相关规范 |
 
 #### 检查维度
@@ -225,8 +221,9 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ### 交付物
 
-- Stage 10：`changes/reviews/code_review_v{N}.md`
-- Stage 13：`changes/reviews/test_review_v{N}.md`
+- 计划评审：`changes/reviews/plan_review_v{N}.md`
+- 编码评审：`changes/reviews/code_review_v{N}.md`
+- 测试评审：`changes/reviews/test_review_v{N}.md`
 
 ---
 
@@ -340,25 +337,21 @@ issues:                      # 必填，全量问题列表（含已解决的）
 
 ## 返回值格式
 
-评审完成后，向 dev-flow 主 agent 返回：
+评审完成后，返回结构化结果：
 
 ```json
 {
-  "status": "done",
+  "verdict": "pass | fail",
   "deliverables": ["changes/reviews/xxx_review_vN.md"],
-  "summary": "计划评审完成，第2轮通过，0条MUST FIX",
-  "reason": "",
-  "rollback_target": null
+  "summary": "计划评审完成，第2轮通过，0条MUST FIX"
 }
 ```
 
 | 字段 | 说明 |
 |------|------|
-| status | `done`（评审完成） |
+| verdict | `pass` 或 `fail` |
 | deliverables | 评审报告文件路径 |
 | summary | 一句话摘要，格式：`{评审类型}完成，第{N}轮{通过/需重审}，{M}条MUST FIX` |
-| reason | 空字符串（评审不使用 reason 字段） |
-| rollback_target | `null`（回退决策由 dev-flow 主 agent 做出，不由评审者决定） |
 
 ---
 
@@ -383,10 +376,10 @@ issues:                      # 必填，全量问题列表（含已解决的）
 3. **问题标注** — 每条问题标注优先级，精确到位置。第 2+ 轮继承上一轮的 issues，更新状态
 4. **判断结论** — 有 open MUST FIX → verdict: fail；无 → verdict: pass
 5. **写入报告** — 按统一输出格式（含 YAML frontmatter）写入 `changes/reviews/`
-6. **返回结果** — 按返回值格式返回给 dev-flow
+6. **返回结果** — 按返回值格式返回
 
 ### 轮次管理
 
 - 版本号从 1 开始递增（`v1`, `v2`, `v3`）
 - 旧版本不删除，保留完整评审历史
-- 达到循环上限仍未通过时，在报告中明确标注"已达上限"，由 dev-flow 升级到人工决策
+- 达到循环上限仍未通过时，在报告中明确标注"已达上限"，升级到人工决策

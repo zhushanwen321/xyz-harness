@@ -1,48 +1,57 @@
-// Workflow Controller — Gate Runner
-// 直接导入 TypeScript gate 函数并 dispatch，替代 bash gate-script.sh
+// Gate runner: dispatch to phase-specific gate
+import type { PhaseId, GateL1Result, GateResult } from "./types.js";
+import { gateSpec } from "./gates/gate_spec.js";
+import { gatePlan } from "./gates/gate_plan.js";
+import { gateDev } from "./gates/gate_dev.js";
+import { gateTest } from "./gates/gate_test.js";
+import { gatePr } from "./gates/gate_pr.js";
 
-import { type GateResult } from "./gates/common.js";
-import { gate_03 } from "./gates/gate_03.js";
-import { gate_05 } from "./gates/gate_05.js";
-import { gate_07 } from "./gates/gate_07.js";
-import { gate_09 } from "./gates/gate_09.js";
-import { gate_10 } from "./gates/gate_10.js";
-import { gate_11 } from "./gates/gate_11.js";
-import { gate_12 } from "./gates/gate_12.js";
-import { gate_13 } from "./gates/gate_13.js";
-import { gate_14 } from "./gates/gate_14.js";
+/** Run L1 check for the given phase */
+export async function runL1Gate(
+  phaseId: PhaseId,
+  topicDir: string,
+  planComplexity?: "L1" | "L2",
+): Promise<GateL1Result> {
+  switch (phaseId) {
+    case 1:
+      return gateSpec(topicDir);
+    case 2:
+      return gatePlan(topicDir, planComplexity);
+    case 3:
+      return gateDev(topicDir);
+    case 4:
+      return gateTest(topicDir);
+    case 5:
+      return gatePr(topicDir);
+    default:
+      return { passed: false, errors: [`Unknown phase: ${phaseId}`] };
+  }
+}
 
-export class GateRunner {
-  async run(
-  gateNumber: string,
+/**
+ * Run full gate (L1 + L2). Returns combined result.
+ * L2 is only run if L1 passes.
+ */
+export async function runGate(
+  phaseId: PhaseId,
+  topicDir: string,
   projectRoot: string,
-  signal?: AbortSignal
-  ): Promise<GateResult> {
-  if (signal?.aborted) {
-  return { passed: false, output: "Aborted before gate execution" };
+  planComplexity?: "L1" | "L2",
+): Promise<GateResult> {
+  const l1 = await runL1Gate(phaseId, topicDir, planComplexity);
+
+  if (!l1.passed) {
+    return { l1, passed: false };
   }
 
-  try {
-  switch (gateNumber) {
-  case "03": return await gate_03(projectRoot, signal);
-  case "05": return await gate_05(projectRoot, signal);
-  case "07": return await gate_07(projectRoot, signal);
-  case "09": return await gate_09(projectRoot, signal);
-  case "10": return await gate_10(projectRoot, signal);
-  case "11": return await gate_11(projectRoot, signal);
-  case "12": return await gate_12(projectRoot, signal);
-  case "13": return await gate_13(projectRoot, signal);
-  case "14": return await gate_14(projectRoot, signal);
-  // "phase3" 不通过 GateRunner 调度 — LoopEngine.runGate() 直接调用 L1/L2 函数
-  // 此处仅做 fallback 防护
-  case "phase3":
-  return { passed: false, output: "Phase 3 gate must be called via LoopEngine.runGate(), not GateRunner" };
-  default:
-  return { passed: false, output: `Unknown gate: ${gateNumber}. Valid: 03 05 07 09 10 11 12 14 phase3` };
+  // L2: LLM anti-fabrication verification
+  // Dynamically imported to avoid potential circular deps with gate-verifier
+  const { runL2Verification } = await import("./gate-verifier.js");
+  const l2 = await runL2Verification(phaseId, topicDir, projectRoot);
+
+  if (l2 && !l2.passed) {
+    return { l1, l2, passed: false };
   }
-  } catch (err) {
-  const msg = err instanceof Error ? err.message : String(err);
-  return { passed: false, output: `Gate ${gateNumber} threw unexpected error: ${msg}` };
-  }
-  }
+
+  return { l1, l2, passed: true };
 }

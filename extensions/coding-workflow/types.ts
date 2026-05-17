@@ -1,182 +1,91 @@
-// Workflow Controller Extension — 类型定义
+// ============================================================================
+// Harness V5: Core Type Definitions
+// ============================================================================
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+/** Phase identifier */
+export type PhaseId = 1 | 2 | 3 | 4 | 5;
 
-// ── Workflow State ────────────────────────────────────────────
+export const PHASE_COUNT = 5;
 
-export interface WorkflowState {
-  version: number;
-  requirement: string;
-  topicDir: string;
-  projectRoot: string;
-  currentPhase: 1 | 2 | 3 | 4;
-  currentStage: number;
-  completed: boolean;       // workflow 全部完成标记
-  startedAt: string;
-  stages: StageState[];
-  rollbackHistory: RollbackRecord[];
-  loopState?: LoopState;    // Phase 3 Loop 状态（可选，向后兼容）
-  legacy?: boolean;         // 旧格式 state 标记
-}
+/** Phase display names */
+export const PHASE_NAMES: Record<PhaseId, string> = {
+  1: "spec",
+  2: "plan",
+  3: "dev",
+  4: "test",
+  5: "pr",
+};
 
-export interface StageState {
-  number: number;
+/** Stage definition within a phase */
+export interface StageConfig {
   name: string;
-  status: "pending" | "active" | "pass" | "fail";
-  startedAt: string | null;
-  completedAt: string | null;
-  gateResult: "pass" | "fail" | null;
-  gateOutput: string | null;
-  tasks: TaskState[];
+  description: string;
+  /** Execute only on first loop iteration */
+  runOnce: boolean;
 }
 
-export interface TaskState {
-  id: string;
-  name: string;
-  status: "pending" | "active" | "pass";
-  completedAt: string | null;
-  summary: string | null;
+/** L1 gate check result */
+export interface GateL1Result {
+  passed: boolean;
+  errors: string[];
 }
 
-export interface RollbackRecord {
-  from: number;
-  to: number;
-  reason: string;
-  timestamp: string;
+/** L2 gate check result from LLM subagent */
+export interface GateL2Result {
+  passed: boolean;
+  error?: string;
+  /** Raw response from LLM for debugging */
+  raw?: string;
 }
 
-// ── Workflow Stage Definition ─────────────────────────────────
-
-export interface StageDefinition {
-  number: number;
-  name: string;
-  phase: 1 | 2 | 3 | 4;
-  type: "interactive" | "automated";
-  gateScript?: string;          // L1 gate-script.sh stage number (e.g. "03")
-  gateScripts?: string[];       // Multiple gates (e.g. ["07", "08", "09"])
-  requiresConfirmation: boolean;
-  prompt: string;               // Injected into system prompt for this stage
-  allowedTools?: string[];      // If set, restrict tools via setActiveTools
-  deliverables: DeliverableCheck[]; // Stage 推进时必须验证的交付物
+/** Combined gate result */
+export interface GateResult {
+  l1: GateL1Result;
+  l2?: GateL2Result;
+  passed: boolean;
 }
 
-export interface DeliverableCheck {
-  path: string;                 // 相对于 projectRoot，支持 {topicDir} 占位符和 * 通配符
-  label: string;                // 人类可读名称，如 "spec.md"
-  required: boolean;            // true = 不存在则阻止推进
-  contentChecks?: ContentCheck[];
-}
-
-export type ContentCheck =
-  | { type: "must_not_match"; pattern: string; message: string }
-  | { type: "yaml_verdict"; message: string };
-
-// ── Loop Types (Phase 3) ──────────────────────────────────────
-
-export interface LoopConfig {
-  name: string;
-  itemSource: string;           // "plan_tasks" or future sources
-  itemIdField: string;          // e.g. "case_id"
-  allowedStatuses: string[];    // e.g. ["EXECUTED", "ERROR"]
-  completedStatus: string;      // e.g. "EXECUTED"
-  maxRounds: number;
-  batchSize: number;
-  requireVerificationRound: boolean;
-  evidenceFile: string;         // relative path, may contain {topicDir}
-  roundPrompt: string;          // template identifier
-  gateScript: string;           // gate script identifier
-  gateChecks: GateCheck[];
-  confirmationRequired: boolean;
-}
-
-export interface GateCheck {
-  name: string;                 // predefined check name or custom
-  type: "L1" | "L2";
-}
-
+/** Loop state for a single phase */
 export interface LoopState {
-  round: number;
-  maxRounds: number;
-  items: LoopItem[];
-  verificationRoundCompleted: boolean;
-  phase: "initializing" | "in_round" | "verification" | "gate_check" | "done" | "failed";
+  phaseNumber: PhaseId;
+  loopCount: number;
+  currentStageIndex: number;
 }
 
-export interface LoopItem {
-  item_id: string;
-  plan_ref: string;
+/** Overall workflow state persisted to disk */
+export interface WorkflowState {
+  /** Current phase (1-5) */
+  currentPhase: PhaseId;
+  /** Loop state for current phase */
+  loop: LoopState;
+  /** Topic directory path (e.g. .xyz-harness/2026-05-16-topic) */
+  topicDir: string;
+  /** Entry ID when current phase started (for tree navigation) */
+  phaseStartEntryId: string | null;
+  /** Whether retrospect for current phase has been completed */
+  retrospectDone: boolean;
+  /** Plan complexity level (set during Phase 2) */
+  planComplexity?: "L1" | "L2";
+  /** Overall workflow completed flag */
   completed: boolean;
-  firstCompletedRound: number | null;
 }
 
-// ── Evidence JSON 结构 (Phase 3) ───────────────────────────────
-
-export interface EvidenceRound {
-  round: number;
-  startedAt: string;
-  items: EvidenceItemRecord[];
-}
-
-export interface EvidenceItemRecord {
-  item_id: string;
-  status: string;
-  plan_ref: string;
-  output_path: string;
-  executed_at: string;
-  evidence?: {
-  cdp_commands?: string[];
-  screenshots?: string[];
-  error?: string | null;
-  fix_commit?: string | null;
+/** Default workflow state for Phase 1 start */
+export function createInitialState(topicDir: string): WorkflowState {
+  return {
+    currentPhase: 1,
+    loop: { phaseNumber: 1, loopCount: 0, currentStageIndex: 0 },
+    topicDir,
+    phaseStartEntryId: null,
+    retrospectDone: false,
+    completed: false,
   };
 }
 
-export interface EvidenceState {
-  totalItems: number;
-  completedItems: number;
-  currentRound: number;
-  maxRounds: number;
-  phase: string;
-  verificationRoundCompleted: boolean;
-}
-
-export interface EvidenceVerificationRound {
-  completed: boolean;
-  startedAt: string | null;
-  items: EvidenceItemRecord[];
-}
-
-export interface EvidenceFile {
-  loop: string;
-  state: EvidenceState;
-  rounds: EvidenceRound[];
-  verification_round: EvidenceVerificationRound;
-}
-
-// ── Tool Parameters ───────────────────────────────────────────
-
-export interface StageCompleteParams {
-  summary: string;
-}
-
-export interface LoopRoundCompleteParams {
-  // No params — engine reads evidence JSON from disk
-}
-
-export interface LoopExitParams {
-  reason: string;
-}
-
-export interface RegisterTasksParams {
-  tasks: Array<{ id: string; name: string }>;
-}
-
-export interface TaskCompleteParams {
-  taskId: string;
-  summary: string;
-}
-
-export interface RollbackParams {
-  targetStage: number;
-  reason: string;
+/** Phase transition state (stored temporarily for retrospect flow) */
+export interface PhaseTransitionState {
+  phaseId: PhaseId;
+  gateResult: GateResult;
+  retrospectPath: string;
+  nextPhase: PhaseId;
 }

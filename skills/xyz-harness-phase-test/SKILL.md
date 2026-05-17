@@ -30,10 +30,28 @@ For each test case (by ID group):
 
 ### 3. Record Results
 
-Create or update test_execution.json:
-- Track which cases were executed
-- Record pass/fail per case
-- Include round number
+Create or update `{topicDir}/changes/evidence/test_execution.json` with format:
+```json
+{
+  "test_execution": [
+    {
+      "caseId": "TC-1-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "call GET /api/config",
+        "verify 200 response contains config items"
+      ],
+      "evidence": "test output or screenshot ref"
+    }
+  ]
+}
+```
+- `caseId` 必须匹配 template 中的 ID
+- `round` 数字，递增（第 1 轮、第 2 轮...）
+- `passed` 必须是布尔值 `true` 或 `false`，gate 只检查最终轮次全部 `true`
+- `execute_steps` 数组，描述实际执行步骤（不可为空）
+- `evidence` 可选，指向截图或测试输出
 
 ### 4. Fix Failures
 
@@ -46,6 +64,19 @@ If any test fails: diagnose → fix → re-run → update execution json.
 - [ ] test_execution.json is valid JSON
 - [ ] test_results.md still accurate
 
-### 6. Tell user
+### 6. Gate Handoff
 
-When done: "Phase 4 complete. All tests pass. Ready for Phase 5 (PR) or run gate check."
+When opening a separate gate check conversation, submit this file:
+
+| File | Path |
+|------|------|
+| Test execution | `{topic}/changes/evidence/test_execution.json` |
+
+The gate will cross-reference against `{topic}/test_cases_template.json`.
+
+Open a new Pi session, load the xyz-harness-gate skill, and tell it:
+> "Check Phase 4 gate for topic `{topic}`"
+
+### 7. Tell user
+
+When done: "Phase 4 complete. All tests pass. File list for gate check above. Ready for Phase 5 (PR) or run gate check."

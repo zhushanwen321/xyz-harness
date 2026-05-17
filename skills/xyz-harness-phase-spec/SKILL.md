@@ -30,7 +30,7 @@ Create `.xyz-harness/{topic}/spec.md` with:
 - Constraints (technical, UX, business)
 - Complexity assessment
 
-Format:
+Format for spec.md:
 ```
 ---
 verdict: pass
@@ -42,14 +42,43 @@ verdict: pass
 ...
 ```
 
+### 2a. Write spec review
+
+Create `.xyz-harness/{topic}/changes/reviews/spec_review_v1.md`:
+```
+---
+verdict: pass
+must_fix: 0
+---
+
+# Spec Review — {topic}
+
+...
+```
+- `verdict` 必须是 `pass`
+- `must_fix` 必须是数字 0（零）= 无必修项
+
 ### 3. Self-Check
 
 - [ ] spec.md exists in the topic directory
 - [ ] spec.md has YAML frontmatter with verdict: pass
+- [ ] spec review file exists with verdict: pass, must_fix: 0
 - [ ] Requirements are clearly separated from implementation details
 - [ ] Acceptance criteria are testable
 - [ ] All constraints are documented
 
-### 4. Tell user
+### 4. Gate Handoff
 
-When done: "Phase 1 complete. spec.md created at {path}. Ready for Phase 2 (plan) or run gate check."
+When opening a separate gate check conversation, submit these files:
+
+| File | Path |
+|------|------|
+| Spec | `{topic}/spec.md` |
+| Spec review | `{topic}/changes/reviews/spec_review_v*.md` |
+
+Open a new Pi session, load the xyz-harness-gate skill, and tell it:
+> "Check Phase 1 gate for topic `{topic}`"
+
+### 5. Tell user
+
+When done: "Phase 1 complete. spec.md created at {path}. File list for gate check above. Ready for Phase 2 (plan) or run gate check."

@@ -36,22 +36,62 @@ Follow project coding conventions:
 
 Write code review evidence. Use xyz-harness-expert-reviewer methodology or dispatch a reviewer subagent.
 
-Create `.xyz-harness/{topic}/changes/reviews/code_review_v1.md` with YAML frontmatter verdict: pass, must_fix: N.
+Create `.xyz-harness/{topic}/changes/reviews/code_review_v1.md`:
+```
+---
+verdict: pass
+must_fix: 0
+---
+
+# Code Review — {topic}
+
+## Summary
+...
+```
+- `verdict` 必须是 `pass`
+- `must_fix` 必须是数字 0（零，或实际的未修复问题数量）
 
 ### 5. Document Test Results
 
 Create `.xyz-harness/{topic}/changes/evidence/test_results.md`:
-- YAML frontmatter with verdict: pass, all_passing: true
-- Test output and pass/fail summary
+```
+---
+verdict: pass
+all_passing: true
+---
+
+# Test Results — {topic}
+
+## Backend Tests
+```
+... test output ...
+```
+
+**All tests passed.**
+```
+- `verdict` 必须是 `pass`
+- `all_passing` 必须是布尔值 `true`（不是字符串 `"true"`）
 
 ### 6. Self-Check
 
 - [ ] All implementation tasks from plan.md completed
 - [ ] All tests pass
-- [ ] test_results.md exists with all_passing: true
+- [ ] test_results.md exists with all_passing: true（布尔值，不是字符串）
 - [ ] Code review exists with verdict: pass, must_fix: 0
 - [ ] No unintended modifications
 
-### 7. Tell user
+### 7. Gate Handoff
 
-When done: "Phase 3 complete. Code implemented and reviewed. Ready for Phase 4 (test) or run gate check."
+When opening a separate gate check conversation, submit these files:
+
+| File | Path |
+|------|------|
+| Test results | `{topic}/changes/evidence/test_results.md` |
+| Code review | `{topic}/changes/reviews/code_review_v*.md` |
+
+Open a new Pi session, load the xyz-harness-gate skill, and tell it:
+> "Check Phase 3 gate for topic `{topic}`"
+
+### 8. Tell user
+
+When done: "Phase 3 complete. Code implemented and reviewed. File list for gate check above. Ready for Phase 4 (test) or run gate check."

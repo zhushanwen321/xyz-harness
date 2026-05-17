@@ -73,10 +73,23 @@ All CI checks passed.
 - [ ] Code pushed to remote
 - [ ] PR created with description
 - [ ] CI passed
-- [ ] pr_evidence.md exists with pr_created: true
-- [ ] ci_results.md exists with ci_passed: true
+- [ ] pr_evidence.md exists with pr_created: true (布尔值)
+- [ ] ci_results.md exists with ci_passed: true (布尔值)
+- [ ] YAML 中 pr_created 和 ci_passed 是 `true` 不是 `"true"`
 - [ ] PR merged
 
-### 6. Tell user
+### 6. Gate Handoff
 
-When done: "Phase 5 complete. Feature merged. Workflow finished."
+When opening a separate gate check conversation, submit these files:
+
+| File | Path |
+|------|------|
+| PR evidence | `{topic}/changes/evidence/pr_evidence.md` |
+| CI results | `{topic}/changes/evidence/ci_results.md` |
+
+Open a new Pi session, load the xyz-harness-gate skill, and tell it:
+> "Check Phase 5 gate for topic `{topic}`"
+
+### 7. Tell user
+
+When done: "Phase 5 complete. Feature merged. Workflow finished. File list for gate check above."

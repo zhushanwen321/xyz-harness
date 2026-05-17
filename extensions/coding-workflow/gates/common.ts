@@ -39,8 +39,13 @@ export function extractYamlBlock(filePath: string): Record<string, unknown> | nu
       if (kvMatch) {
         const val = parseYamlValue(kvMatch[2]);
         if (Array.isArray(val)) {
+          // Inline array: key: [val1, val2] — store directly
           currentKey = kvMatch[1];
           currentArray = val;
+        } else if (val === null && kvMatch[2].trim() === "") {
+          // Key with empty value — potential array header for `- item` lines
+          currentKey = kvMatch[1];
+          currentArray = [];
         } else {
           result[kvMatch[1]] = val;
           currentKey = null;
@@ -90,8 +95,12 @@ export function findLatestReview(
   const files = fs.readdirSync(reviewsDir);
   const matching = files
     .filter((f) => f.startsWith(prefix) && f.endsWith(".md"))
-    .sort()
-    .reverse();
+    .sort((a, b) => {
+      // Natural numeric sort: extract version number after "_v"
+      const aNum = parseInt(a.match(/_v(\d+)/)?.[1] || "0", 10);
+      const bNum = parseInt(b.match(/_v(\d+)/)?.[1] || "0", 10);
+      return bNum - aNum; // descending
+    });
 
   return matching.length > 0 ? path.join(reviewsDir, matching[0]) : null;
 }
@@ -182,6 +191,7 @@ export function checkTestExecution(
 
       const timestamps = executions.map((e: { timestamp: string }) => new Date(e.timestamp).getTime());
       for (let i = 1; i < timestamps.length; i++) {
+        if (Number.isNaN(timestamps[i]) || Number.isNaN(timestamps[i - 1])) continue;
         if (timestamps[i] <= timestamps[i - 1]) {
           errors.push(`Case ${execCase.id}: timestamps not monotonically increasing at index ${i}`);
         }

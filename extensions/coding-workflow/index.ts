@@ -1,913 +1,404 @@
-// Workflow Controller Extension — 主入口
-
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { existsSync, readdirSync, statSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-
-import { WORKFLOW_STAGES, E2E_LOOP_CONFIG } from "./stages.js";
-import { StateManager } from "./state-manager.js";
-import { GateRunner } from "./gate-runner.js";
-import { LoopEngine } from "./loop-engine.js";
-import { verifyGateL2 } from "./gate-verifier.js";
-import { WidgetManager } from "./widget.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { PHASE_COUNT, PHASE_NAMES, createInitialState } from "./types.js";
+import type { PhaseId, WorkflowState } from "./types.js";
+import { getPhaseConfig, getStageList, isLastStage } from "./stages.js";
 import {
-  type StageCompleteParams,
-  type RegisterTasksParams,
-  type TaskCompleteParams,
-  type RollbackParams,
-  type StageDefinition,
-} from "./types.js";
-import { checkYamlVerdict } from "./gates/common.js";
+  loadState,
+  saveState,
+  advanceStage,
+  restartLoop,
+  advancePhase,
+  markRetrospectDone,
+  setPlanComplexity,
+  isV4State,
+} from "./state-manager.js";
+import { runGate } from "./gate-runner.js";
 
-const STATE_FILE = ".xyz-harness/workflow-state.json";
-// GateRunner 从扩展自身目录查找 scripts/，无需 SCRIPTS_DIR
-const MAX_SUMMARY_LENGTH = 500; // (#20)
-
-export default function workflowController(pi: ExtensionAPI) {
-  const stateMgr = new StateManager(STATE_FILE);
-  const gateRunner = new GateRunner();
-  const widgetMgr = new WidgetManager(pi, stateMgr);
-  let compactInProgress = false; // (#17) compact 去重标志
-  let sessionActive = false; // session 维度激活，/new 后自动重置
-
-  // ── 工具方法 ─────────────────────────────────────────
-
-  function findStageDef(stageNumber: number) {
-  return WORKFLOW_STAGES.find((s) => s.number === stageNumber);
+/** Discover project root by walking up for .xyz-harness directory or .git */
+function findProjectRoot(cwd: string): string {
+  let dir = cwd;
+  while (true) {
+    if (fs.existsSync(`${dir}/.xyz-harness`)) return dir;
+    if (fs.existsSync(`${dir}/.git`)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
   }
+  return cwd;
+}
 
-  function findNextStageDef(currentStageNumber: number) {
-  // (#11) 按数组索引顺序查找，不依赖 number 比较
-  const idx = WORKFLOW_STAGES.findIndex((s) => s.number === currentStageNumber);
-  if (idx < 0) return undefined;
-  return WORKFLOW_STAGES[idx + 1]; // undefined if last
-  }
+function findTopicDir(projectRoot: string): string | null {
+  const harDir = path.join(projectRoot, ".xyz-harness");
+  if (!fs.existsSync(harDir)) return null;
 
-  // ── 交付物验证 ─────────────────────────────────────────────
+  const entries = fs.readdirSync(harDir, { withFileTypes: true });
+  const dirs = entries
+    .filter((e) => e.isDirectory())
+    .filter((e) => /^\d{4}-\d{2}-\d{2}-/.test(e.name))
+    .sort()
+    .reverse();
 
-  /**
-   * 验证 Stage 的交付物。
-   * @returns 错误消息数组（空 = 全部通过）
-   */
-  function validateDeliverables(
-  stageDef: StageDefinition,
-  topicDir: string,
-  projectRoot: string
-  ): string[] {
-  const errors: string[] = [];
+  return dirs.length > 0 ? path.join(harDir, dirs[0].name) : null;
+}
 
-  for (const d of stageDef.deliverables) {
-  if (!d.required) continue;
+function buildPhaseKickoff(phaseId: PhaseId, state: WorkflowState): string {
+  const phaseName = PHASE_NAMES[phaseId];
+  const phase = getPhaseConfig(phaseId);
+  const stages = phase.stages
+    .map((s, i) => `  ${i + 1}. ${s.name}${s.runOnce ? " (仅首轮)" : ""}`)
+    .join("\n");
 
-  // 解析路径：替换 {topicDir} 占位符
-  const pattern = d.path.replace("{topicDir}", topicDir);
-  const fullPath = resolve(projectRoot, pattern);
-
-  // glob 匹配（支持 * 通配符）
-  const matched = globMatch(fullPath, projectRoot);
-
-  if (matched.length === 0) {
-  errors.push(`${d.label}: file not found (pattern: ${pattern})`);
-  continue;
-  }
-
-  // 取最新匹配的文件（如果有多个版本）
-  const target = matched.sort().reverse()[0];
-
-  // 检查文件非空
-  const stat = statSync(target);
-  if (stat.size === 0) {
-  errors.push(`${d.label}: file is empty (${target})`);
-  continue;
-  }
-
-  // 内容检查
-  if (d.contentChecks && d.contentChecks.length > 0) {
-  const content = readFileSync(target, "utf-8");
-  for (const check of d.contentChecks) {
-  if (check.type === "must_not_match") {
-  const regex = new RegExp(check.pattern);
-  if (regex.test(content)) {
-  errors.push(`${d.label}: ${check.message} (${target})`);
-  }
-  } else if (check.type === "yaml_verdict") {
-  const result = checkYamlVerdict(content);
-  if (result === null) {
-  // 无 YAML frontmatter
-  errors.push(
-  `${d.label}: file has no YAML frontmatter. Expected:\n` +
-  `    ---\n` +
-  `    verdict: pass\n` +
-  `    must_fix: 0\n` +
-  `    ---\n` +
-  `  File: ${target}`
+  return (
+    `Starting Phase ${phaseId}: ${phaseName}\n\n` +
+    `Topic dir: ${state.topicDir}\n` +
+    `Stages:\n${stages}\n\n` +
+    `Each stage is part of a loop. At the end of the phase, a gate check will run.\n` +
+    `If the gate fails, the loop restarts from stage 1.\n` +
+    `When all stages are complete and gate passes, we'll do a retrospect and compress context.\n\n` +
+    `Begin Stage 1: ${phase.stages[0].name}.`
   );
-  } else if (!result.ok) {
-  // YAML 解析失败（verdict 不对、缺字段等）— result.output 已包含详细诊断
-  errors.push(`${d.label}:\n  ${result.output}\n  File: ${target}`);
-  }
-  }
-  }
-  }
-  }
+}
 
-  return errors;
-  }
-
-  /**
-   * 简单 glob 匹配：处理路径中的 * 通配符。
-   * 只支持文件名级的通配符（如 spec_review_*.md），不支持目录级通配。
-   */
-  function globMatch(pattern: string, projectRoot: string): string[] {
-  // 无通配符 → 直接检查
-  if (!pattern.includes("*")) {
-  return existsSync(pattern) ? [pattern] : [];
-  }
-
-  // 分离目录和文件名模式
-  const lastSlash = pattern.lastIndexOf("/");
-  const dir = pattern.substring(0, lastSlash);
-  const filePattern = pattern.substring(lastSlash + 1);
-
-  if (!existsSync(dir)) return [];
-
-  // 将 glob * 转为正则
-  const regexStr = "^" + filePattern.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$";
-  const regex = new RegExp(regexStr);
-
-  try {
-  return readdirSync(dir)
-  .filter((name) => regex.test(name))
-  .map((name) => join(dir, name))
-  .filter((p) => statSync(p).isFile());
-  } catch {
-  return [];
-  }
-  }
-
-  // ── 注册工具 ────────────────────────────────────────────
-
+export default function (pi: ExtensionAPI) {
+  // ========================================================================
+  // Tool: harness_stage_complete
+  // ========================================================================
   pi.registerTool({
-  name: "harness_stage_complete",
-  label: "Harness Stage Complete",
-  description:
-    "Declare the current workflow stage as complete. The extension validates L1 gates, " +
-    "requests user confirmation if needed, and advances to the next stage. " +
-    "Call this when you have finished all work for the current stage.",
-  parameters: Type.Object({
-    summary: Type.String({
-    description: "One-line summary of what was accomplished (max 500 chars)",
+    name: "harness_stage_complete",
+    label: "Complete Stage",
+    description:
+      "Mark current harness stage as complete. Advances to next stage. " +
+      "At last stage of a phase, runs gate check. On gate PASS, guides " +
+      "through retrospect and compression.",
+    parameters: Type.Object({
+      summary: Type.String({
+        description: "Summary of what was done in this stage",
+      }),
+      topicDir: Type.Optional(
+        Type.String({
+          description:
+            "Optional override for topic directory (e.g. .xyz-harness/2026-05-16-topic)",
+        })
+      ),
+      planComplexity: Type.Optional(
+        Type.String({
+          description: "Plan complexity level: L1 or L2 (only for Phase 2)",
+        })
+      ),
     }),
-  }),
-  async execute(toolCallId, params: StageCompleteParams, signal, onUpdate, ctx) {
-    // (#20) 限制 summary 长度
-    const summary = params.summary.length > MAX_SUMMARY_LENGTH
-    ? params.summary.slice(0, MAX_SUMMARY_LENGTH) + "..."
-    : params.summary;
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const projectRoot = findProjectRoot(ctx.cwd);
 
-    const state = stateMgr.load(ctx.cwd);
-    if (!state) {
-    throw new Error("No active workflow. Start with /coding-workflow design or /coding-workflow dev.");
-    }
-
-  const currentStageDef = findStageDef(state.currentStage);
-  if (!currentStageDef) {
-  throw new Error(`Unknown stage: ${state.currentStage}`);
-  }
-
-  // 前置检查：如果当前阶段已经标记为 gate 失败，清除状态后重新验证
-  // 不拒绝推进 — gate 会再次运行，如果问题未修复会再次失败
-  const preCheck = state.stages.find((s) => s.number === state.currentStage);
-  if (preCheck?.status === "fail") {
-  stateMgr.updateStage(state, state.currentStage, {
-    status: "active",
-    gateResult: undefined,
-    gateOutput: undefined,
-  });
-  stateMgr.save(state, ctx.cwd);
-  }
-
-  onUpdate?.({
-  content: [
-    { type: "text", text: `Validating stage ${state.currentStage}: ${currentStageDef.name}...` },
-  ],
-  details: undefined,
-  });
-
-    // 1. 检查 task 完成度
-    const stageState = state.stages.find((s) => s.number === state.currentStage);
-    if (stageState) {
-    const incomplete = stageState.tasks.filter((t) => t.status !== "pass");
-    if (incomplete.length > 0) {
-      throw new Error(
-      `Cannot complete stage: ${incomplete.length} task(s) not finished: ` +
-        incomplete.map((t) => `${t.id}: ${t.name}`).join(", ")
-      );
-    }
-    }
-
-  // 2. 交付物验证（在用户确认和 gate 之前，最早失败）
-  const deliverableErrors = validateDeliverables(currentStageDef, state.topicDir, ctx.cwd);
-  if (deliverableErrors.length > 0) {
-  throw new Error(
-    `Stage ${state.currentStage} deliverables not satisfied:\n` +
-    deliverableErrors.map((e) => `  - ${e}`).join("\n")
-  );
-  }
-
-  // 3. 用户确认（移到 L1 gate 之前，避免确认拒绝时 gate 副作用）(#6)
-  const nextStageDef = findNextStageDef(state.currentStage);
-  if (currentStageDef.requiresConfirmation) {
-  const nextName = nextStageDef ? nextStageDef.name : "(end)";
-  const ok = await ctx.ui.confirm(
-    `Stage ${state.currentStage}: ${currentStageDef.name}`,
-    `Stage complete: ${summary}\n\nProceed to ${nextName}?`
-  );
-  if (!ok) {
-    throw new Error("User declined stage advancement.");
-  }
-  }
-
-  // 4. L1 Gate 检查
-  const gateScripts =
-  currentStageDef.gateScripts ??
-  (currentStageDef.gateScript ? [currentStageDef.gateScript] : []);
-  const gateResults: Array<{ passed: boolean; output: string }> = [];
-  for (const gateNum of gateScripts) {
-  const gateResult = await gateRunner.run(gateNum, ctx.cwd, signal);
-  gateResults.push(gateResult);
-  if (!gateResult.passed) {
-    stateMgr.updateStage(state, state.currentStage, {
-    status: "fail",
-    gateResult: "fail",
-    gateOutput: gateResult.output,
-    });
-    stateMgr.save(state, ctx.cwd);
-    throw new Error(`L1 Gate ${gateNum} failed:\n${gateResult.output}`);
-  }
-  }
-
-  // 4b. L2 Gate 验证（防伪造检查）— L1 全部通过后执行，检查所有已完成 stage 的交付物
-  if (gateResults.length > 0) {
-  const deliverablesForL2: Array<{ path: string; content: string }> = [];
-  // 收集所有已完成 stage 的交付物（不只是当前 stage）
-  for (const ss of state.stages) {
-  if (ss.status !== "pass" && ss.number !== state.currentStage) continue;
-  const sd = findStageDef(ss.number);
-  if (!sd?.deliverables) continue;
-  for (const d of sd.deliverables) {
-  if (!d.required) continue;
-  const pattern = d.path.replace("{topicDir}", state.topicDir);
-  const fullPath = resolve(ctx.cwd, pattern);
-  // glob 模式支持 * 通配符，取最新匹配的文件
-  const matched = globMatch(fullPath, ctx.cwd);
-  if (matched.length === 0) continue;
-  const target = matched.sort().reverse()[0];
-  try {
-  const content = readFileSync(target, "utf-8").slice(0, 3000);
-  deliverablesForL2.push({ path: pattern, content });
-  } catch { /* skip unreadable files */ }
-  }
-  }
-
-  const gateOutput = gateResults.map((r) => r.output).join("\n---\n").slice(0, 4000);
-
-  try {
-    const l2Result = await verifyGateL2(
-    gateScripts[gateScripts.length - 1],
-    currentStageDef.name,
-    gateOutput,
-    deliverablesForL2,
-    signal,
-    );
-    if (!l2Result.passed) {
-    throw new Error(
-    `L2 Gate verification failed — possible fabrication detected:\n${l2Result.output}\n\nRe-run the stage with actual execution (not code inspection).`
-    );
-    }
-  } catch (e: unknown) {
-    // L2 验证的明确 FAIL 才抛出；网络错误/超时等降级通过
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes("fabrication") || msg.includes("L2 Gate")) {
-    throw e;
-    }
-    // 其他异常（网络/超时）静默降级
-  }
-  }
-
-  // Phase 2→3 自动过渡：Stage 12 完成后，跳过 Stage 13 的普通 stage 推进，
-  // 直接进入 Loop 模式
-  if (state.currentStage === 12 && state.currentPhase === 2) {
-  stateMgr.completeStage(state, state.currentStage, summary);
-  stateMgr.save(state, ctx.cwd);
-
-  // 推进到 Phase 3 Stage 13（集成健康检查）
-  const s13 = findStageDef(13);
-  if (s13) {
-    stateMgr.startStage(state, 13, s13.phase, s13.name);
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-
-    pi.sendMessage(
-    {
-      customType: "harness-stage-start",
-      content: `[STAGE 13/${WORKFLOW_STAGES.length}: ${s13.name}]\n${s13.prompt}\n\nPhase 3 started automatically. No confirmation needed.`,
-      display: true,
-    },
-    { triggerTurn: true }
-    );
-  }
-
-  return {
-    content: [{ type: "text", text: "Stage 12 passed. Phase 2 complete. Entering Phase 3 (E2E Testing)." }],
-    details: { newStage: 13, phase: 3 },
-  };
-  }
-
-  // Phase 3 Stage 13（健康检查）完成后 → 初始化 Loop 引擎
-  if (state.currentStage === 13 && state.currentPhase === 3) {
-  stateMgr.completeStage(state, state.currentStage, summary);
-  stateMgr.save(state, ctx.cwd);
-
-  const { E2E_LOOP_CONFIG } = await import("./stages.js");
-  const engine = new LoopEngine(E2E_LOOP_CONFIG, ctx.cwd, state.topicDir);
-  engine.init();
-  engine.startRound();
-  const prompt = engine.getPrompt();
-
-  state.loopState = engine.state;
-  stateMgr.save(state, ctx.cwd);
-
-  pi.sendMessage(
-    {
-    customType: "loop-start",
-    content: `[Phase 3 E2E Loop] Round 1/${E2E_LOOP_CONFIG.maxRounds}\n\n${prompt}`,
-    display: true,
-    },
-    { triggerTurn: true }
-  );
-
-  return {
-    content: [{ type: "text", text: "Stage 13 passed. Phase 3 E2E Loop started." }],
-    details: { stage: state.currentStage, phase: 3, loopStarted: true },
-  };
-  }
-
-  // 5. 最后一个 stage？
-  if (!nextStageDef) {
-  stateMgr.completeStage(state, state.currentStage, summary);
-  state.completed = true;
-  stateMgr.save(state, ctx.cwd);
-  sessionActive = false;
-  widgetMgr.clear(ctx);
-
-  pi.sendMessage(
-    {
-    customType: "harness-complete",
-    content: `All workflow stages complete! Requirement: ${state.requirement}`,
-    display: true,
-    },
-    { triggerTurn: false }
-  );
-  return {
-    content: [{ type: "text", text: "All stages complete. Workflow finished." }],
-    details: { currentStage: state.currentStage },
-    terminate: true,
-  };
-    }
-
-  // 6. 原子推进：complete + start 在同一次 save (#7)
-  stateMgr.advanceTo(
-  state,
-  state.currentStage,
-  nextStageDef.number,
-  nextStageDef.phase,
-  summary,
-  nextStageDef.name
-  );
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-
-  // 7. 自动推进到下一 stage
-    pi.sendMessage(
-    {
-      customType: "harness-stage-start",
-      content: `[STAGE ${nextStageDef.number}/${WORKFLOW_STAGES.length}: ${nextStageDef.name}]\n${nextStageDef.prompt}`,
-      display: true,
-    },
-    { triggerTurn: true }
-    );
-
-    return {
-    content: [
-      {
-      type: "text",
-      text: `Stage ${currentStageDef.name} passed. Advanced to ${nextStageDef.name}.`,
-      },
-    ],
-    details: { newStage: nextStageDef.number },
-    };
-  },
-  });
-
-  pi.registerTool({
-  name: "harness_register_tasks",
-  label: "Harness Register Tasks",
-  description:
-    "Register tasks for the current workflow stage. Call this at the start of a stage " +
-    "that has multiple tasks (e.g., coding implementation with tasks from plan.md). " +
-    "All tasks must be completed before harness_stage_complete can succeed. " +
-    "Can only be called once per stage (before any tasks are completed).",
-  parameters: Type.Object({
-    tasks: Type.Array(
-    Type.Object({
-      id: Type.String({ description: "Unique task identifier" }),
-      name: Type.String({ description: "Human-readable task name" }),
-    })
-    ),
-  }),
-  async execute(_toolCallId, params: RegisterTasksParams, _signal, _onUpdate, ctx) {
-    const state = stateMgr.load(ctx.cwd);
-    if (!state) {
-    throw new Error("No active workflow.");
-    }
-
-    stateMgr.registerTasks(state, state.currentStage, params.tasks);
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-
-    return {
-    content: [
-      {
-      type: "text",
-      text: `Registered ${params.tasks.length} tasks for stage ${state.currentStage}.`,
-      },
-    ],
-    details: { taskCount: params.tasks.length },
-    };
-  },
-  });
-
-  pi.registerTool({
-  name: "harness_task_complete",
-  label: "Harness Task Complete",
-  description: "Mark a task as completed within the current workflow stage.",
-  parameters: Type.Object({
-    taskId: Type.String({ description: "The task identifier to mark as complete" }),
-    summary: Type.String({ description: "One-line summary of task result" }),
-  }),
-  async execute(_toolCallId, params: TaskCompleteParams, _signal, _onUpdate, ctx) {
-    const state = stateMgr.load(ctx.cwd);
-    if (!state) {
-    throw new Error("No active workflow.");
-    }
-
-    stateMgr.completeTask(state, state.currentStage, params.taskId, params.summary);
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-
-    return {
-    content: [{ type: "text", text: `Task ${params.taskId} completed.` }],
-    details: { taskId: params.taskId },
-    };
-  },
-  });
-
-  pi.registerTool({
-  name: "harness_rollback",
-  label: "Harness Rollback",
-  description:
-    "Roll back the workflow to a previous stage. Clears all stage pass records from the target onward.",
-  parameters: Type.Object({
-    targetStage: Type.Number({ description: "Stage number to roll back to" }),
-    reason: Type.String({ description: "Reason for rollback" }),
-  }),
-  async execute(_toolCallId, params: RollbackParams, _signal, _onUpdate, ctx) {
-    const state = stateMgr.load(ctx.cwd);
-    if (!state) {
-    throw new Error("No active workflow.");
-    }
-
-    const targetDef = findStageDef(params.targetStage);
-    if (!targetDef) {
-    throw new Error(`Unknown target stage: ${params.targetStage}`);
-    }
-
-    stateMgr.rollback(state, params.targetStage, targetDef.phase, params.reason);
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-
-    return {
-    content: [
-      {
-      type: "text",
-      text: `Rolled back to stage ${params.targetStage}: ${targetDef.name}. Reason: ${params.reason}`,
-      },
-    ],
-    details: { targetStage: params.targetStage },
-    };
-  },
-  });
-
-  // ── Loop 工具 (Phase 3) ─────────────────────────────────
-
-  pi.registerTool({
-  name: "harness_loop_round_complete",
-  label: "Harness Loop Round Complete",
-  description:
-  "Mark the current Loop round as complete. The engine reads the evidence JSON " +
-  "from disk and determines the next state (next round / verification / gate). " +
-  "Only used during Phase 3 Loop execution.",
-  parameters: Type.Object({}),
-  async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
-  const state = stateMgr.load(ctx.cwd);
-  if (!state) {
-    throw new Error("No active workflow.");
-  }
-  if (state.currentPhase !== 3) {
-    throw new Error("Not in Phase 3. harness_loop_round_complete is only for Loop phases.");
-  }
-
-  const config = E2E_LOOP_CONFIG;
-  const engine = new LoopEngine(config, ctx.cwd, state.topicDir);
-  engine.onRoundComplete();
-
-  stateMgr.save(state, ctx.cwd);
-  widgetMgr.update(ctx);
-
-  const s = engine.state;
-  let nextAction: string;
-
-  if (s.phase === "verification") {
-    nextAction = "All items completed. Starting Verification Round — re-execute ALL test cases.";
-    // 发送 verification round prompt
-    const prompt = engine.getPrompt();
-    pi.sendMessage(
-    { customType: "loop-verification", content: `[Phase 3 Verification Round]\n${prompt}`, display: true },
-    { triggerTurn: true }
-    );
-  } else if (s.phase === "gate_check") {
-    nextAction = "Verification complete. Running Gate checks...";
-    const gateResult = await engine.runGate(signal);
-    if (gateResult.passed) {
-  if (config.confirmationRequired) {
-    const s14 = findStageDef(14);
-    if (s14) {
-    nextAction = `Gate PASSED. Phase 3 complete. Proceeding to Phase 4.
-${gateResult.output}`;
-    stateMgr.advanceTo(state, 13, 14, s14.phase, "Phase 3 Loop gate passed", s14.name);
-    stateMgr.save(state, ctx.cwd);
-    widgetMgr.update(ctx);
-    // 发送 Gate PASS 消息但不自动 triggerTurn — user 确认后才触发 Stage 14
-    pi.sendMessage(
-    {
-    customType: "loop-gate-passed",
-    content: `[Phase 3 Gate PASSED] ${nextAction}\n\nUser confirmation required to enter Phase 4. The extension's TUI will prompt for confirmation.`,
-    display: true,
-    },
-    {}
-    );
-    }
-    } else {
-      nextAction = `Gate PASSED. Phase 3 complete.\n${gateResult.output}`;
-    }
-    } else {
-    nextAction = `Gate FAILED.\n${gateResult.output}`;
-    if (s.round < config.maxRounds) {
-      nextAction += `\nRetrying — starting round ${s.round + 1}/${config.maxRounds}`;
-      engine.startRound();
-      const prompt = engine.getPrompt();
-      pi.sendMessage(
-      { customType: "loop-retry", content: `[Phase 3 Loop Retry Round ${s.round}]\n${prompt}`, display: true },
-      { triggerTurn: true }
-      );
-    } else {
-      nextAction += "\nMax rounds reached. Phase 3 FAILED.";
-    }
-    }
-  } else if (s.phase === "failed") {
-    nextAction = `Phase 3 FAILED. Max rounds (${config.maxRounds}) reached with incomplete items.`;
-  } else {
-    // in_round — 继续下一轮
-    engine.startRound();
-    const prompt = engine.getPrompt();
-    nextAction = `Round ${s.round} complete. Starting round ${s.round + 1}/${config.maxRounds}`;
-    pi.sendMessage(
-    { customType: "loop-next-round", content: `[Phase 3 Loop Round ${s.round + 1}]\n${prompt}`, display: true },
-    { triggerTurn: true }
-    );
-  }
-
-  return {
-    content: [{ type: "text", text: nextAction }],
-    details: { loopPhase: s.phase, round: s.round },
-  };
-  },
-  });
-
-  pi.registerTool({
-  name: "harness_loop_exit",
-  label: "Harness Loop Exit",
-  description:
-  "Exit the Loop early with a reason. Use when the Loop cannot continue " +
-  "(e.g., all items are blocked, environment is broken). Only used during Phase 3.",
-  parameters: Type.Object({
-  reason: Type.String({ description: "Reason for early exit" }),
-  }),
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-  const state = stateMgr.load(ctx.cwd);
-  if (!state) {
-    throw new Error("No active workflow.");
-  }
-  if (state.currentPhase !== 3) {
-    throw new Error("Not in Phase 3.");
-  }
-
-  return {
-    content: [
-    {
-      type: "text",
-      text: `Loop exited early: ${params.reason}. Gate will run with current evidence.`,
-    },
-    ],
-    details: { earlyExit: true },
-  };
-  },
-  });
-
-  // ── 注册命令 ────────────────────────────────────────────
-
-  pi.registerCommand("coding-workflow", {
-  description: "Coding workflow: /coding-workflow design <req> | /coding-workflow dev <topicDir>",
-  handler: async (args, ctx) => {
-    // Parse subcommand
-    const parts = (args?.trim() || "").split(/\s+/);
-    const subcommand = parts[0]?.toLowerCase();
-    const subargs = parts.slice(1).join(" ").trim();
-
-    switch (subcommand) {
-      case "design":
-      case "d": {
-    const requirement = subargs;
-    if (!requirement) {
-      ctx.ui.notify("Usage: /coding-workflow design <requirements description>", "warning");
-      return;
-    }
-
-    const state = stateMgr.create(requirement, ctx.cwd);
-    const firstStage = WORKFLOW_STAGES[0];
-    stateMgr.startStage(state, firstStage.number, firstStage.phase, firstStage.name);
-  stateMgr.save(state, ctx.cwd);
-  sessionActive = true;
-  widgetMgr.update(ctx);
-
-  pi.sendMessage(
-  {
-    customType: "coding-workflow-start",
-    content: `[STAGE 1/${WORKFLOW_STAGES.length}: ${firstStage.name}]\n${firstStage.prompt}\n\nRequirement: ${requirement}`,
-    display: true,
-  },
-  { triggerTurn: true }
-  );
-  break;
-    }
-    case "dev": {
-    const topicDir = subargs;
-    const state = stateMgr.load(ctx.cwd);
-    if (!state) {
-      ctx.ui.notify("No active workflow. Use /coding-workflow design first.", "error");
-      return;
-    }
-
-    // (#19) 验证 Phase 1 产出物存在
-    const { existsSync: exists } = await import("node:fs");
-    const { join } = await import("node:path");
-    const specPath = join(ctx.cwd, ".xyz-harness", state.topicDir, "spec.md");
-    const planPath = join(ctx.cwd, ".xyz-harness", state.topicDir, "plan.md");
-  const missing: string[] = [];
-    if (!exists(specPath)) missing.push("spec.md");
-    if (!exists(planPath)) missing.push("plan.md");
-    if (missing.length > 0) {
-      ctx.ui.notify(
-        `Phase 1 deliverables not found: ${missing.join(", ")}. Complete Phase 1 first.`,
-        "error"
-      );
-      return;
-    }
-
-    if (topicDir && topicDir !== state.topicDir) {
-      state.topicDir = topicDir;
-    }
-
-    const firstPhase2Stage = WORKFLOW_STAGES.find((s) => s.phase === 2);
-    if (!firstPhase2Stage) {
-      ctx.ui.notify("No Phase 2 stages defined.", "error");
-      return;
-    }
-
-  stateMgr.startStage(state, firstPhase2Stage.number, firstPhase2Stage.phase, firstPhase2Stage.name);
-  stateMgr.save(state, ctx.cwd);
-  sessionActive = true;
-  widgetMgr.update(ctx);
-
-  pi.sendMessage(
-  {
-    customType: "coding-workflow-start",
-    content: `[STAGE ${firstPhase2Stage.number}/${WORKFLOW_STAGES.length}: ${firstPhase2Stage.name}]\n${firstPhase2Stage.prompt}`,
-    display: true,
-  },
-  { triggerTurn: true }
-  );
-  break;
+      let state = loadState(projectRoot);
+      if (!state) {
+        const dir = params.topicDir || findTopicDir(projectRoot);
+        if (!dir) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "No harness workflow found. Use harness_init to start.",
+              },
+            ],
+          };
+        }
+        state = createInitialState(dir);
+        saveState(state, projectRoot);
       }
 
-      default:
-    ctx.ui.notify(
-      "Usage: /coding-workflow design <requirements> | /coding-workflow dev <topicDir>",
-      "warning"
-    );
-    }
-  },
-});
-pi.registerCommand("harness-status", {
-  description: "Show current workflow status",
-  handler: async (_args, ctx) => {
-  const state = stateMgr.load(ctx.cwd);
-  if (!state) {
-  ctx.ui.notify("No active workflow.", "info");
-  return;
-  }
+      const phase = getPhaseConfig(state.currentPhase);
+      const stages = getStageList(state.currentPhase, state.loop.loopCount);
 
-  sessionActive = true;
-  widgetMgr.update(ctx);
+      // Store plan complexity if provided
+      if (params.planComplexity && state.currentPhase === 2) {
+        setPlanComplexity(state, params.planComplexity as "L1" | "L2", projectRoot);
+        state.planComplexity = params.planComplexity as "L1" | "L2";
+      }
 
-  const lines = [
-    `Phase ${state.currentPhase} | Stage ${state.currentStage}/${WORKFLOW_STAGES.length}`,
-    `Requirement: ${state.requirement}`,
-    `Topic: ${state.topicDir}`,
-    `Rollbacks: ${state.rollbackHistory.length}`,
-    "",
-    ...WORKFLOW_STAGES.map((def) => {
-      const stage = state.stages.find((s) => s.number === def.number);
-      const status = stage?.status ?? "pending";
-      const icon =
-      status === "pass" ? "☑" : status === "active" ? "☐ ←" : "☐";
-      const taskInfo =
-      stage && stage.tasks.length > 0
-        ? ` (${stage.tasks.filter((t) => t.status === "pass").length}/${stage.tasks.length})`
-        : "";
-      return `${icon} ${def.number} ${def.name}${taskInfo}`;
-    }),
-    ];
+      // Record phase start entry on first call of a new phase
+      if (!state.phaseStartEntryId) {
+        const leafId = ctx.sessionManager.getLeafId();
+        if (leafId) {
+          const { setPhaseStartEntry } = await import("./state-manager.js");
+          setPhaseStartEntry(state, leafId, projectRoot);
+        }
+      }
 
-    if (state.rollbackHistory.length > 0) {
-    lines.push("", "Rollback History:");
-    for (const rb of state.rollbackHistory) {
-      lines.push(`  ${rb.from} → ${rb.to}: ${rb.reason}`);
-    }
-    }
+      // Check if on last stage (needs gate)
+      if (isLastStage(state.currentPhase, state.loop.currentStageIndex, state.loop.loopCount)) {
+        const gateResult = await runGate(
+          state.currentPhase,
+          state.topicDir,
+          projectRoot,
+          state.planComplexity
+        );
 
-    ctx.ui.notify(lines.join("\n"), "info");
-  },
-  });
+        if (!gateResult.passed) {
+          const l1Errors = gateResult.l1.errors.join("\n  ");
+          const l2Error = gateResult.l2?.error ? `\nL2 error: ${gateResult.l2.error}` : "";
+          restartLoop(state, projectRoot);
+          const loopStage = getStageList(state.currentPhase, state.loop.loopCount)[0];
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Gate FAILED (loop ${state.loop.loopCount - 1}).\n` +
+                  `L1 errors:\n  ${l1Errors}${l2Error}\n\n` +
+                  `Restarting Phase ${state.currentPhase} at "${loopStage.name}". ` +
+                  `Fix the issues and try again.`,
+              },
+            ],
+          };
+        }
 
-  // ── 事件处理 ────────────────────────────────────────────
+        // Gate PASS: check retrospect
+        if (!state.retrospectDone) {
+          const phaseName = PHASE_NAMES[state.currentPhase];
+          const retrospectPath = `${state.topicDir}/changes/reviews/${phaseName}_retrospect.md`;
 
-  // session_start: 只在 reload/resume 时恢复，new/startup/fork 保持静默
-  pi.on("session_start", async (event, ctx) => {
-  // 清理旧版 widget key，避免升级后残留
-  ctx.ui.setWidget("harness-workflow", undefined);
-  ctx.ui.setStatus("harness-workflow", undefined);
+          pi.sendUserMessage(
+            `Phase ${state.currentPhase} (${phaseName}) gate PASSED.\n\n` +
+              `Now dispatch the harness-retrospect subagent to produce:\n` +
+              `${retrospectPath}\n\n` +
+              `Input for the subagent:\n` +
+              `- Phase: ${state.currentPhase} (${phaseName})\n` +
+              `- Topic dir: ${state.topicDir}\n` +
+              `- Gate result: L1=${gateResult.l1.passed}, L2=${gateResult.l2?.passed ?? "N/A"}\n` +
+              `- Deliverables: ${state.topicDir}/\n\n` +
+              `Cover both: (1) Phase execution review, (2) Harness usability issues.\n` +
+              `After the retrospect file is written, call harness_stage_complete again.`,
+            { deliverAs: "followUp" }
+          );
 
-  // 非 reload/resume 的 session 启动不激活 workflow
-  if (event.reason !== "reload" && event.reason !== "resume") return;
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  `Gate PASSED for Phase ${state.currentPhase} (${PHASE_NAMES[state.currentPhase]}).\n` +
+                  `Next step: dispatch harness-retrospect subagent to write retrospect.`,
+              },
+            ],
+          };
+        }
 
-  let state: ReturnType<typeof stateMgr.load> = null;
-  try {
-  state = stateMgr.load(ctx.cwd);
-  } catch {
-  // 文件损坏时不阻塞 session 启动
-  return;
-  }
-  if (!state) return;
-  if (state.completed) return;
+        // Gate PASS + retrospect done
+        if (state.currentPhase >= PHASE_COUNT) {
+          state.completed = true;
+          saveState(state, projectRoot);
+          return {
+            content: [
+              {
+                type: "text",
+                text: "All phases complete. Workflow finished.",
+              },
+            ],
+          };
+        }
 
-  sessionActive = true;
-  widgetMgr.update(ctx);
+        // Trigger phase transition via slash command
+        saveState(state, projectRoot);
+        pi.sendUserMessage(`/harness-phase-transition`, { deliverAs: "followUp" });
 
-  const stageDef = findStageDef(state.currentStage);
-  if (stageDef) {
-  const stageState = state.stages.find((s) => s.number === state.currentStage);
-  if (stageState?.status === "active") {
-    pi.sendMessage(
-    {
-    customType: "coding-workflow-resume",
-    content: `[CODING WORKFLOW RESUMED — Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}\n\nWhen this stage is complete, call harness_stage_complete with a summary.`,
-    display: true,
+        const nextPhase = (state.currentPhase + 1) as PhaseId;
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Phase ${state.currentPhase} complete. ` +
+                `Transitioning to Phase ${nextPhase} (${PHASE_NAMES[nextPhase]}) with context compression...`,
+            },
+          ],
+        };
+      }
+
+      // Normal stage advance
+      advanceStage(state, projectRoot);
+      const newStages = getStageList(state.currentPhase, state.loop.loopCount);
+      const nextStage = newStages[state.loop.currentStageIndex];
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Advanced to Phase ${state.currentPhase} Stage ${state.loop.currentStageIndex + 1}/${newStages.length}: ${nextStage.name}\n` +
+              `Loop iteration: ${state.loop.loopCount}`,
+          },
+        ],
+      };
     },
-    { triggerTurn: true }
-    );
-  }
-  }
   });
 
-  // before_agent_start: 注入当前 stage prompt
-  pi.on("before_agent_start", async (event, ctx) => {
-  if (!sessionActive) return;
-  let state: ReturnType<typeof stateMgr.load> = null;
-  try {
-  state = stateMgr.load(ctx.cwd);
-  } catch {
-  return;
-  }
-  if (!state) return;
-  if (state.completed) return;
+  // ========================================================================
+  // Tool: harness_status
+  // ========================================================================
+  pi.registerTool({
+    name: "harness_status",
+    label: "Harness Status",
+    description: "Show current harness workflow status.",
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      const projectRoot = findProjectRoot(ctx.cwd);
+      const state = loadState(projectRoot);
+      if (!state) {
+        return { content: [{ type: "text", text: "No harness workflow found." }] };
+      }
 
-  const stageDef = findStageDef(state.currentStage);
-  if (!stageDef) return;
+      const phase = getPhaseConfig(state.currentPhase);
+      const stages = getStageList(state.currentPhase, state.loop.loopCount);
+      const current = stages[state.loop.currentStageIndex];
 
-  // 检查前驱阶段的交付物是否就绪（检测跳阶段行为）
-  let prevWarning = "";
-  const prevStageDef = findStageDef(state.currentStage - 1);
-  if (prevStageDef && prevStageDef.deliverables.some((d) => d.required)) {
-  const prevErrors = validateDeliverables(prevStageDef, state.topicDir, ctx.cwd);
-  if (prevErrors.length > 0) {
-  prevWarning = `\n\nWARNING: Previous stage (${prevStageDef.name}) deliverables not found: ${prevErrors.join("; ")}. This suggests a stage was skipped. Call harness_stage_complete for each stage in order.`;
-  }
-  }
-
-  const stageState = state.stages.find((s) => s.number === state.currentStage);
-  const stageStatus = stageState?.status ?? "active";
-  const gateFailed = stageStatus === "fail";
-  const gateFailedMsg = gateFailed
-    ? `\n\nWARNING: Stage ${state.currentStage} FAILED gate check. You MUST fix the issues before calling harness_stage_complete again. Failure: ${stageState?.gateOutput ?? "unknown"}`
-    : "";
-
-  // 构建 task 进度段
-  let taskBlock = "";
-  if (stageState && stageState.tasks.length > 0) {
-  const done = stageState.tasks.filter((t) => t.status === "pass");
-  const remaining = stageState.tasks.filter((t) => t.status !== "pass");
-  const nextTask = remaining[0];
-  const taskLines = stageState.tasks.map((t) => {
-  const mark = t.status === "pass" ? "done" : "todo";
-  return `  [${mark}] ${t.name}${t.summary ? " — " + t.summary : ""}`;
-  });
-  taskBlock = `\n\nTask progress (${done.length}/${stageState.tasks.length}):\n${taskLines.join("\n")}${
-  nextTask ? `\n\nNext task: ${nextTask.name}` : "\n\nAll tasks complete — call harness_stage_complete to advance."
-  }`;
-  }
-
-  // Stage 13 的 E2E 测试强化规则
-  let e2eWarning = "";
-  if (stageDef.number === 13) {
-  e2eWarning = `\n\n**E2E TESTING CRITICAL RULES — READ BEFORE EXECUTING:**
-1. You MUST dispatch harness-e2e-tester subagent (NOT a generic executor).
-2. Every UI smoke test MUST be executed in a real browser using chrome-automation skill.
-3. Screenshots are REQUIRED for every UI test case — save to evidence/ directory.
-4. FABRICATION IS FORBIDDEN. Writing "代码已实现" or "code inspection passed" instead of actual execution will cause gate_12 to FAIL.
-5. If Chrome/browser is not available, mark tests as SKIP with reason. Do not fabricate.`;
-  }
-
-  return {
-  systemPrompt:
-    event.systemPrompt +
-  `\n\n[CODING WORKFLOW \u2014 Phase ${stageDef.phase}, Stage ${state.currentStage}/${WORKFLOW_STAGES.length}: ${stageDef.name}]\n${stageDef.prompt}${gateFailedMsg}${prevWarning}${taskBlock}${e2eWarning}\n\nStage management:\n  When this stage is complete, call harness_stage_complete with a summary.\n  ${stageDef.requiresConfirmation ? "This stage requires user confirmation — the extension will ask automatically." : "Call harness_stage_complete when done (no confirmation needed for this stage)."}\n  If harness_stage_complete returns an error, fix the issues and retry.`,
-  };
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Phase ${state.currentPhase}: ${phase.name}\n` +
+              `Stage: ${current.name} (${state.loop.currentStageIndex + 1}/${stages.length})\n` +
+              `Loop iteration: ${state.loop.loopCount}\n` +
+              `Topic dir: ${state.topicDir}\n` +
+              `Retrospect done: ${state.retrospectDone}\n` +
+              `Completed: ${state.completed}`,
+          },
+        ],
+      };
+    },
   });
 
+  // ========================================================================
+  // Tool: harness_init
+  // ========================================================================
+  pi.registerTool({
+    name: "harness_init",
+    label: "Init Harness",
+    description: "Initialize a new harness workflow for a topic.",
+    parameters: Type.Object({
+      topic: Type.String({
+        description: "Topic identifier (e.g. 2026-05-16-feature-name)",
+      }),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const projectRoot = findProjectRoot(ctx.cwd);
+      const topicDir = path.join(projectRoot, ".xyz-harness", params.topic);
 
-  // turn_end: 检查 context 使用率，触发 compact
-  pi.on("turn_end", async (_event, ctx) => {
-  if (!sessionActive) return;
-  if (compactInProgress) return;
+      for (const sub of ["", "/changes/evidence", "/changes/reviews"]) {
+        const d = `${topicDir}${sub}`;
+        if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+      }
 
-  let state: ReturnType<typeof stateMgr.load> = null;
-  try {
-  state = stateMgr.load(ctx.cwd);
-  } catch {
-  return;
-  }
-  if (!state) return;
-  if (state.completed) return;
+      const state = createInitialState(topicDir);
+      saveState(state, projectRoot);
 
-  const usage = ctx.getContextUsage();
-  if (usage && usage.tokens !== null && usage.contextWindow > 0) {
-    const ratio = usage.tokens / usage.contextWindow;
-    if (ratio > 0.75) {
-    compactInProgress = true;
-    ctx.compact({
-      customInstructions: `Preserve workflow state. Current stage: ${state.currentStage}. Requirement: ${state.requirement}`,
-      onComplete: () => {
-      compactInProgress = false;
-      ctx.ui.notify("Context auto-compressed (was >75%)", "info");
-      },
-      onError: () => {
-      compactInProgress = false;
-      },
-    });
+      return {
+        content: [
+          {
+            type: "text",
+            text:
+              `Harness workflow initialized.\n` +
+              `Topic: ${params.topic}\n` +
+              `Directory: ${topicDir}\n\n` +
+              `Phase 1 (spec) — begin with brainstorming.`,
+          },
+        ],
+      };
+    },
+  });
+
+  // ========================================================================
+  // Command: /harness-phase-transition
+  // ========================================================================
+  pi.registerCommand("harness-phase-transition", {
+    description: "Execute phase transition with context compression",
+    handler: async (_args, ctx) => {
+      const projectRoot = findProjectRoot(ctx.cwd);
+      const state = loadState(projectRoot);
+      if (!state) {
+        ctx.ui.notify("No harness workflow found", "error");
+        return;
+      }
+
+      const fromPhase = state.currentPhase;
+      const nextPhase = (fromPhase + 1) as PhaseId;
+
+      if (nextPhase > PHASE_COUNT) {
+        ctx.ui.notify("Workflow already complete", "info");
+        return;
+      }
+
+      const targetEntryId = state.phaseStartEntryId;
+      if (!targetEntryId) {
+        ctx.ui.notify("No phase start entry recorded, advancing without compression", "warn");
+        advancePhase(state, projectRoot);
+        pi.sendUserMessage(buildPhaseKickoff(nextPhase, state));
+        return;
+      }
+
+      const phaseName = PHASE_NAMES[fromPhase];
+      const compactPrompt =
+        `Phase ${fromPhase} (${phaseName}) complete.\n\n` +
+        `Summarize the key decisions and deliverables from this phase. ` +
+        `The next phase is Phase ${nextPhase}: ${PHASE_NAMES[nextPhase]}.`;
+
+      try {
+        const result = await ctx.navigateTree(targetEntryId, {
+          summarize: true,
+          customInstructions: compactPrompt,
+          label: `${phaseName}-summary`,
+        });
+
+        if (result.cancelled) {
+          ctx.ui.notify("Tree navigation cancelled", "warn");
+          return;
+        }
+
+        advancePhase(state, projectRoot);
+        pi.sendUserMessage(buildPhaseKickoff(nextPhase, state));
+      } catch (e) {
+        ctx.ui.notify(`Phase transition failed: ${(e as Error).message}`, "error");
+      }
+    },
+  });
+
+  // ========================================================================
+  // V4 state detection on startup
+  // ========================================================================
+  pi.on("session_start", async (_event, ctx) => {
+    const projectRoot = findProjectRoot(ctx.cwd);
+    if (isV4State(projectRoot)) {
+      ctx.ui.notify(
+        "V4 harness state detected. Run harness_init for V5 or remove .xyz-harness/gate/workflow-state.json.",
+        "warn"
+      );
     }
-  }
+  });
+
+  // ========================================================================
+  // before_agent_start: inject phase context into system prompt
+  // ========================================================================
+  pi.on("before_agent_start", async (event, ctx) => {
+    const projectRoot = findProjectRoot(ctx.cwd);
+    const state = loadState(projectRoot);
+    if (!state || state.completed) return;
+
+    const phase = getPhaseConfig(state.currentPhase);
+    const stages = getStageList(state.currentPhase, state.loop.loopCount);
+    const current = stages[state.loop.currentStageIndex];
+
+    const contextBlock =
+      `\n\n## Current Harness State\n` +
+      `Phase ${state.currentPhase}: ${phase.name} (loop ${state.loop.loopCount})\n` +
+      `Current stage: ${current.name} (${state.loop.currentStageIndex + 1}/${stages.length})\n` +
+      `${current.description}\n` +
+      `Topic dir: ${state.topicDir}\n\n` +
+      `When you complete this stage, call harness_stage_complete to advance.`;
+
+    return {
+      systemPrompt: event.systemPrompt + contextBlock,
+    };
   });
 }

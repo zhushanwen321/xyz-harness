@@ -7,7 +7,7 @@ description: Use when implementing any feature or bugfix, before writing impleme
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 9 编码实现（task 级内部） |
+| 所在阶段 | Phase 3 (dev) TDD stage |
 | 触发方式 | 被 subagent-driven-development 内部的 task 级 subagent 加载 |
 | 上游 | 由 implementer subagent 加载为 TDD 方法论参考 |
 | 下游（完成后进入） | 无（纯方法论参考，不触发下一步 skill） |
@@ -201,7 +201,7 @@ After green only:
 
 Keep tests green. Don't add behavior.
 
-**Harness 流程中的 Refactor 执行者：** 在 xyz-harness Phase 2 中，Refactor 由 `harness-backend-developer` agent 在 Mode A 步骤 5 执行（测试通过后的轻量重构），不单独派遣 subagent。编码评审阶段（Stage 2）的 reviewer 会检查重构质量。
+**Harness 流程中的 Refactor 执行者：** 在 V5 Phase 3 (dev) 中，Refactor 由 `harness-backend-developer` agent 在测试通过后执行轻量重构，不单独派遣 subagent。code review stage 的 reviewer 会检查重构质量。
 
 ### Repeat
 

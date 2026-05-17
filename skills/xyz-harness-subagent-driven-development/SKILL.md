@@ -7,7 +7,7 @@ description: Subagent-driven-development 编码模式参考。主 agent 按 plan
 
 **本 skill 是参考模式文档，不作为 skill 加载到任何 subagent 的上下文中。**
 
-由 dev-flow 主 agent（纯调度器）在 Stage 9 开始时读取，理解分 task 迭代调度的流程后，直接使用 subagent tool 派遣 subagent。
+由主 agent 在需要时参考，理解分 task 迭代调度的流程后，直接使用 subagent tool 派遣 subagent。
 
 **不允许的调用链：** 主 agent → 派 executor → executor 加载本文档 → executor 再派 subagent ❌
 
@@ -17,11 +17,11 @@ description: Subagent-driven-development 编码模式参考。主 agent 按 plan
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 9 编码实现 |
-| 触发方式 | 由 dev-flow 主 agent 在 Stage 9 开始时读取（作为调度参考，不加载到 subagent 上下文） |
-| 上游 | Stage 3 Spec 评审通过 + 用户确认 |
-| 下游（完成后进入） | 所有 task 完成后由主 agent进入 Stage 10 编码评审 |
-| 回退目标 | spec 合规不通过 → 当前 task 内修复；编码评审不通过 → 回退到 Stage 9 重新派遣 |
+| 所在阶段 | Phase 3 (dev) |
+| 触发方式 | 由主 agent 在需要时参考（作为调度参考，不加载到 subagent 上下文） |
+| 上游 | Phase 1 (spec) + Phase 2 (plan) 完成 |
+| 下游（完成后进入） | 所有 task 完成后进入 code review stage |
+| 回退目标 | spec 合规不通过 → 当前 task 内修复；门禁不通过 → 回退到编码阶段 |
 
 # Subagent-Driven Development
 
@@ -31,7 +31,7 @@ Execute plan by dispatching fresh subagent per task: TDD coder (writes failing t
 
 **Core principle:** Fresh subagent per task: TDD coder (tests first) → executor (code to pass tests) → spec compliance review = high quality, fast iteration
 
-**Task tracking:** Stage 1 内部的 plan Task 使用 `todolist` 工具跟踪进度（自由任务模式）。每完成一个 Task，调用 `todolist complete_task(taskId, summary="...")`，summary 自动写入 memory.md。Phase 2 的 7 个 Stage 由 `loop_task_tracker` 管理。
+**Task tracking:** plan Task 使用 `todolist` 工具跟踪进度（自由任务模式）。每完成一个 Task，调用 `todolist complete_task(taskId, summary="...")`，summary 自动写入 memory.md。V5 Phase 3 (dev) 的 TDD → 编码 → code review 循环由 `loop_task_tracker` 管理。
 
 **重要：subagent 内部也使用 `todolist`（而非 `loop_task_tracker`）管理自己的多步骤流程。** `loop_task_tracker` 是全局状态，subagent 调用 `create_tasks` 会覆盖主 agent 的 Stage 列表。subagent 使用 `todolist create_tasks`（自由任务模式）注册自己的步骤。
 
@@ -156,7 +156,7 @@ for each Wave:
 
 ## 主 Agent 上下文管理
 
-主 agent（调度器）自身的上下文也需要管理。Stage 1 内按 plan task 逐个派遣 subagent，每个 subagent 返回的 summary 都会占用主 agent 的上下文。大量 task 后主 agent 可能退化。
+主 agent（调度器）自身的上下文也需要管理。按 plan task 逐个派遣 subagent，每个 subagent 返回的 summary 都会占用主 agent 的上下文。大量 task 后主 agent 可能退化。
 
 **规则：**
 
@@ -366,8 +366,8 @@ Spec reviewer: ✅ Spec compliant now
 
 [After all tasks]
 [All plan tasks complete via todolist]
-[Now call loop_task_tracker complete_task 1 to mark Stage 1 done]
-[Proceed to Stage 2: 编码评审]
+[Now call loop_task_tracker complete_task to mark Phase 3 (dev) done]
+[Proceed to code review stage]
 
 Done!
 ```
@@ -390,7 +390,7 @@ Done!
 - Self-review catches issues before handoff
 - Spec compliance review prevents over/under-building
 - Review loops ensure fixes actually work
-- Code quality review is handled separately by dev-flow Stage 10 的 expert-reviewer skill
+- Code quality review is handled separately by code review stage 的 expert-reviewer skill
 - Spec deviation tracking ensures spec.md stays in sync with implementation, preventing false positives in later reviews
 
 **Cost:**
@@ -451,7 +451,7 @@ Done!
 - **Implementer** uses harness-backend-developer agent - writes code to pass tests
 
 **Code quality review:**
-- Code quality review is handled by dev-flow Stage 10 的 expert-reviewer skill，不在此流程中执行
+- Code quality review is handled by code review stage 的 expert-reviewer skill，不在此流程中执行
 
 <!-- LOCAL-OVERRIDE:START -->
 ## 本地目录覆盖规则

@@ -7,10 +7,10 @@ description: "You MUST use this before any creative work - creating features, bu
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 1 需求讨论（前半段） |
+| 所在阶段 | Phase 1 (spec) brainstorming |
 | 触发方式 | 由主 agent 直接执行（交互阶段，需多轮用户对话） |
 | 上游 | 用户提出需求 |
-| 下游（完成后进入） | xyz-harness-writing-plans（Stage 1 后半段，紧接执行） |
+| 下游（完成后进入） | Phase 1 (spec) 写 spec stage — 产出 spec.md |
 | 回退目标 | 无前置阶段。如设计需修改，在本阶段内直接迭代 |
 
 # Brainstorming Ideas Into Designs

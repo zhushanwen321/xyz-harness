@@ -1,1 +1,0 @@
-/Users/zhushanwen/Code/xyz-harness-engineering-workspace/xyz-harness-engineering/extensions/coding-workflow/scripts/tdd-skip-patterns-template.txt

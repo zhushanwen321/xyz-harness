@@ -7,11 +7,11 @@ description: Use when about to claim work is complete, fixed, or passing, before
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 14 推送+CI+部署（CI 验证环节） |
-| 触发方式 | 由 dev-flow 派遣执行 subagent 加载 |
-| 上游 | Stage 14 代码推送通过 |
-| 下游（完成后进入） | 验证通过 → 确认点4（部署目标确认）→ Stage 14 部署验证 |
-| 回退目标 | 测试数=0 → Stage 11；编译错误 → Stage 9；测试失败 → Stage 9 或 Stage 11 |
+| 所在阶段 | Phase 4 (test) + Phase 5 (pr) |
+| 触发方式 | 在任何编码/验证阶段结束后由 AI 自行参考 |
+| 上游 | 测试通过、代码变更就绪 |
+| 下游（完成后进入） | 验证通过 → 推送代码 → 创建 PR |
+| 回退目标 | 测试失败 → 回到编码修复；编译错误 → 修复后重新验证 |
 
 # Verification Before Completion
 

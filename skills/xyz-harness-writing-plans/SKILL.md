@@ -7,11 +7,11 @@ description: Use when you have a spec or requirements for a multi-step task, bef
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 1 需求讨论（后半段） |
+| 所在阶段 | Phase 2 (plan) |
 | 触发方式 | 由主 agent 在 brainstorming 完成后直接执行 |
 | 上游 | xyz-harness-brainstorming（产出 spec.md） |
-| 下游（完成后进入） | 产出 plan.md → 由 dev-flow 进入 Stage 3 Spec 评审（expert-reviewer 计划评审模式） |
-| 回退目标 | 如评审不通过 → 回退到 Stage 1 修改 spec/plan |
+| 下游（完成后进入） | 产出 plan.md → 进入 review plan stage |
+| 回退目标 | 如评审不通过 → 回退到 Phase 2 修改 plan |
 
 # Writing Plans
 
@@ -131,7 +131,7 @@ File structure 表格必须包含 Group 列，标注每个文件属于哪个 Exe
 - "Run the tests and make sure they pass" - step
 - "Commit" - step
 
-> **Harness 模式下的注意：** 在 xyz-harness Phase 2 中，Task 内部不需要细化到上述 5 步。TDD coder subagent 和 executor subagent 会自动执行"写失败测试→实现"的 TDD 流程。Plan 中的 Task 粒度应与 subagent 调度粒度对齐——每个 Task 对应一次 TDD coder → executor → reviewer 的完整 subagent 链。不要把一个 subagent 的工作拆成多个 Task。
+> **Harness 模式下的注意：** 在 V5 Phase 3 (dev) 中，Task 内部不需要细化到上述 5 步。TDD coder subagent 和 executor subagent 会自动执行"写失败测试→实现"的 TDD 流程。Plan 中的 Task 粒度应与 subagent 调度粒度对齐——每个 Task 对应一次 TDD coder → executor → reviewer 的完整 subagent 链。不要把一个 subagent 的工作拆成多个 Task。
 
 ## Plan Document Header
 

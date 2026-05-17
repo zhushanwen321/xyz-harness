@@ -140,3 +140,46 @@ else:
 ### 历史修复
 
 - 2026-05-17: `xyz-harness-gate/SKILL.md` description 含 `Trigger: "run gate check"`，冒号后的空格被 YAML 误判为 mapping 键值分隔符。修复方式：改用 `>-` block scalar 折叠格式，不需要处理引号转义。
+
+## Pre-commit Hook
+
+项目配置了 git pre-commit hook，自动校验 skill/agent/command 文件的 YAML frontmatter 格式。
+
+### 文件位置
+
+```
+.bare/hooks/pre-commit
+```
+
+由于使用 bare repo + worktree 结构，hook 路径通过 bare repo 的 `core.hooksPath` 配置生效（已在 `.bare/config` 中设置）：
+
+```bash
+# .bare/config
+[core]
+	hooksPath = /Users/zhushanwen/Code/xyz-harness-engineering-workspace/.bare/hooks
+```
+
+hook 会自动对所有 worktree 生效。
+
+### 校验范围
+
+| 文件模式 | 说明 |
+|---------|------|
+| `skills/*/SKILL.md` | Skill 定义文件 |
+| `commands/*.md` | Command 定义文件 |
+| `extensions/*/SKILL.md` | Extension skill 文件 |
+| `*.agent.md` | Agent 定义文件 |
+| `.pi/agents/*.md` | Pi Agent 定义文件 |
+
+### 校验内容
+
+1. **YAML 解析**：确保 frontmatter 能被 `yaml.safe_load()` 正确解析
+2. **冒号陷阱检测**：检测 unquoted description 中是否包含 `: `（冒号+空格），防止 YAML 误判为嵌套 mapping
+
+### 跳过 hook
+
+```bash
+git commit --no-verify -m "message"
+# 或
+SKIP=pre-commit git commit -m "message"
+```

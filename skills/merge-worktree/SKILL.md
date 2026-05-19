@@ -4,7 +4,7 @@ description: >
   完成 worktree 的完整合并流程：本地验证 → PR CI → merge → post-merge CI
   → 发布准备 → AI 撰写 Release Notes → 确认 → 清理。
   使用 git merge --no-ff 保留完整分支历史。
-  支持项目级钩子（.bare/merge-hooks/）实现个性化发布流程。
+  支持项目级钩子（.bare/custom-hooks/）实现个性化发布流程。
   触发词："合并worktree"、"merge-worktree"、"合并PR"、"发布"、"release"、"上线"。
 ---
 
@@ -52,10 +52,11 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh --resume <workspace-
 
 ## 钩子机制
 
-每个项目可以在 `.bare/merge-hooks/` 下创建可选的钩子脚本，实现项目个性化的发布流程。
+每个项目在 `.bare/custom-hooks/` 下创建钩子脚本，由 `git-cwt`（创建 worktree）和 `merge-and-publish.sh`（合并发布）自动调用。
 
 ```
-<workspace-root>/.bare/merge-hooks/
+<workspace-root>/.bare/custom-hooks/
+  setup-worktree.sh            # 创建 worktree 后执行（由 git-cwt 调用）
   pre-merge.sh                 # merge 前执行（如项目特定的额外验证）
   generate-release-notes.sh    # 生成 release notes 前的预处理
   post-release.sh              # release 创建后执行（如通知、部署）
@@ -79,7 +80,7 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh --resume <workspace-
 
 ### 钩子示例
 
-参考 xyz-agent 项目的 `.bare/merge-hooks/generate-release-notes.sh`：
+参考 xyz-agent 项目的 `.bare/custom-hooks/generate-release-notes.sh`：
 ```bash
 #!/usr/bin/env bash
 # 过滤 commit 清单，只保留 feat/fix/perf/breaking
@@ -219,7 +220,7 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh \
 
 **根因**：纯自动化无法判断哪些 commit 对用户有意义，无法合并相关 commit 为连贯描述。
 
-**修复**：改为 AI 介入模式——脚本生成 commit 清单后暂停（exit 3），AI 按 release notes 规范撰写后继续。同时引入 `.bare/merge-hooks/` 钩子机制支持项目个性化。
+**修复**：改为 AI 介入模式——脚本生成 commit 清单后暂停（exit 3），AI 按 release notes 规范撰写后继续。同时引入 `.bare/custom-hooks/` 钩子机制支持项目个性化。
 
 ### 2026-05-06: 阶段 4A 强制要求 main worktree 导致 worktree 冲突
 

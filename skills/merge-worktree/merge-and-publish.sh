@@ -103,7 +103,7 @@ find_pr_for_branch() {
 run_hook() {
     local hook_name="$1"
     shift
-    local hook_script="${WS_ROOT:-$(find_workspace_root "$(pwd)")}/.bare/merge-hooks/$hook_name"
+    local hook_script="${WS_ROOT:-$(find_workspace_root "$(pwd)")}/.bare/custom-hooks/$hook_name"
     if [[ -x "$hook_script" ]]; then
         echo ""
         echo -e "  ${CYAN}🔧 执行项目钩子: $hook_name${NC}"

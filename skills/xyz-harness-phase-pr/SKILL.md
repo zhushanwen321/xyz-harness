@@ -108,7 +108,7 @@ All CI checks passed.
 
 ### 4. Merge
 
-- Merge the PR (squash or merge commit depending on project policy)
+- Merge the PR using `git merge --no-ff`（merge commit），**禁止 squash 和 rebase**
 - Delete the remote branch if no longer needed
 - Verify merge appears in target branch
 

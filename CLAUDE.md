@@ -2,15 +2,16 @@
 
 ## 项目背景
 
-xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 extension 工具或 agent。
+xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 extension 工具。
 所有的开发流程由用户手动触发 skill 引导 AI 完成。
 
 包含：
 - `extensions/todolist/` — Pi 扩展：任务追踪
 - `extensions/claude-rules-loader/` — Pi 扩展：跨项目规则加载
-- `skills/` — SKILL.md 技能定义（14 个：8 个通用方法论 + 6 个 phase skill）
+- `skills/` — SKILL.md 技能定义（11 个）
+- `agents/` — Agent 定义（harness-retrospect 复盘 agent）
 
-技术栈：TypeScript (Pi Extension API)、Markdown (skill 定义)。
+技术栈：TypeScript (Pi Extension API)、Markdown (skill/agent 定义)。
 
 ## 架构设计
 
@@ -19,57 +20,74 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 - **Pure Skill**：没有强制约束（no auto-gate, no state file, no loop engine）
 - **Manual Control**：用户决定何时开始 phase、何时推进、何时检查 gate
 - **Separate Gate**：gate 检查在独立对话中执行，避免 bias
-- **No Subagent Dispatch**：AI 自主决定是否使用 subagent，不强制
+- **审查和复盘强制 subagent**：审查（review）和复盘（retrospect）通过 dispatch 独立 subagent 执行，保证客观性
+- **编码由 AI 自主决定**：简单项目主 agent 直接编码，复杂项目可参考 subagent-driven-development dispatch subagent
+
+### Subagent 执行模型
+
+所有 subagent 使用 `general-purpose` agent，通过 task prompt 指定 read 对应的 skill 文件获取方法论：
+
+```
+主 agent dispatch subagent:
+  agent: general-purpose
+  task prompt: "read {skill_path} 获取方法论，然后 read {待处理文件}，按方法论执行，输出到 {output_path}"
+```
+
+不创建专用 agent（harness-retrospect 除外），避免维护成本。
 
 ### 工作流程
 
 ```
-用户: "开始 Phase 1 spec"
-  → Phase 1 skill 加载 → AI 按 guide 工作
-  → 产出 spec.md + spec_review
+用户: "start Phase 1"
+  → brainstorming skill 加载 → AI 按 guide 工作
+  → 产出 spec.md
+  → dispatch 审查 subagent → spec_review_v*.md
+  → dispatch 复盘 subagent → spec_retrospect.md
+  → gate check（独立 session）
 
-用户: "检查 gate"（在另一个对话中）
-  → Gate skill 加载 → AI 逐项验证交付物
-  → 报告 PASS/FAIL
+用户: "start Phase 2"
+  → writing-plans skill 加载 → AI 按 guide 工作
+  → 产出 plan.md + e2e-test-plan.md + test_cases_template.json
+  → dispatch 审查 subagent → plan_review_v*.md
+  → dispatch 复盘 subagent → plan_retrospect.md
+  → gate check（独立 session）
 
-用户: "开始 Phase 2 plan"
-  → Phase 2 skill 加载 → AI 按 guide 工作
-  → 产出 plan.md + e2e-test-plan.md + test_cases_template.json + plan_review
+用户: "start Phase 3"
+  → phase-dev skill 加载 → AI 按 guide 工作
+  → 产出 源代码 + test_results.md
+  → dispatch 审查 subagent → code_review_v*.md
+  → dispatch 复盘 subagent → dev_retrospect.md
+  → gate check（独立 session）
 
-用户: "检查 gate"（另一个对话）
-  → Gate skill 验证 Phase 2 交付物
-
-...重复到 Phase 5
+...Phase 4, 5 类似
 ```
 
 ### Phase 列表
 
 | Phase | Skill | 产出 |
 |-------|-------|------|
-| 1 spec | xyz-harness-phase-spec | spec.md + spec_review |
-| 2 plan | xyz-harness-phase-plan | plan.md, e2e-test-plan.md, test_cases_template.json, plan_review |
-| 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md + code_review |
-| 4 test | xyz-harness-phase-test | test_execution.json |
-| 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md |
+| 1 spec | xyz-harness-brainstorming | spec.md + spec_review + spec_retrospect |
+| 2 plan | xyz-harness-writing-plans | plan.md, e2e-test-plan.md, test_cases_template.json, plan_review + plan_retrospect |
+| 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md + code_review + dev_retrospect |
+| 4 test | xyz-harness-phase-test | test_execution.json + test_retrospect |
+| 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md + overall_retrospect |
 
 ## 文档索引
 
 | 文档 | 路径 | 用途 |
 |------|------|------|
-| Phase 1 Spec | `skills/xyz-harness-phase-spec/SKILL.md` | 用户启动 Phase 1 时加载 |
-| Phase 2 Plan | `skills/xyz-harness-phase-plan/SKILL.md` | 用户启动 Phase 2 时加载 |
-| Phase 3 Dev | `skills/xyz-harness-phase-dev/SKILL.md` | 用户启动 Phase 3 时加载 |
-| Phase 4 Test | `skills/xyz-harness-phase-test/SKILL.md` | 用户启动 Phase 4 时加载 |
-| Phase 5 PR  | `skills/xyz-harness-phase-pr/SKILL.md` | 用户启动 Phase 5 时加载 |
-| Gate Check | `skills/xyz-harness-gate/SKILL.md` | 用户单独对话中加载 |
-| Backend Dev | `skills/xyz-harness-backend-dev/SKILL.md` | AI 编码时参考 |
-| Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | AI 编码时参考 |
-| TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | AI TDD 时参考 |
-| Brainstorming | `skills/xyz-harness-brainstorming/SKILL.md` | Phase 1 brainstorm 时参考 |
-| Plan Writing | `skills/xyz-harness-writing-plans/SKILL.md` | Phase 2 写 plan 时参考 |
-| Expert Reviewer | `skills/xyz-harness-expert-reviewer/SKILL.md` | 评审方法论 |
-| Verification | `skills/xyz-harness-verification-before-completion/SKILL.md` | 提交通用质量检查 |
+| Phase 1 Spec | `skills/xyz-harness-brainstorming/SKILL.md` | Phase 1 入口：需求探索 + spec 编写 + 审查 |
+| Phase 2 Plan | `skills/xyz-harness-writing-plans/SKILL.md` | Phase 2 入口：plan 编写 + 审查 |
+| Phase 3 Dev | `skills/xyz-harness-phase-dev/SKILL.md` | Phase 3 入口：TDD + 编码 + 审查 |
+| Phase 4 Test | `skills/xyz-harness-phase-test/SKILL.md` | Phase 4 入口：测试执行 |
+| Phase 5 PR  | `skills/xyz-harness-phase-pr/SKILL.md` | Phase 5 入口：推送 + PR |
+| Gate Check | `skills/xyz-harness-gate/SKILL.md` | 独立 session 中加载，验证交付物 |
+| Expert Reviewer | `skills/xyz-harness-expert-reviewer/SKILL.md` | 审查方法论（subagent read 获取） |
+| Backend Dev | `skills/xyz-harness-backend-dev/SKILL.md` | 后端编码规范（编码时参考） |
+| Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | 前端编码规范（编码时参考） |
+| TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | TDD 方法论（编码时参考） |
 | Subagent-Driven Dev | `skills/xyz-harness-subagent-driven-development/SKILL.md` | subagent 调度模式参考 |
+| Retrospect Agent | `agents/harness-retrospect/agent.md` | 复盘 agent（每个 phase 完成后 dispatch） |
 
 ## Extension
 
@@ -81,6 +99,7 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 ## 质量门禁
 
 - 无自动门禁。所有 gate 检查通过 `xyz-harness-gate` skill 在独立 Pi 会话中手动执行。
+- Gate check 脚本：`skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} {phase_number}`
 
 ## Skill YAML Frontmatter 注意事项
 
@@ -169,6 +188,7 @@ hook 会自动对所有 worktree 生效。
 | `commands/*.md` | Command 定义文件 |
 | `extensions/*/SKILL.md` | Extension skill 文件 |
 | `*.agent.md` | Agent 定义文件 |
+| `agents/*/agent.md` | Agent 定义文件 |
 | `.pi/agents/*.md` | Pi Agent 定义文件 |
 
 ### 校验内容

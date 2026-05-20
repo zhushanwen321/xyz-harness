@@ -1,9 +1,30 @@
 ---
 name: xyz-harness-phase-test
-description: Phase 4 (test) of the manual xyz-harness workflow. Use when the user says "start Phase 4", "test phase", "run tests", "execute test cases", or after dev is done to run E2E/integration tests.
+description: >-
+  Phase 4 (test) of the manual xyz-harness workflow. Use when the user says
+  "start Phase 4", "test phase", "run tests", "execute test cases", or after
+  dev is done to run E2E/integration tests.
 ---
 
 # Phase 4: Test
+
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | Phase 4 (test) |
+| 执行者 | 主 agent（测试执行）+ subagent（复盘） |
+| 上游 | Phase 3 (dev) — test_results.md + code_review |
+| 下游（完成后进入） | Phase 5 (pr) — 加载 phase-pr skill |
+| 回退目标 | 测试失败 → 修复 → 重新执行 |
+
+### Agent/Skill 关联
+
+| 步骤 | 执行者 | Agent | Skill | 方式 |
+|------|--------|-------|-------|------|
+| Execute Tests | 主 agent | — | 无（直接执行） | bash 命令 |
+| Fix Failures | 主 agent | — | 无（直接修复） | edit/write |
+| Retrospect | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
 ## Purpose
 
@@ -84,11 +105,38 @@ Create or update `{topic}/changes/evidence/test_execution.json` with format:
 
 If any test fails: diagnose → fix → re-run → update execution json.
 
+### 4a. Retrospect (复盘)
+
+**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 5。
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5-turbo
+   - **Task prompt**:
+     ```
+     你是复盘分析师。按以下步骤执行：
+
+     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     2. read 以下交付物文件：
+        - `{topic_dir}/test_cases_template.json`
+        - `{topic_dir}/changes/evidence/test_execution.json`
+     3. 按方法论覆盖两个维度（Phase 执行 + Harness 体验），将结果写入：
+        `{topic_dir}/changes/reviews/test_retrospect.md`
+     4. YAML frontmatter: `phase: test`, `verdict: pass`
+     ```
+
 ### 5. Self-Check
+
+**铁律：禁止在未实际运行验证命令的情况下声称完成。**
 
 - [ ] All test cases from template have been executed
 - [ ] All tests pass in final round
 - [ ] test_execution.json is valid JSON
+- [ ] 运行 gate check 脚本确认：
+  ```bash
+  python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 4
+  ```
+- [ ] 读取输出，确认所有检查项 PASS
 - [ ] test_results.md still accurate
 
 ### 6. Gate Handoff
@@ -106,4 +154,4 @@ Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 
 ### 7. Tell user
 
-When done: "Phase 4 complete. All tests pass. File list for gate check above. Ready for Phase 5 (PR) or run gate check."
+When done: "Phase 4 complete. All tests pass. Please run gate check in a separate session. When gate passes, come back and I'll run the retrospective. Then say 'start Phase 5' to continue."

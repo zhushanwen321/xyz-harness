@@ -1,6 +1,7 @@
 ---
 name: xyz-harness-test-driven-development
-description: Use when implementing any feature or bugfix, before writing implementation code
+description: >-
+  Use when implementing any feature or bugfix, before writing implementation code
 ---
 
 ## Dev-flow 上下文
@@ -201,7 +202,7 @@ After green only:
 
 Keep tests green. Don't add behavior.
 
-**Harness 流程中的 Refactor 执行者：** 在 V5 Phase 3 (dev) 中，Refactor 由 `harness-backend-developer` agent 在测试通过后执行轻量重构，不单独派遣 subagent。code review stage 的 reviewer 会检查重构质量。
+**Harness 流程中的 Refactor 执行者：** 在 V5 Phase 3 (dev) 中，Refactor 由编码 subagent（general-purpose，task prompt 指定 read xyz-harness-backend-dev skill）在测试通过后执行轻量重构，不单独派遣 subagent。code review stage 的 reviewer 会检查重构质量。
 
 ### Repeat
 

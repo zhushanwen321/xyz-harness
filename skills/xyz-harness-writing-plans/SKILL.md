@@ -1,6 +1,10 @@
 ---
 name: xyz-harness-writing-plans
-description: Use when you have a spec or requirements for a multi-step task, before touching code
+description: >-
+  Phase 2 (plan) of the xyz-harness workflow. Creates implementation plan,
+  E2E test plan, and test case templates from an approved spec. Use when the
+  user says "start Phase 2", "plan phase", "write plan", or after spec.md
+  is done to produce plan.md + E2E test plan + test cases template.
 ---
 
 ## Dev-flow 上下文
@@ -8,10 +12,21 @@ description: Use when you have a spec or requirements for a multi-step task, bef
 | 项目 | 值 |
 |------|---|
 | 所在阶段 | Phase 2 (plan) |
-| 触发方式 | 由主 agent 在 brainstorming 完成后直接执行 |
+| 执行者 | 主 agent（规划 + 编排） |
 | 上游 | xyz-harness-brainstorming（产出 spec.md） |
-| 下游（完成后进入） | 产出 plan.md → 进入 review plan stage |
+| 下游（完成后进入） | Phase 3 (dev) — 加载 phase-dev skill |
 | 回退目标 | 如评审不通过 → 回退到 Phase 2 修改 plan |
+
+### Agent/Skill 关联
+
+| 步骤 | 执行者 | Agent | Skill | 方式 |
+|------|--------|-------|-------|------|
+| Write plan.md | 主 agent | — | writing-plans (本 skill) | 主 agent 上下文加载 |
+| L2: plan-backend + api-contract | subagent | general-purpose | writing-plans (L2 章节) | task prompt 指定 read |
+| L2: plan-frontend | subagent | general-purpose | writing-plans (L2 章节) | task prompt 指定 read |
+| L2: API 对齐 | subagent | general-purpose | 无 | 读取 sub-documents 对比 |
+| Plan Review | subagent | general-purpose | expert-reviewer | task prompt 指定 read |
+| Retrospect | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
 # Writing Plans
 
@@ -55,15 +70,18 @@ Produce a single `plan.md` with all tasks inline. Backend design is described wi
 ### L2 Flow (Complex)
 
 1. Produce `plan.md` as a **master document** (goal, architecture overview, task list with frontend/backend labels, dependency graph, sub-document index, **Execution Groups**, Wave schedule)
-2. Dispatch **harness-backend-planner** agent → produces `plan-backend.md` + `plan-api-contract.md`
-3. Dispatch **harness-frontend-planner** agent → produces `plan-frontend.md`
-4. After both complete, dispatch **harness-api-alignment** agent → aligns `plan-frontend.md` with `plan-api-contract.md`
-5. Update `docs/architecture.md` (backend-planner handles this)
+2. Dispatch **general-purpose subagent** → reads spec.md + plan.md 总纲, produces `plan-backend.md` + `plan-api-contract.md`
+   - Task prompt: "read `skills/xyz-harness-writing-plans/SKILL.md` 的 L2 后端设计指导章节，read `{spec_path}` 和 `{plan_path}`，产出 plan-backend.md 和 plan-api-contract.md"
+3. Dispatch **general-purpose subagent** → reads spec.md + plan.md 总纲, produces `plan-frontend.md`
+   - Task prompt: "read `skills/xyz-harness-writing-plans/SKILL.md` 的 L2 前端设计指导章节，read `{spec_path}` 和 `{plan_path}`，产出 plan-frontend.md"
+4. After both complete, dispatch **general-purpose subagent** → reads plan-frontend.md + plan-api-contract.md, aligns frontend API calls with backend contract
+   - Task prompt: "read `{plan_frontend_path}` 和 `{plan_api_contract_path}`，检查前端 API 调用与后端 API 契约是否对齐，更新 plan-frontend.md 中的 API 调用"
+5. Update `docs/architecture.md` (backend subagent handles this)
 
 **L2 parallel execution:**
-- Steps 2 and 3 can run in parallel (both read spec.md + plan.md master)
+- Steps 2 and 3 can run in parallel
 - Step 4 runs after both 2 and 3 complete
-- Step 5 is part of step 2 (backend-planner updates architecture doc)
+- Step 5 is part of step 2
 
 L2 Flow 保留子文档模式（plan-backend.md + plan-frontend.md + plan-api-contract.md），但 plan.md 总纲中**必须包含 Execution Groups**。Groups 负责"执行编排"（分组、subagent 配置、Wave 编排），子文档负责"设计细节"。
 
@@ -241,7 +259,7 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 
 | 配置项 | 值 |
 |--------|---|
-| Agent | `harness-tdd-coder` → `harness-backend-developer` → `harness-reviewer` |
+| Agent | general-purpose → general-purpose → general-purpose |
 | Model | `llm-simple-router/glm-5.1`（executor）、`llm-simple-router/glm-5-turbo`（tdd-coder） |
 | 注入上下文 | {列出具体内容：哪些 task 描述、spec 章节、编码规范} |
 | 读取文件 | {列出需要读取的已有文件路径} |
@@ -250,14 +268,14 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 **Execution Flow (BG1 内部):** 串行派遣，每个 Task 走完整 subagent 链后再开始下一个 Task。
 
   Task 1:
-    1. harness-tdd-coder → 写失败测试
-  2. harness-backend-developer → 写实现代码
-  3. harness-reviewer → spec 合规检查
+    1. general-purpose (read xyz-harness-test-driven-development + xyz-harness-backend-dev) → 写失败测试
+    2. general-purpose (read xyz-harness-backend-dev) → 写实现代码
+    3. general-purpose (read xyz-harness-expert-reviewer) → spec 合规检查
 
   Task 3 (depends on Task 1):
-  1. harness-tdd-coder → 写失败测试
-  2. harness-backend-developer → 写实现代码
-    3. harness-reviewer → spec 合规检查
+    1. general-purpose (read xyz-harness-test-driven-development + xyz-harness-backend-dev) → 写失败测试
+    2. general-purpose (read xyz-harness-backend-dev) → 写实现代码
+    3. general-purpose (read xyz-harness-expert-reviewer) → spec 合规检查
 
 **Dependencies:** {无 | BG1（说明原因）}
 
@@ -273,7 +291,7 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 
 | 配置项 | 值 |
 |--------|---|
-| Agent | `harness-frontend-developer` → `harness-reviewer` |
+| Agent | general-purpose → general-purpose |
 | Model | `kimi-coding-plan/kimi-for-coding` |
 | 注入上下文 | {task 描述 + spec UI 规格 + 前端规范 + 设计稿路径} |
 | 读取文件 | {参考组件、路由文件等} |
@@ -282,8 +300,8 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 **Execution Flow (FG1 内部):** 串行派遣，每个 Task 走前端 subagent 链。
 
   Task 2:
-    1. harness-frontend-developer → 骨架→功能→美化
-    2. harness-reviewer → spec 合规检查
+    1. general-purpose (read xyz-harness-frontend-dev) → 骨架→功能→美化
+    2. general-purpose (read xyz-harness-expert-reviewer) → spec 合规检查
 ```
 
 ### Wave 编排
@@ -313,8 +331,8 @@ Group 之间的依赖关系用 Wave 编排表示。同一 Wave 内的 Group 可�
 
 | Task 类型 | Agent 链 | 说明 |
 |-----------|---------|------|
-| 后端 Group | tdd-coder → executor → reviewer | 标准 TDD 流程 |
-| 前端 Group | frontend-developer → reviewer | 骨架→功能→美化，跳过 TDD |
+| 后端 Group | general-purpose → general-purpose → general-purpose | 标准 TDD 流程（分别读取 TDD + backend-dev + reviewer skill） |
+| 前端 Group | general-purpose → general-purpose | 骨架→功能→美化（分别读取 frontend-dev + reviewer skill），跳过 TDD |
 
 ## Self-Review
 
@@ -327,6 +345,149 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 **3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
+
+## 交付物：e2e-test-plan.md
+
+e2e-test-plan.md 必须包含 YAML frontmatter：
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 |
+|------|------|------|--------|------|
+| `verdict` | string | 是 | `"pass"` | 门禁通过标志 |
+
+**模板：**
+```markdown
+---
+verdict: pass
+---
+
+# E2E Test Plan — {topic}
+
+## Test Scenarios
+{describe test scenarios covering AC from spec}
+
+## Test Environment
+{test environment setup details}
+```
+
+## 交付物：test_cases_template.json
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 |
+|------|------|------|--------|------|
+| `test_cases` | array | 是 | — | 测试用例数组，不能为空 |
+| `.id` | string | 是 | `"TC-{N}-{N}"` | 用例唯一 ID |
+| `.type` | string | 是 | `"api"` / `"ui"` / `"integration"` / `"manual"` | 用例类型 |
+| `.title` | string | 是 | 任意 | 用例标题 |
+| `.description` | string | 否 | 任意 | 用例详细描述 |
+| `.steps` | array | 否 | — | 执行步骤列表 |
+
+**模板：**
+```json
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "api",
+      "title": "GET /api/config returns config items",
+      "description": "Verify that the config endpoint returns all config items",
+      "steps": ["call GET /api/config", "verify 200 response contains items array"]
+    }
+  ]
+}
+```
+
+注意：
+- 必须是有效 JSON（无 trailing comma）
+- `test_cases` 是数组，不是对象
+- 每个元素至少包含 `id`、`type`、`title` 三个字段
+
+## Plan Review (独立审查)
+
+写完所有 plan 交付物后，dispatch 独立审查 subagent：
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5.1
+   - **Task prompt**:
+     ```
+     你是独立审查专家。按以下步骤执行审查：
+
+     1. read `skills/xyz-harness-expert-reviewer/SKILL.md`，找到「模式一：计划评审」章节
+     2. read `CLAUDE.md`（获取项目架构约束和编码规范）
+     3. read 以下待审查文件：
+        - `{topic_dir}/spec.md`
+        - `{topic_dir}/plan.md`
+        - `{topic_dir}/e2e-test-plan.md`
+     4. 按方法论逐项审查（spec 完整性、plan 可行性、spec-plan 一致性、Execution Groups 合理性），将结果写入：
+        `{topic_dir}/changes/reviews/plan_review_v1.md`
+     5. YAML frontmatter 必须包含:
+        - `verdict`: "pass" 或 "fail"
+        - `must_fix`: 数字（open MUST_FIX 问题数量）
+     ```
+
+2. 审查轮次：
+   - must_fix == 0 → 通过
+   - must_fix > 0 → 修复 plan 后重新 dispatch（产出 plan_review_v2.md），最多 3 轮
+   - 3 轮后仍有 must_fix > 0 → 停止，记录未解决问题，由用户决定
+
+### plan_review 输出格式
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 |
+|------|------|------|--------|------|
+| `verdict` | string | 是 | `"pass"` | 评审通过标志 |
+| `must_fix` | number | 是 | `0` | 必须修复的问题数量 |
+
+## Retrospect (复盘)
+
+**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 3。
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5-turbo
+   - **Task prompt**:
+     ```
+     你是复盘分析师。按以下步骤执行：
+
+     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     2. read 以下交付物文件：
+        - `{topic_dir}/plan.md`
+        - `{topic_dir}/e2e-test-plan.md`
+        - `{topic_dir}/test_cases_template.json`
+        - `{topic_dir}/changes/reviews/plan_review_v*.md`
+     3. 按方法论覆盖两个维度（Phase 执行 + Harness 体验），将结果写入：
+        `{topic_dir}/changes/reviews/plan_retrospect.md`
+     4. YAML frontmatter: `phase: plan`, `verdict: pass`
+     ```
+
+## 交付物验证
+
+**铁律：禁止在未实际运行验证命令的情况下声称完成。**
+
+- [ ] plan.md 存在，YAML verdict: pass
+- [ ] e2e-test-plan.md 存在，YAML verdict: pass
+- [ ] test_cases_template.json 存在且是有效 JSON
+- [ ] plan_review 存在，verdict: pass, must_fix: 0
+- [ ] 运行 gate check 脚本确认：
+  ```bash
+  python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2
+  ```
+- [ ] Tasks cover all acceptance criteria from spec
+
+## Gate Handoff
+
+在独立 Pi session 中检查 gate：
+
+```bash
+python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2
+```
+
+或打开新的 Pi session，加载 xyz-harness-gate skill，告诉它：
+> "Check Phase 2 gate for topic `{topic}`"
+
+## Phase Transition
+
+Phase 2 完成后，告知用户：
+
+> "Phase 2 complete. All plan deliverables ready. Please run gate check in a separate session. When gate passes, come back and I'll run the retrospective. Then say 'start Phase 3' to continue."
 
 ## Execution Handoff
 

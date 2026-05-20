@@ -1,6 +1,9 @@
 ---
 name: xyz-harness-subagent-driven-development
-description: Subagent-driven-development 编码模式参考。主 agent 按 plan.md 的 task 逐个派遣独立的执行/评审 subagent，实现上下文隔离和 TDD 质量保障。不作为 skill 加载到 subagent 上下文中，仅由主 agent 参考使用。
+description: >-
+  Subagent-driven-development 编码模式参考。主 agent 按 plan.md 的 task 逐个派遣独立的执行/评审
+  subagent，实现上下文隔离和 TDD 质量保障。不作为 skill 加载到 subagent 上下文中，仅由主 agent
+  参考使用。
 ---
 
 ## 架构说明
@@ -61,7 +64,7 @@ Execute plan by dispatching fresh subagent per task: TDD coder (writes failing t
 
 **禁止的操作：**
 - 直接 edit/write 实现代码文件
-- 跳过 harness-tdd-coder 直接编码
+- 跳过 TDD coder subagent 直接编码
 - 跳过 spec 合规检查直接标记 task 完成
 
 **自检规则：** 如果发现自己正在用 edit/write 编写 `.py`、`.ts`、`.rs` 等实现代码（非测试文件），必须立即停止，回退，先派遣 TDD coder subagent。没有例外。"task 太简单"不是跳过 TDD 的理由。
@@ -100,13 +103,13 @@ digraph process {
 
     subgraph cluster_per_task {
         label="Per Task";
-    "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)" [shape=box style=filled fillcolor=lightyellow];
+    "[MANDATORY] Dispatch TDD coder (general-purpose)" [shape=box style=filled fillcolor=lightyellow];
         "TDD coder writes failing tests" [shape=box];
-        "Dispatch implementer (harness-backend-developer)" [shape=box];
+        "Dispatch implementer (general-purpose)" [shape=box];
         "Implementer subagent asks questions?" [shape=diamond];
         "Answer questions, provide context" [shape=box];
         "Implementer writes code to pass tests, commits, self-reviews" [shape=box];
-        "Dispatch spec reviewer (harness-reviewer)" [shape=box];
+        "Dispatch spec reviewer (general-purpose)" [shape=box];
         "Spec reviewer subagent confirms code matches spec?" [shape=diamond];
         "Implementer subagent fixes spec gaps" [shape=box];
         "Mark task complete via todolist (write spec deviations if any)" [shape=box];
@@ -116,20 +119,20 @@ digraph process {
     "More tasks remain?" [shape=diamond];
     "Use merge-worktree skill" [shape=box style=filled fillcolor=lightgreen];
 
-  "Read plan, extract all tasks with full text, note context, create_tasks" -> "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)";
-    "Dispatch TDD coder (harness-tdd-coder)" -> "TDD coder writes failing tests";
-    "TDD coder writes failing tests" -> "Dispatch implementer (harness-backend-developer)";
-    "Dispatch implementer (harness-backend-developer)" -> "Implementer subagent asks questions?";
+  "Read plan, extract all tasks with full text, note context, create_tasks" -> "[MANDATORY] Dispatch TDD coder (general-purpose)";
+    "Dispatch TDD coder (general-purpose)" -> "TDD coder writes failing tests";
+    "TDD coder writes failing tests" -> "Dispatch implementer (general-purpose)";
+    "Dispatch implementer (general-purpose)" -> "Implementer subagent asks questions?";
     "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
-    "Answer questions, provide context" -> "Dispatch implementer (harness-backend-developer)";
+    "Answer questions, provide context" -> "Dispatch implementer (general-purpose)";
     "Implementer subagent asks questions?" -> "Implementer writes code to pass tests, commits, self-reviews" [label="no"];
-    "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer (harness-reviewer)";
-    "Dispatch spec reviewer (harness-reviewer)" -> "Spec reviewer subagent confirms code matches spec?";
+    "Implementer writes code to pass tests, commits, self-reviews" -> "Dispatch spec reviewer (general-purpose)";
+    "Dispatch spec reviewer (general-purpose)" -> "Spec reviewer subagent confirms code matches spec?";
     "Spec reviewer subagent confirms code matches spec?" -> "Implementer subagent fixes spec gaps" [label="no"];
-    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer (harness-reviewer)" [label="re-review"];
+    "Implementer subagent fixes spec gaps" -> "Dispatch spec reviewer (general-purpose)" [label="re-review"];
     "Spec reviewer subagent confirms code matches spec?" -> "Mark task complete via todolist (write spec deviations if any)" [label="yes"];
     "Mark task complete via todolist (write spec deviations if any)" -> "More tasks remain?";
-  "More tasks remain?" -> "[MANDATORY] Dispatch TDD coder (harness-tdd-coder)" [label="yes"];
+  "More tasks remain?" -> "[MANDATORY] Dispatch TDD coder (general-purpose)" [label="yes"];
     "More tasks remain?" -> "Use merge-worktree skill" [label="no"];
 }
 ```
@@ -254,18 +257,18 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 ## Agent 角色
 
-每个 agent 自带完整的执行指令（在 agent.md 中），主 agent 只需传入 task 上下文即可，无需额外加载 prompt 模板。
+所有角色均使用 general-purpose agent，通过 task prompt 指定 read 对应 skill 文件获取方法论，主 agent 只需传入 task 上下文和 skill 路径即可。
 
 | 角色 | Agent | 职责 |
 |------|-------|------|
-| TDD coder | harness-tdd-coder | 写失败测试（不写实现代码） |
-| 后端实现者 | harness-backend-developer | 写后端代码使测试通过 |
-| 前端实现者 | harness-frontend-developer | 前端三阶段开发（骨架→功能→美化） |
-| Spec 合规检查 | harness-reviewer | 验证代码是否实现 spec 要求 |
+| TDD coder | general-purpose | 写失败测试。Task prompt 指定 read xyz-harness-test-driven-development skill |
+| 后端实现者 | general-purpose | 写后端代码使测试通过。Task prompt 指定 read xyz-harness-backend-dev skill |
+| 前端实现者 | general-purpose | 前端三阶段开发。Task prompt 指定 read xyz-harness-frontend-dev skill |
+| Spec 合规检查 | general-purpose | 验证代码是否实现 spec 要求。Task prompt 指定 read xyz-harness-expert-reviewer skill |
 
 ### 前端 task 路由
 
-当 task 涉及 UI 组件、页面、布局、样式时，派遣 `harness-frontend-developer` 而非 `harness-backend-developer`。
+当 task 涉及 UI 组件、页面、布局、样式时，派遣前端实现者（general-purpose + read xyz-harness-frontend-dev skill）而非后端实现者（general-purpose + read xyz-harness-backend-dev skill）。
 
 **判断信号：**
 - 文件路径包含 `frontend/`、`src/components/`、`src/views/`、`src/pages/`
@@ -279,7 +282,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 ```
 前端 task:
   跳过 TDD coder
-  agent: harness-frontend-developer
+  agent: general-purpose (task prompt 指定 read xyz-harness-frontend-dev skill)
   model: 按项目配置（默认 kimi-coding-plan/kimi-for-coding）
   完成后: spec 合规检查 → todolist complete_task
 
@@ -299,7 +302,7 @@ You: I'm using Subagent-Driven Development to execute this plan.
 Task 1: Hook installation script
 
 [Get Task 1 text and context (already extracted)]
-[Dispatch TDD coder subagent via pi subagent tool, agent: harness-tdd-coder]
+[Dispatch TDD coder subagent via pi subagent tool, agent: general-purpose, task prompt 指定 read xyz-harness-test-driven-development skill]
 
 TDD coder: [No questions, proceeds]
 TDD coder:
@@ -308,7 +311,7 @@ TDD coder:
   - All 3 tests FAIL as expected
   - Committed test file
 
-[Dispatch implementer subagent via pi subagent tool, agent: harness-backend-developer]
+[Dispatch implementer subagent via pi subagent tool, agent: general-purpose, task prompt 指定 read xyz-harness-backend-dev skill]
 
 Implementer: "Before I begin - should the hook be installed at user or system level?"
 
@@ -330,7 +333,7 @@ Spec reviewer: ✅ Spec compliant - all requirements met, nothing extra
 Task 2: Recovery modes
 
 [Get Task 2 text and context (already extracted)]
-[Dispatch TDD coder subagent, agent: harness-tdd-coder]
+[Dispatch TDD coder subagent, agent: general-purpose, task prompt 指定 read xyz-harness-test-driven-development skill]
 
 TDD coder: [No questions, proceeds]
 TDD coder:
@@ -339,7 +342,7 @@ TDD coder:
   - All 4 tests FAIL as expected
   - Committed test file
 
-[Dispatch implementer subagent, agent: harness-backend-developer]
+[Dispatch implementer subagent, agent: general-purpose, task prompt 指定 read xyz-harness-backend-dev skill]
 
 Implementer: [No questions, proceeds]
 Implementer:
@@ -447,8 +450,8 @@ Done!
 - **merge-worktree** - Complete development after all tasks
 
 **Subagents should use:**
-- **TDD coder** uses harness-tdd-coder agent - writes failing tests only
-- **Implementer** uses harness-backend-developer agent - writes code to pass tests
+- **TDD coder** uses general-purpose agent (task prompt 指定 read xyz-harness-test-driven-development skill) - writes failing tests only
+- **Implementer** uses general-purpose agent (task prompt 指定 read xyz-harness-backend-dev skill) - writes code to pass tests
 
 **Code quality review:**
 - Code quality review is handled by code review stage 的 expert-reviewer skill，不在此流程中执行

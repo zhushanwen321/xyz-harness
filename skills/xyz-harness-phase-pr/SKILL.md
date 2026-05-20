@@ -1,9 +1,29 @@
 ---
 name: xyz-harness-phase-pr
-description: Phase 5 (pr) of the manual xyz-harness workflow. Use when the user says "start Phase 5", "pr phase", "create PR", "push code", "release", or after testing is done to submit and merge code.
+description: >-
+  Phase 5 (pr) of the manual xyz-harness workflow. Use when the user says
+  "start Phase 5", "pr phase", "create PR", "push code", "release", or after
+  testing is done to submit and merge code.
 ---
 
 # Phase 5: PR
+
+## Dev-flow 上下文
+
+| 项目 | 值 |
+|------|---|
+| 所在阶段 | Phase 5 (pr) |
+| 执行者 | 主 agent（推送/PR/合并）+ subagent（复盘） |
+| 上游 | Phase 4 (test) — test_execution.json |
+| 下游（完成后进入） | 无（最终 phase） |
+| 回退目标 | CI 失败 → 修复 → 重新推送 |
+
+### Agent/Skill 关联
+
+| 步骤 | 执行者 | Agent | Skill | 方式 |
+|------|--------|-------|-------|------|
+| Push + PR + CI + Merge | 主 agent | — | 无（直接操作） | bash + gh CLI |
+| Retrospect (整体) | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
 ## Purpose
 
@@ -92,14 +112,45 @@ All CI checks passed.
 - Delete the remote branch if no longer needed
 - Verify merge appears in target branch
 
+### 4a. Retrospect (复盘)
+
+**触发时机：** 当用户告知 gate check 通过后，立即执行整体复盘（Phase 5 是最后一个 phase，复盘覆盖全部 5 个 phase）。
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5-turbo
+   - **Task prompt**:
+     ```
+     你是复盘分析师。按以下步骤执行整体复盘（覆盖全部 5 个 phase）：
+
+     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     2. read 之前 4 个 phase 的复盘记录（如果存在）：
+        - `{topic_dir}/changes/reviews/spec_retrospect.md`（Phase 1）
+        - `{topic_dir}/changes/reviews/plan_retrospect.md`（Phase 2）
+        - `{topic_dir}/changes/reviews/dev_retrospect.md`（Phase 3）
+        - `{topic_dir}/changes/reviews/test_retrospect.md`（Phase 4）
+     3. read Phase 5 交付物：
+        - `{topic_dir}/changes/evidence/pr_evidence.md`
+        - `{topic_dir}/changes/evidence/ci_results.md`
+     4. 回顾全部 5 个 phase，按方法论覆盖两个维度（整体 Phase 执行 + Harness 体验），将结果写入：
+        `{topic_dir}/changes/reviews/overall_retrospect.md`
+     5. YAML frontmatter: `phase: pr`, `verdict: pass`
+     ```
+
 ### 5. Self-Check
+
+**铁律：禁止在未实际运行验证命令的情况下声称完成。**
 
 - [ ] Code pushed to remote
 - [ ] PR created with description
-- [ ] CI passed
+- [ ] CI passed（实际查看 CI 状态，不是假设）
 - [ ] pr_evidence.md exists with pr_created: true (布尔值)
 - [ ] ci_results.md exists with ci_passed: true (布尔值)
-- [ ] YAML 中 pr_created 和 ci_passed 是 `true` 不是 `"true"`
+- [ ] 运行 gate check 脚本确认：
+  ```bash
+  python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 5
+  ```
+- [ ] 读取输出，确认所有检查项 PASS
 - [ ] PR merged
 
 ### 6. Gate Handoff
@@ -116,4 +167,4 @@ Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 
 ### 7. Tell user
 
-When done: "Phase 5 complete. Feature merged. Workflow finished. File list for gate check above."
+When done: "Phase 5 complete. Feature merged. Please run gate check in a separate session. When gate passes, come back and I'll run the overall retrospective covering all 5 phases. Then we're done!"

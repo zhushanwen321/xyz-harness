@@ -87,7 +87,7 @@ description: >
 
 **L2 分支说明：**
 
-如果 plan.md 标注为 L2（复杂度），后端设计的详细评审由 `harness-backend-plan-reviewer` agent 独立执行（参见该 agent 的评审维度）。本 reviewer（expert-reviewer）在 L2 模式下负责：
+如果 plan.md 标注为 L2（复杂度），后端设计的详细评审由独立 subagent（general-purpose，task prompt 指定 read 本 skill 的后端设计评审维度）执行。本 reviewer（expert-reviewer）在 L2 模式下负责：
 - 评审 plan.md 总纲的完整性（目标、架构概述、task 列表、依赖关系）
 - 评审 plan-frontend.md 的前端设计质量
 - 评审前后端集成点（plan.md 中的依赖图是否正确，API 合约是否被正确引用）

@@ -62,7 +62,8 @@ gh auth status >/dev/null 2>&1 || { echo -e "${RED}Error: gh CLI 未登录${NC}"
 # ── 辅助函数 ──────────────────────────────────────
 
 find_workspace_root() {
-    local dir="${1:-$(pwd)}"
+    local dir
+    dir=$(cd "${1:-$(pwd)}" && pwd -P)
     while [[ "$dir" != "/" ]]; do
         if [[ -d "$dir/.bare" ]] || [[ -d "$dir/.git" ]]; then
             echo "$dir"
@@ -86,15 +87,10 @@ find_main_worktree() {
 
 find_pr_for_branch() {
     local branch="$1"
+    [[ -z "$branch" ]] && return
     local pr_num
-    pr_num=$(gh pr list --state all --search "head:$branch" --json number,state,headRefName --jq \
-        ".[] | select(.headRefName == \"$branch\") | .number" 2>/dev/null | head -1)
-    if [[ -n "$pr_num" ]]; then
-        echo "$pr_num"
-        return
-    fi
-    pr_num=$(gh pr list --state open --json number,headRefName --jq \
-        ".[] | select(.headRefName == \"$branch\") | .number" 2>/dev/null | head -1)
+    # 优先用 --head 精确匹配分支名
+    pr_num=$(gh pr list --state all --head "$branch" --json number --jq '.[0].number' 2>/dev/null) || true
     echo "${pr_num:-}"
 }
 
@@ -110,12 +106,84 @@ run_hook() {
         WS_ROOT="${WS_ROOT}" BRANCH_NAME="${BRANCH_NAME:-}" \
         PR_NUMBER="${PR_NUMBER:-}" VERSION="${NEW_VERSION:-}" \
         COMMIT_FILE="${COMMIT_FILE:-}" \
-        "$hook_script" "$@" || {
-            echo -e "  ${RED}❌ 钩子 $hook_name 失败（退出码 $?）${NC}"
+        local hook_exit=0
+        "$hook_script" "$@" || hook_exit=$?
+        if [[ $hook_exit -ne 0 ]]; then
+            echo -e "  ${RED}❌ 钩子 $hook_name 失败（退出码 $hook_exit）${NC}"
             return 1
-        }
+        fi
         echo -e "  ${GREEN}✅ 钩子 $hook_name 完成${NC}"
     fi
+}
+
+# ═══════════════════════════════════════════════════
+# 阶段 6: 确认 + 清理（仅 --confirm-release 触发）
+# ═══════════════════════════════════════════════════
+
+confirm_and_cleanup() {
+    echo ""
+    echo -e "${BOLD}═══ 阶段 6/6: 确认 + 清理 ═══${NC}"
+
+    # 发布 Draft Release（转为正式）
+    TAG="v${NEW_VERSION}"
+    echo "  发布 Draft Release: $TAG"
+    gh release edit "$TAG" --draft=false 2>&1 || {
+        echo -e "  ${YELLOW}Warning: 发布 Draft Release 失败，请手动发布${NC}"
+    }
+    echo -e "  ${GREEN}✅ Release 已正式发布${NC}"
+
+    # 清理 worktree
+    if [[ -n "$WORKTREE_DIR" ]] && [[ -d "$WORKTREE_DIR" ]]; then
+        cd "${WS_ROOT:-.}"
+        if [[ -f "$SCRIPT_DIR/../remove-worktree/remove-worktree.sh" ]]; then
+            bash "$SCRIPT_DIR/../remove-worktree/remove-worktree.sh" "$BRANCH_NAME" --force --skip-sync 2>&1 || {
+                echo -e "${YELLOW}Warning: worktree 清理失败，可手动处理${NC}"
+            }
+        else
+            echo -e "${YELLOW}⚠️  未找到 remove-worktree 脚本，跳过自动清理${NC}"
+            echo "  可手动删除: cd ${WS_ROOT:-.} && git worktree remove $WORKTREE_DIR"
+        fi
+
+        # 同步其他 worktree
+        echo ""
+        echo "  同步其他 worktree..."
+        for _wt_entry in "${WS_ROOT:-.}"/*/; do
+            _wt_name="${_wt_entry%/}"
+            [[ "$_wt_name" == *"main" ]] && continue
+            [[ "$_wt_name" == *"master" ]] && continue
+            [[ "$_wt_name" == *".bare" ]] && continue
+            [[ "$_wt_name" == *"node_modules" ]] && continue
+            [[ -d "$_wt_name" ]] || continue
+
+            _branch=$(cd "$_wt_name" && git rev-parse --abbrev-ref HEAD 2>/dev/null) || continue
+            [[ -z "$_branch" ]] && continue
+
+            echo "    同步 $_wt_name ($_branch)..."
+            # 用子 shell 隔离 cd，避免工作目录漂移
+            (
+                cd "$_wt_name"
+                git fetch origin main 2>&1 | tail -1
+                git merge --no-ff origin/main 2>&1 | tail -1 || {
+                    echo -e "    ${YELLOW}冲突: $_wt_name${NC}"
+                }
+            )
+        done
+    else
+        echo -e "  ${GREEN}⏭️  跳过清理（worktree 不存在）${NC}"
+    fi
+
+    # ── 最终报告 ──────────────────────────────────────
+    # 清理临时文件和断点
+    rm -f "${WS_ROOT:-.}/.release-notes.md" "${WS_ROOT:-.}/.release-commits.txt"
+    clear_checkpoints
+
+    echo ""
+    echo "══════════════════════════════════════════════════"
+    echo -e "${GREEN}${BOLD}✅ 端到端流程全部完成！${NC}"
+    echo "  PR: #$PR_NUMBER"
+    echo "  版本: v$NEW_VERSION"
+    echo "  分支: $BRANCH_NAME"
+    echo "══════════════════════════════════════════════════"
 }
 
 # ── 初始化 ────────────────────────────────────────
@@ -160,7 +228,7 @@ if $CONFIRM_RELEASE; then
         NEW_VERSION=$(git -C "${WS_ROOT:-.}" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "unknown")
     fi
 
-    # source confirm_and_cleanup 函数（在文件末尾定义）
+    # 调用 confirm_and_cleanup（定义在文件上方）
     confirm_and_cleanup
     exit $?
 fi
@@ -176,7 +244,7 @@ PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null || ech
 PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
 
 # 断点文件：标记已完成的阶段
-CHECKPOINT_DIR="$WS_ROOT/.merge-checkpoints"
+CHECKPOINT_DIR="$WS_ROOT/.merge-checkpoints/${BRANCH_NAME//\//-}"
 mkdir -p "$CHECKPOINT_DIR" 2>/dev/null || true
 checkpoint() { touch "$CHECKPOINT_DIR/$1"; }
 is_checkpoint() { [[ -f "$CHECKPOINT_DIR/$1" ]]; }
@@ -200,7 +268,7 @@ if ! $RESUME_MODE && [[ -d "$WORKTREE_DIR" ]]; then
         echo -e "${BOLD}═══ 阶段 1/6: 本地验证 ═══${NC}"
 
         # 执行项目钩子 pre-merge.sh
-        run_hook "pre-merge.sh" "$WORKTREE_DIR" || true
+        run_hook "pre-merge.sh" "$WORKTREE_DIR"
 
         bash "$SCRIPT_DIR/pre-merge-check.sh" "$WORKTREE_DIR" || {
             echo ""
@@ -377,6 +445,7 @@ else
             TAG="$EXISTING_TAG"
         else
             cd "$OP_DIR"
+            git pull origin main 2>&1 | tail -1
             npm version "$VERSION_TYPE" --no-git-tag-version 2>&1
             NEW_VERSION=$(node -p "require('./package.json').version")
             TAG="v$NEW_VERSION"
@@ -484,9 +553,7 @@ echo "  Release notes 已就绪: $RELEASE_NOTES_FILE"
 TAG="v${NEW_VERSION}"
 REPO_URL=$(gh repo view --json url --jq '.url' 2>/dev/null || echo "")
 
-RELEASE_NOTES_BODY=$(cat "$RELEASE_NOTES_FILE")
-
-# 用 release notes 创建或更新 Draft Release
+# 用 release notes 文件创建或更新 Draft Release（避免多行内容在参数中解析异常）
 RELEASE_URL=""
 # 检查是否已有 draft release
 EXISTING_RELEASE=$(gh release view "$TAG" --json isDraft,id --jq '.' 2>/dev/null || echo "")
@@ -495,14 +562,14 @@ if [[ -n "$EXISTING_RELEASE" ]]; then
     # 更新已有 release 的 body
     RELEASE_ID=$(echo "$EXISTING_RELEASE" | jq -r '.id')
     echo "  更新已有 Draft Release: $TAG"
-    gh release edit "$TAG" --notes "$RELEASE_NOTES_BODY" 2>&1 || true
+    gh release edit "$TAG" --notes-file "$RELEASE_NOTES_FILE" 2>&1 || true
     RELEASE_URL="$REPO_URL/releases/tag/$TAG"
 else
     # 创建新 Draft Release
     echo "  创建 Draft Release: $TAG"
     RELEASE_URL=$(gh release create "$TAG" \
         --title "v$NEW_VERSION" \
-        --notes "$RELEASE_NOTES_BODY" \
+        --notes-file "$RELEASE_NOTES_FILE" \
         --draft \
         --target main 2>&1 | tail -1) || {
         echo -e "  ${RED}❌ Release 创建失败${NC}"
@@ -516,9 +583,7 @@ echo "  URL: $RELEASE_URL"
 # 执行 post-release.sh 钩子
 run_hook "post-release.sh" "$RELEASE_URL" || true
 
-# 清理临时文件
-rm -f "$RELEASE_NOTES_FILE" "$COMMIT_FILE"
-clear_checkpoints
+# 临时文件和断点在 --confirm-release 阶段清理
 
 echo ""
 echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -538,73 +603,3 @@ echo "    2. 再运行 --confirm-release"
 echo -e "${CYAN}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 exit 3
-
-# ═══════════════════════════════════════════════════
-# 阶段 6: 确认 + 清理（仅 --confirm-release 触发）
-# ═══════════════════════════════════════════════════
-
-# 以下代码只在 --confirm-release 参数时执行
-# （由上面的 exit 3 正常退出，--confirm-release 时跳过 exit）
-
-confirm_and_cleanup() {
-    echo ""
-    echo -e "${BOLD}═══ 阶段 6/6: 确认 + 清理 ═══${NC}"
-
-    # 发布 Draft Release（转为正式）
-    TAG="v${NEW_VERSION}"
-    echo "  发布 Draft Release: $TAG"
-    gh release edit "$TAG" --draft=false 2>&1 || {
-        echo -e "  ${YELLOW}Warning: 发布 Draft Release 失败，请手动发布${NC}"
-    }
-    echo -e "  ${GREEN}✅ Release 已正式发布${NC}"
-
-    # 清理 worktree
-    if [[ -n "$WORKTREE_DIR" ]] && [[ -d "$WORKTREE_DIR" ]]; then
-        cd "${WS_ROOT:-.}"
-        if [[ -f "$SCRIPT_DIR/../remove-worktree/remove-worktree.sh" ]]; then
-            bash "$SCRIPT_DIR/../remove-worktree/remove-worktree.sh" "$BRANCH_NAME" --force --skip-sync 2>&1 || {
-                echo -e "${YELLOW}Warning: worktree 清理失败，可手动处理${NC}"
-            }
-        else
-            echo -e "${YELLOW}⚠️  未找到 remove-worktree 脚本，跳过自动清理${NC}"
-            echo "  可手动删除: cd ${WS_ROOT:-.} && git worktree remove $WORKTREE_DIR"
-        fi
-
-        # 同步其他 worktree
-        echo ""
-        echo "  同步其他 worktree..."
-        for _wt_entry in "${WS_ROOT:-.}"/*/; do
-            _wt_name="${_wt_entry%/}"
-            [[ "$_wt_name" == *"main" ]] && continue
-            [[ "$_wt_name" == *"master" ]] && continue
-            [[ "$_wt_name" == *".bare" ]] && continue
-            [[ "$_wt_name" == *"node_modules" ]] && continue
-            [[ -d "$_wt_name" ]] || continue
-
-            _branch=$(cd "$_wt_name" && git rev-parse --abbrev-ref HEAD 2>/dev/null) || continue
-            [[ -z "$_branch" ]] && continue
-
-            echo "    同步 $_wt_name ($_branch)..."
-            cd "$_wt_name"
-            git fetch origin main 2>&1 | tail -1
-            git merge --no-ff origin/main 2>&1 | tail -1 || {
-                echo -e "    ${YELLOW}冲突: $_wt_name${NC}"
-            }
-            cd "${WS_ROOT:-.}"
-        done
-    else
-        echo -e "  ${GREEN}⏭️  跳过清理（worktree 不存在）${NC}"
-    fi
-
-    # ── 最终报告 ──────────────────────────────────────
-    echo ""
-    echo "══════════════════════════════════════════════════"
-    echo -e "${GREEN}${BOLD}✅ 端到端流程全部完成！${NC}"
-    echo "  PR: #$PR_NUMBER"
-    echo "  版本: v$NEW_VERSION"
-    echo "  分支: $BRANCH_NAME"
-    echo "══════════════════════════════════════════════════"
-}
-
-# confirm_and_cleanup 函数由上方 --confirm-release 快速路径调用
-# 函数定义保留在此处供 source

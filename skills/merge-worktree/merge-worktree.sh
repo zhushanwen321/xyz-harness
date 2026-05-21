@@ -1,4 +1,12 @@
 #!/bin/bash
+# ⚠️ DEPRECATED: 此脚本已被 merge-and-publish.sh 取代，不再维护。
+# 使用: bash merge-and-publish.sh <worktree-dir> [patch|minor|major]
+#
+# 原因: source 路径不兼容当前目录结构，功能已完整迁移到 merge-and-publish.sh。
+echo "⚠️ 此脚本已废弃，请使用 merge-and-publish.sh" >&2
+exit 1
+
+# === 以下为原始代码（保留供参考）===
 # 合并 worktree：同步其他 worktree 到 main → 最后删除已合并的 worktree
 # Usage: merge-worktree.sh <branch-name>
 # Example: merge-worktree.sh feat/new-feature

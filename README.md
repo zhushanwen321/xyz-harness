@@ -114,22 +114,22 @@ python3 install.py
 
 ```bash
 mkdir -p ~/.pi/agent/extensions/coding-workflow/lib
-cp index.ts gate-check.py ~/.pi/agent/extensions/coding-workflow/
-cp lib/model-resolve.ts lib/subagent.ts ~/.pi/agent/extensions/coding-workflow/lib/
+cp extensions/coding-workflow/index.ts extensions/coding-workflow/gate-check.py ~/.pi/agent/extensions/coding-workflow/
+cp extensions/coding-workflow/lib/model-resolve.ts extensions/coding-workflow/lib/subagent.ts ~/.pi/agent/extensions/coding-workflow/lib/
 ```
 
 重启 Pi 或 `/reload` 生效。
 
-### 3. 安装 retrospect agent
+### 3. 安装 retrospect（install.py 自动处理）
 
-```bash
-mkdir -p ~/.pi/agent/agents/harness-retrospect
-cp agents/harness-retrospect/agent.md ~/.pi/agent/agents/harness-retrospect/
-```
+install.py 已将 `agents/harness-retrospect` 作为 agent 安装，并将 `skills/harness-retrospect` 作为 skill 安装。
 
-或使用全局 skill（已包含在 install.py 中）：
+验证：
 ```bash
-# harness-retrospect 也注册为全局 skill
+# Agent（coding-workflow 扩展的 subagent system prompt）
+ls ~/.pi/agent/agents/harness-retrospect/agent.md
+
+# Skill（全局可发现，子 agent 可通过 skill 机制加载）
 ls ~/.pi/agent/skills/harness-retrospect/SKILL.md
 ```
 
@@ -250,7 +250,7 @@ Phase 5 的 overall_retrospect 覆盖全部 5 个 phase，读取前 4 个 phase 
 
 ```
 xyz-harness-engineering/
-├── skills/                               # Skill 定义（11 个）
+├── skills/                               # Skill 定义（17 个：11 个 harness 核心 + 6 个通用工具）
 │   ├── xyz-harness-brainstorming/        # Phase 1: 需求探索
 │   ├── xyz-harness-writing-plans/        # Phase 2: 计划编写
 │   ├── xyz-harness-phase-dev/            # Phase 3: 编码实现
@@ -261,12 +261,31 @@ xyz-harness-engineering/
 │   ├── xyz-harness-backend-dev/          # 后端编码规范
 │   ├── xyz-harness-frontend-dev/         # 前端编码规范
 │   ├── xyz-harness-test-driven-development/  # TDD 方法论
-│   └── xyz-harness-subagent-driven-development/  # subagent 调度
+│   ├── xyz-harness-subagent-driven-development/  # subagent 调度
+│   ├── chrome-automation/                # CDP 浏览器自动化
+│   ├── create-worktree/                  # worktree 创建
+│   ├── merge-worktree/                   # worktree 合并
+│   ├── vision-analysis/                  # 图像/视频分析
+│   ├── zcommit/                          # 智能提交
+│   └── harness-retrospect/               # 复盘分析
 ├── agents/
-│   └── harness-retrospect/agent.md       # 复盘 agent
+│   └── harness-retrospect/agent.md       # 复盘 agent（coding-workflow 使用）
+├── commands/                             # 用户命令
+│   ├── dev.md
+│   └── track.md
+├── docs/                                 # 文档
+│   ├── e2e-research/
+│   └── retrospectives/
 ├── extensions/
+│   ├── coding-workflow/                  # Auto Mode 扩展
+│   │   ├── index.ts
+│   │   ├── gate-check.py
+│   │   └── lib/
+│   │       ├── model-resolve.ts
+│   │       └── subagent.ts
 │   ├── todolist/                          # 任务追踪
-│   └── claude-rules-loader/               # 跨项目规则加载
+│   ├── claude-rules-loader/               # 跨项目规则加载
+│   └── edit-whitespace-normalizer/        # 编辑前空白字符修复
 ├── install.py                            # 全局安装脚本
 ├── install-to-project.sh                 # 一键安装到项目
 ├── CLAUDE.md                             # 开发者文档

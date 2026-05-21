@@ -260,7 +260,7 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 | 配置项 | 值 |
 |--------|---|
 | Agent | general-purpose → general-purpose → general-purpose |
-| Model | `llm-simple-router/glm-5.1`（executor）、`llm-simple-router/glm-5-turbo`（tdd-coder） |
+| Model | `router-openai/glm-5.1`（executor）、`router-openai/ds-flash`（tdd-coder） |
 | 注入上下文 | {列出具体内容：哪些 task 描述、spec 章节、编码规范} |
 | 读取文件 | {列出需要读取的已有文件路径} |
 | 修改/创建文件 | {列出将要创建或修改的文件路径} |
@@ -406,7 +406,7 @@ verdict: pass
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5.1
+   - **Model**: router-openai/glm-5.1
    - **Task prompt**:
      ```
      你是独立审查专家。按以下步骤执行审查：
@@ -442,12 +442,12 @@ verdict: pass
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5-turbo
+   - **Model**: router-openai/ds-flash
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：
 
-     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     1. 回顾 system prompt 中已包含的复盘方法论
      2. read 以下交付物文件：
         - `{topic_dir}/plan.md`
         - `{topic_dir}/e2e-test-plan.md`

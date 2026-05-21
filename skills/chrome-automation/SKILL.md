@@ -294,3 +294,4 @@ node scripts/cdp.js "$WS_URL" Network.setUserAgentOverride '{"userAgent":"Mozill
 - chrome-devtools MCP 使用 uid（a11y tree 的唯一标识），本 skill 改用 CSS 选择器（`querySelector`），更通用
 - CDP 命令参考：https://chromedevtools.github.io/devtools-protocol/
 - `scripts/cdp.js` 路径：相对本 skill 目录下的 `scripts/cdp.js`
+- **端口清理**：使用完 CDP 后，务必关闭 Chrome/Electron 进程释放端口。用 `lsof -i :9222 -P | grep LISTEN` 查找占用进程，然后 `kill <PID>`。若 Vite dev server 同时运行（端口 1420），同样需要关闭。禁止用 `pkill chrome`/`pkill node` 等宽泛命令，避免误杀其他进程

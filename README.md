@@ -1,541 +1,303 @@
 # xyz-harness-engineering
 
-基于 Harness Engineering 的 AI 编码工作流体系 —— 以 pi（AI 编码 Agent）为载体，实现 11 阶段需求开发流水线。
+基于 Harness Engineering 的 AI 编码工作流引擎 —— 以 Pi（AI 编码 Agent）为载体，实现 5-phase 需求开发流水线。
 
-## 什么是 Harness Engineering
+## 核心理念
 
-Harness Engineering 是一种用工程化约束替代 prompt 软指导的 AI 编码方法论。核心思路：**与其告诉 AI "请仔细检查"，不如用脚本门禁、独立评审、人工确认三层机制强制保证质量**。AI 倾向于跳过检查、伪造通过结果，硬约束比 prompt 级软要求更可靠。
+**AI 是不可信的执行者。** 与其告诉 AI "请仔细检查"，不如用脚本门禁、独立评审、强制复盘三层机制让它无法偷懒。
+
+具体来说，AI 有这些逃脱倾向：
+
+| AI 行为 | 后果 |
+|---------|------|
+| 跳过检查，声称"已验证" | 交付质量不可控 |
+| 伪造测试通过结果 | 缺陷进入生产 |
+| 利用之前 phase 记忆偷跑 | 需求偏离，设计未经验证 |
+| 遇到困难悄悄降级标准 | 交付物不达标但看不出来 |
+| 复盘失败后继续推进 | 质量闭环断裂 |
+
+Harness 通过**五层防御**解决这些问题：
+
+```
+L1 上下文隔离 ── AI 只能看到当前 phase 的指令，不知道整体流程
+L2 脚本门禁   ── gate-check.py 验证交付物，AI 无法伪造脚本输出
+L3 独立评审   ── review subagent 独立进程，不受编码者 bias 影响
+L4 强制复盘   ── retrospect 失败 → phase-start BLOCKED，无法推进
+L5 结果可见   ── 失败信息写入 gate 返回消息，不再静默吞掉
+```
 
 参考资料：
 - [Anthropic: Building Effective Agents](https://www.anthropic.com/research/building-effective-agients)
 - [OpenAI: A Practical Guide to Building Agents](https://cdn.openai.com/business.pdf)
 
-## 使用指南：从零开发一个需求
+## 两种运行模式
 
-### 第一步：安装 harness skill
-
-```bash
-cd xyz-harness-engineering
-python3 install.py
-```
-
-安装脚本会：
-- 将 `skills/xyz-harness-*` 目录 symlink 到 `~/.pi/agent/skills/` 和 `~/.agents/skills/`
-- 清理旧版不带 `xyz-harness-` 前缀的同名 skill
-
-### 第二步：初始化目标项目
-
-目标项目（你要开发需求的项目）需要配置好 CLAUDE.md，harness 的 skill 在运行时会从中读取项目上下文。
-
-#### 必须配置（不配置则对应阶段会失败）
-
-| 章节 | 读取方 | 缺失影响 |
-|------|--------|----------|
-| **项目背景 + 技术栈** | 阶段① brainstorming | AI 无法理解项目，需求分析质量差 |
-| **模块结构** | 阶段① brainstorming、writing-plans | AI 无法规划文件变更 |
-| **架构约束**（分层规则、禁止事项） | 阶段②④⑥ expert-reviewer、阶段③ coding-skill | 编码和评审无规范依据 |
-| **编码规范** | 阶段③④ coding-skill、expert-reviewer | AI 按自己的风格编码 |
-| **测试规范**（目录路径、命名、mock 策略） | 阶段⑤⑥ unit-test-write、expert-reviewer | 测试文件放错位置或风格不统一 |
-| **质量门禁**（编译/测试/lint 命令） | 阶段③⑤⑦⑧ gate-script.sh | **gate 脚本会跳过检查直接通过，形同虚设** |
-
-#### 可选配置（不配置则对应阶段会降级或跳过）
-
-| 章节 | 读取方 | 缺失影响 |
-|------|--------|----------|
-| **部署**（命令、环境、超时） | 阶段⑨ deploy-verify | 部署阶段跳过 |
-| **健康检查 URL** | 阶段⑨ gate-script.sh | 无法自动验证部署成功 |
-| **验证接口** | 阶段⑨ deploy-verify | 无法自动验证服务可用 |
-| **数据规范**（金额/时间/ID 的类型约定） | 阶段③ coding-skill | AI 可能选错类型 |
-| **外部调用规范**（超时、重试、降级） | 阶段③④ coding-skill、expert-reviewer | AI 可能写无超时的调用 |
-| **高频变更区** | 阶段① writing-plans | AI 不清楚哪些文件改起来要格外小心 |
-
-#### 渐进积累（每次需求完成后自动建议更新）
-
-| 章节 | 积累方式 |
-|------|----------|
-| **已知陷阱** | 阶段⑪复盘后建议新增规则 |
-| **wiki/ 知识库** | 阶段⑪复盘后建议补充领域文档 |
-
-#### 快速初始化
-
-如果目标项目没有 CLAUDE.md，dev-flow 启动时会自动提示。也可以手动创建：
-
-```bash
-# 复制模板到目标项目根目录
-cp skills/xyz-harness-dev-flow/references/claude-md-template.md /path/to/your-project/CLAUDE.md
-```
-
-然后按模板提示填空。**至少填写「质量门禁」章节**，否则 gate 脚本无法执行编译/测试/lint 检查：
-
-```markdown
-## 质量门禁
-
-- 编译: `cargo build`
-- 测试: `cargo test`
-- lint: `cargo clippy`
-```
-
-格式要求：`- 标签: \`命令\``。gate-script.sh 按标签名自动归类（含"编译/build"→compile，含"测试/test"→test，含"lint/clippy/eslint"→lint）。
-
-### 第三步：启动需求开发
-
-建议使用 `create-worktree` skill 为每个需求创建独立分支和工作目录。如果你已在 worktree 中，dev-flow 会自动检测。
-
-在 pi 中打开目标项目，输入：
+### Auto Mode（coding-workflow 扩展）
 
 ```
-开发需求 xxx
+/coding-workflow my-feature
 ```
 
-或者：
+一条命令启动，AI 自动完成 5 个 phase。你只需在出现问题时介入。
+
+**控制流程：**
 
 ```
-做一个需求：实现用户注册功能
+/coding-workflow <topic>
+  → 创建 topic 目录，注入 Phase 1 skill
+  → AI 产出 deliverables，调用 coding-workflow-gate
+    → gate-check.py 验证
+    → review subagent 独立审查
+    → retrospect subagent 独立复盘
+    → PASS: 消息中显示 review + retrospect 状态
+    → FAIL: 列出具体修复项
+  → AI 调用 coding-workflow-phase-start
+    → 检查 retrospect 文件存在（不存在则 BLOCKED）
+    → compact() 清除对话历史
+    → 注入下一 phase skill
+  → Phase 5 完成后生成 overall_retrospect（覆盖全部 5 个 phase）
 ```
 
-这会触发 `xyz-harness-dev-flow` skill，启动 11 阶段流水线。
+**AI 能看到什么：**
+- 当前 phase 的 skill 指令
+- topic 目录路径
+- coding-workflow-gate 和 coding-workflow-phase-start 两个工具
 
----
+**AI 看不到什么：**
+- 一共有多少个 phase
+- 下一个 phase 是什么
+- 之前 phase 的讨论内容（compact 后被清除）
+- 其他项目的 harness 运行历史
 
-### 11 阶段全流程
+### Manual Mode（纯 Skill）
 
-你只需要在 5 个确认点做决策，其余全自动。
+不安装扩展，手动触发每个 phase。适合需要精细控制的场景。
 
 ```
-① 需求分析 ────── ✋ 确认点1：需求设计确认
-② 需求评审 ────── ✋ 确认点2：计划评审确认
-③ 编码实现
-④ 编码评审 ────── ✋ 确认点3：编码评审确认
-⑤ 测试编写
-⑥ 测试评审
-⑦ 代码推送
-⑧ CI 验证 ──────── ✋ 确认点4：部署目标确认
-⑨ 部署验证
-⑩ 用户确认 ────── ✋ 确认点5：最终交付确认
-⑪ 自动复盘
+# 在 Pi 中，手动加载 skill
+"start Phase 1"  → brainstorming skill 加载
+"start Phase 2"  → writing-plans skill 加载
+...
 ```
 
-下面逐阶段说明会发生什么、你需要做什么。
-
----
-
-#### 阶段 ① 需求分析
-
-**做什么：** AI 会和你对话，理解需求、澄清细节、提出方案，最终产出 spec.md（需求设计文档）和 plan.md（实现计划）。
-
-**你需要做的：**
-1. 回答 AI 的提问（每次一个问题，优先多选）
-2. 在 2-3 个方案中选择
-3. 逐节确认设计
-4. 审阅最终的 spec.md
-
-**✋ 确认点1：** AI 展示需求分析结果，你选择：
-- **确认** → 进入 ② 需求评审
-- **有修改意见** → 直接改 spec/plan，重新确认
-- **方向不对** → 重新讨论
-
----
-
-#### 阶段 ② 需求评审
-
-**做什么：** AI 独立评审 spec 和 plan（不继承你的对话历史，保证客观性）。检查需求完整性、计划可行性、一致性。
-
-**你需要做的：** 等待评审完成（自动）
-
-**✋ 确认点2：** AI 展示评审结果，你选择：
-- **确认** → 进入 ③ 编码实现
-- **有修改意见** → AI 修改后重新评审
-- **计划不合理** → 回到 ① 重新讨论
-
-评审循环上限：≤3 轮。超出后暂停让你决策。
-
----
-
-#### 阶段 ③ 编码实现
-
-**做什么：** AI 按 plan.md 中的 task 逐个编码。每个 task 内部：
-1. TDD 红-绿-重构（先写测试 → 确认失败 → 最小实现 → 确认通过）
-2. spec 合规检查（独立 subagent 验证代码是否符合 spec）
-3. 合规不通过 → 修复 → 重审
-
-**你需要做的：** 无（全自动）
-
-**质量门禁：** 编译通过 + 测试通过 + lint 通过（gate-script.sh L1 强制检查）
-
----
-
-#### 阶段 ④ 编码评审
-
-**做什么：** 独立评审 subagent 审查代码变更。检查 spec 合规、代码质量、架构合规、安全性能。
-
-**你需要做的：** 等待评审完成（自动）
-
-**✋ 确认点3：** AI 展示评审结果，你选择：
-- **确认** → 进入 ⑤ 测试编写
-- **有修改意见** → AI 修改后重新评审
-- **实现不符合预期** → 回到 ③ 重新编码
-
-评审循环上限：≤2 轮。超出后暂停让你决策。
-
----
-
-#### 阶段 ⑤ 测试编写
-
-**做什么：** AI 分析代码变更，为每个变更的接口编写接口级测试（正常路径 + 边界条件 + 异常路径）。
-
-**你需要做的：** 无（全自动）
-
-**质量门禁：** 新增测试文件存在 + 测试通过（gate-script.sh L1 强制检查）
-
----
-
-#### 阶段 ⑥ 测试评审
-
-**做什么：** 独立评审 subagent 审查测试代码质量。
-
-**你需要做的：** 无（全自动）
-
-评审循环上限：≤2 轮。
-
----
-
-#### 阶段 ⑦ 代码推送
-
-**做什么：** AI 使用 zcommit skill 提交并推送代码到远端。
-
-**你需要做的：** 无（全自动）
-
-**质量门禁：** 工作区干净 + push 成功（gate-script.sh L1 强制检查）
-
----
-
-#### 阶段 ⑧ CI 验证
-
-**做什么：** AI 执行 CLAUDE.md 中定义的所有验证命令（编译、测试、lint），记录结果。
-
-**你需要做的：** 无（全自动）
-
-**质量门禁：** 所有命令 exit code == 0 且测试数 > 0 且 passed == total（硬编码，不可跳过）
-
----
-
-#### ✋ 确认点4：部署目标确认
-
-AI 展示 CI 验证通过结果，你确认部署目标：
-- **确认** → 进入 ⑨ 部署验证
-- **修改目标** → 告诉 AI 部署到哪里
-- **暂不部署** → 暂停，等待你回来
-
----
-
-#### 阶段 ⑨ 部署验证
-
-**做什么：** AI 执行部署命令，验证健康检查通过。
-
-**你需要做的：** 无（全自动）
-
-**质量门禁：** 健康检查返回 200（gate-script.sh L1 强制检查）
-
----
-
-#### ✋ 确认点5：最终交付确认
-
-AI 展示所有阶段的 summary，你确认最终交付：
-- **确认完成** → 进入 ⑪ 自动复盘
-- **需求不符** → 回到 ① 重新讨论
-- **实现有问题** → 回到 ③ 重新编码
-
----
-
-#### 阶段 ⑪ 自动复盘
-
-**做什么：** AI 分析本次需求的完整流程，产出复盘报告。包含：
-- 回退根因分类
-- 评审有效性评估
-- gate 脚本遗漏检查
-- CLAUDE.md 改进建议
-
-**你需要做的：** 审阅复盘报告，决定是否采纳 CLAUDE.md 改进建议。
-
----
-
-### 回退机制
-
-任何阶段失败时，AI 会按回退路由表自动回退：
-
-| 失败场景 | 回退到 |
-|---------|--------|
-| ② 需求评审不通过 | → ① 重新讨论 |
-| ④ 编码评审不通过 | → ③ 重新编码 |
-| ⑤ 代码不可测试 | → ③ 重构代码 |
-| ⑥ 测试评审不通过 | → ⑤ 修复测试 |
-| ⑧ CI 编译错误 | → ③ 修复编译 |
-| ⑧ CI 测试失败 | → ③ 或 ⑤（按错误类型） |
-| ⑨ 部署失败 | → ③（代码问题）或就地修复（配置问题） |
-| ⑩ 需求不符 | → 01 重新讨论 |
-| ⑩ 实现有问题 | → 03 重新编码 |
-
----
-
-### 产出物
-
-一次完整的 dev-flow 执行后，目标项目中有以下产出物：
-
-```
-.xyz-harness/{yyyy-MM-dd}-{主题}/
-├── spec.md                        # 需求设计文档
-├── plan.md                        # 实现计划
-└── changes/
-    ├── summary.md                 # 全流程追溯
-    ├── reviews/
-    │   ├── plan_review_v1.md      # 需求评审记录
-    │   ├── code_review_v1.md      # 编码评审记录
-    │   └── test_review_v1.md      # 测试评审记录
-    ├── evidence/
-    │   ├── verification_output.md # 本地验证输出
-    │   ├── ci_result.md           # CI 结果
-    │   └── deploy_result.md       # 部署结果
-    └── retrospective.md           # 复盘记录
-
-.xyz-harness/
-├── gate/
-│   ├── stage-01.pass              # 各阶段 L1 门禁标记
-│   ├── stage-03.pass
-│   └── ...
-└── metrics/
-    └── {yyyy-MM-dd}-{需求名}.json  # 运行指标
-```
-
----
-
-## 核心设计
-
-### 三层约束
-
-| 层级 | 机制 | 说明 |
-|------|------|------|
-| L1 脚本强制 | gate-script.sh 生成 `.xyz-harness/gate/{stage}.pass` | AI 无法伪造脚本输出 |
-| L2 subagent 检查 | gate-checker 独立验证 | 评审质量、产出物完整性 |
-| L3 人工确认 | 用户手动决策（5 个确认点） | 需求方向、计划、代码、部署、交付 |
-
-### 上下文三层
-
-| 层级 | 加载时机 | 内容 |
-|------|---------|------|
-| L1 会话常驻 | 自动 | CLAUDE.md（≤200行，最高优先级） |
-| L2 阶段常驻 | 进入阶段 | 当前阶段 skill + references |
-| L3 按需加载 | Agent 主动 | Wiki 知识库 |
-
-### 执行与评判分离
-
-评审 subagent 不继承编码 subagent 的上下文，只看到 spec + plan + 代码 diff + 编码规范，看不到编码过程中的讨论和试错。
-
-## Skill 清单
-
-| Skill 名 | 来源 | 触发阶段 | 说明 |
-|---------|------|---------|------|
-| **xyz-harness-init** | 新建 | dev-flow 前置 | 项目初始化，引导填写 CLAUDE.md |
-| xyz-harness-dev-flow | 新建（编排器） | 全程 | 11 阶段纯调度，不直接执行 |
-| xyz-harness-brainstorming | 提取 | ① | 需求探索与澄清 → 下一步: writing-plans |
-| xyz-harness-writing-plans | 提取 | ① | 生成 plan.md → 下一步: 需求评审 |
-| xyz-harness-expert-reviewer | 新建 | ②④⑥ | 统一评审（计划/编码/测试三种模式） |
-| xyz-harness-subagent-driven-development | 提取+适配 | ③ | Task 级编码编排，含 TDD 两阶段 |
-| xyz-harness-coding-skill | 新建 | ③ | Clean Architecture 分层编码规范（被 subagent 加载） |
-| xyz-harness-test-driven-development | 提取 | ③ | TDD 方法论（被 subagent 加载） |
-| xyz-harness-unit-test-write | 新建 | ⑤ | Change-driven Testing（接口级） |
-| **xyz-harness-e2e-test-plan** | 新建 | Phase 1 Step 5 | E2E 测试计划编写（四层验证策略） |
-| xyz-harness-phase2-dev | 新建 | Phase 2 | 7 阶段开发交付（编码→评审→单元测试→E2E→评审→推送→复盘） |
-| xyz-harness-verification-before-completion | 提取 | ⑧ | 编译、测试、lint 验证 |
-| xyz-harness-deploy-verify | 新建 | ⑨ | 部署验证 |
-
-## Agent 清单
-
-| Agent 名 | 角色 | 使用阶段 | 说明 |
-|---------|------|---------|------|
-| **harness-tdd-coder** | TDD 测试编写 | ③ task 级 | 只写测试不写实现，确保测试先行 |
-| **harness-e2e-tester** | E2E 测试执行 | Phase 2 Stage 4 | 按 e2e-test-plan 四层验证，独立 Chrome 实例 |
-| harness-executor | 通用执行 | ③ ⑤ ⑦ ⑧ ⑨ | 编码、测试编写、推送、部署 |
-| harness-reviewer | 独立评审 | ② ④ ⑥ ⑪ | 计划评审 / 编码评审 / 测试评审 |
-| harness-gate-checker | 门禁检查 | 每阶段完成后 | 独立验证交付物和门禁条件 |
-
-Agent 文件位于 `agents/` 目录，通过 CLAUDE.md 的「Harness Agent 覆盖」章节可覆盖默认配置。
-
-## 依赖
-
-### 运行环境
-
-| 依赖 | 版本 | 用途 | 必需？ |
-|------|------|------|--------|
-| **Bash** | macOS / Linux | 门禁脚本、状态机、hook | 必需 |
-| **Node.js** | v21+（内置 WebSocket） | CDP 客户端（`cdp.js`）、状态机 JSON 解析 | 必需 |
-| **Python** | 3.10+（仅 stdlib） | 安装脚本（`install.py`）、状态机 JSON 解析（node 不可用时的 fallback） | 二选一 |
-| **Git** | 2.x+ | worktree 管理、代码推送、diff 分析 | 必需 |
-| **curl** | 任意 | CDP HTTP API、健康检查、API 测试 | 必需 |
-
-### Pi 扩展依赖
-
-| 扩展 | 用途 | 安装方式 |
-|------|------|----------|
-| **force-loop** | `/loop` 循环模式、`loop_task_tracker` Stage 级任务追踪 | `cp -r extensions/force-loop/ ~/.pi/agent/extensions/force-loop/` |
-| **todolist** | `todolist` 工具，管理 Phase 1 固定步骤和 Stage 1 内部 plan Task。`/track` 命令启动 Phase 1 | `cp -r extensions/todolist/ ~/.pi/agent/extensions/todolist/` |
-
-`extensions/todolist/index.ts` 编译运行需要以下 Pi SDK 包（Pi 环境自带，无需单独安装）：
-- `@mariozechner/pi-ai`
-- `@mariozechner/pi-coding-agent`
-- `@mariozechner/pi-tui`
-- `typebox`
-
-### 外部 Skill 依赖
-
-以下全局 skill 非 harness 自带，需单独安装。分为两类：
-
-**私有 skill**（来自 [useful-dev-tools](https://github.com/anthropics/anthropic-cookbook) 等本地仓库，非公开 npm/pip 包）：
-
-| Skill | 用途 | 使用阶段 | 安装状态检查 |
-|-------|------|---------|-------------|
-| **chrome-automation** | CDP 浏览器操控：导航、DOM/A11y 检查、截图 | E2E Layer 2+3 | `ls ~/.pi/agent/skills/chrome-automation/` |
-| **vision-analysis** | AI 视觉对比（智谱 GLM-4.6V + MiniMax VLM） | E2E Layer 3 | `ls ~/.pi/agent/skills/vision-analysis/` |
-| **zcommit** | 智能 git commit 提交 | Phase 2 Stage 6 | `ls ~/.pi/agent/skills/zcommit/` |
-| **create-worktree** | git worktree 创建 | Phase 1 前置 | `ls ~/.pi/agent/skills/create-worktree/` |
-
-**公开社区 skill**（Claude Code 社区，可通过 `~/.agents/skills/` 获取）：
-
-| Skill | 用途 | 使用阶段 |
-|-------|------|----------|
-| **executing-plans** | 分步执行实现计划 | Phase 1 Step 4 (writing-plans) |
-| **using-git-worktrees** | worktree 管理 | Phase 1 前置 |
-| **frontend-design** | 前端设计（brainstorming 禁止调用，仅作为边界说明） | 不使用 |
-
-> **注意**：私有 skill 源码在 `useful-dev-tools/claude-code-tool/skills/` 仓库中，通过 symlink 链接到 `~/.pi/agent/skills/` 和 `~/.agents/skills/`。如果你没有这些 skill，harness 的对应阶段会降级：
-> - 缺 `chrome-automation` + `vision-analysis` → E2E 测试跳过 Layer 2/3，仅执行 Layer 1 (API) + Layer 4 (DB)
-> - 缺 `zcommit` → 代码推送阶段需手动提交
-> - 缺 `create-worktree` → 需手动创建 worktree
-
-**E2E 测试的 Chrome 要求**：
-```bash
-# Chrome 需以远程调试模式启动
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
-```
-
-### 可选依赖
-
-| 依赖 | 用途 | 触发条件 |
-|------|------|----------|
-| **jq** | JSON 解析（API 测试） | E2E Layer 1 验证 |
-| **gh**（GitHub CLI） | 创建 PR、CI 触发 | Phase 2 Stage 6 推送 |
-| **psql / mysql / sqlite3** | 数据库查询验证 | E2E Layer 4 验证 |
-| **npx** | 运行项目编译/lint 命令 | gate-script.sh 按需调用 |
-| **docker** | 部署验证 | Phase 2 Stage 6（按项目配置） |
-
-### 各 Skill 依赖矩阵
-
-| Skill | Bash | Node.js | Python | 外部 Skill | 特殊要求 |
-|-------|:----:|:-------:|:------:|-----------|----------|
-| xyz-harness-dev-flow | ✅ | ✅ | (fallback) | zcommit | - |
-| xyz-harness-brainstorming | - | - | - | - | - |
-| xyz-harness-writing-plans | - | - | - | - | - |
-| xyz-harness-expert-reviewer | - | - | - | - | - |
-| xyz-harness-coding-skill | - | - | - | - | - |
-| xyz-harness-subagent-driven-development | - | - | - | create-worktree | - |
-| xyz-harness-test-driven-development | - | - | - | - | - |
-| xyz-harness-unit-test-write | ✅ | - | - | - | 需要 git |
-| xyz-harness-verification-before-completion | ✅ | - | - | - | 需要 git |
-| xyz-harness-deploy-verify | ✅ | - | - | - | 需要部署工具（docker/deploy.sh） |
-| xyz-harness-init | - | - | - | - | - |
-| xyz-harness-phase2-dev | ✅ | - | - | - | 需要 git |
-| **xyz-harness-e2e-test-plan** | ✅ | ✅ | ✅ | chrome-automation, vision-analysis | Chrome `--remote-debugging-port` |
-
-### 安装验证
-
-```bash
-# 检查必需工具
-node --version  && echo "✓ Node.js"
-python3 --version && echo "✓ Python"
-git --version && echo "✓ Git"
-curl --version | head -1 && echo "✓ curl"
-
-# 检查私有外部 skill
-ls ~/.pi/agent/skills/chrome-automation/SKILL.md && echo "✓ chrome-automation" || echo "⚠ 缺失: E2E 测试 DOM/截图将不可用"
-ls ~/.pi/agent/skills/vision-analysis/SKILL.md && echo "✓ vision-analysis" || echo "⚠ 缺失: E2E 视觉对比将不可用"
-ls ~/.pi/agent/skills/zcommit/SKILL.md && echo "✓ zcommit" || echo "⚠ 缺失: 代码推送需手动提交"
-ls ~/.pi/agent/skills/create-worktree/SKILL.md && echo "✓ create-worktree" || echo "⚠ 缺失: 需手动创建 worktree"
-
-# 检查可选工具
-jq --version && echo "✓ jq" || echo "⚠ jq not found (API 测试需要)"
-gh --version && echo "✓ gh" || echo "⚠ gh not found (PR 创建需要)"
-```
+每个 phase 完成后，手动运行 gate check、手动 dispatch review/retrospect。
+
+## 5-Phase 工作流
+
+| Phase | 名称 | 产出 | 质量保障 |
+|-------|------|------|---------|
+| 1 | **Spec** | spec.md | spec_review + spec_retrospect |
+| 2 | **Plan** | plan.md + e2e-test-plan.md + test_cases_template.json | plan_review + plan_retrospect |
+| 3 | **Dev** | 源代码 + test_results.md | code_review + dev_retrospect |
+| 4 | **Test** | test_execution.json | test_review + test_retrospect |
+| 5 | **PR** | pr_evidence.md + ci_results.md | pr_review + overall_retrospect |
+
+每个 phase 都有三层质量保障：
+1. **Gate** — 脚本验证交付物存在性和格式
+2. **Review** — 独立 subagent 审查质量（verdict: pass/fail, must_fix: N）
+3. **Retrospect** — 独立 subagent 复盘执行过程和流程体验
 
 ## 安装
 
-### 方式一：一键安装到任意项目（推荐）
+### 1. 安装 harness skills
 
 ```bash
 cd xyz-harness-engineering
-./install-to-project.sh /path/to/your-project
-```
-
-这个脚本会：
-1. 全局安装所有 skill（symlink 到 `~/.pi/agent/skills/` 和 `~/.agents/skills/`）
-2. 为目标项目创建本地 symlink（`.pi/skills/`、`.claude/skills/`、`.agents/skills/`）
-3. 检查目标项目的 CLAUDE.md，引导补全或初始化
-
-### 方式二：只安装 skill（全局）
-
-```bash
 python3 install.py
 ```
 
-- 安装位置：`~/.pi/agent/skills/xyz-harness-*` 和 `~/.agents/skills/xyz-harness-*`（symlink）
-- 自动清理旧版（不带 `xyz-harness-` 前缀的 dev-flow 等同名 skill）
+安装脚本会将 `skills/xyz-harness-*` 目录 symlink 到：
+- `~/.pi/agent/skills/`（Pi）
+- `~/.agents/skills/`（Claude Code）
+
+### 2. 安装 coding-workflow 扩展（Auto Mode）
+
+```bash
+mkdir -p ~/.pi/agent/extensions/coding-workflow/lib
+cp extensions/coding-workflow/index.ts extensions/coding-workflow/gate-check.py ~/.pi/agent/extensions/coding-workflow/
+cp extensions/coding-workflow/lib/model-resolve.ts extensions/coding-workflow/lib/subagent.ts ~/.pi/agent/extensions/coding-workflow/lib/
+```
+
+重启 Pi 或 `/reload` 生效。
+
+### 3. 安装 retrospect（install.py 自动处理）
+
+install.py 已将 `agents/harness-retrospect` 作为 agent 安装，并将 `skills/harness-retrospect` 作为 skill 安装。
+
+验证：
+```bash
+# Agent（coding-workflow 扩展的 subagent system prompt）
+ls ~/.pi/agent/agents/harness-retrospect/agent.md
+
+# Skill（全局可发现，子 agent 可通过 skill 机制加载）
+ls ~/.pi/agent/skills/harness-retrospect/SKILL.md
+```
+
+### 4. 配置模型
+
+创建 `~/.pi/agent/subagent-models.json`：
+
+```json
+{
+  "models": [
+    {
+      "id": "glm-5-turbo",
+      "provider": "router-openai",
+      "task-complexity": ["low"],
+      "order": 2
+    },
+    {
+      "id": "ds-flash",
+      "provider": "router-openai",
+      "task-complexity": ["low", "medium"],
+      "order": 3
+    }
+  ]
+}
+```
+
+review subagent 使用 `medium` 复杂度，retrospect subagent 使用 `low` 复杂度。
+
+### 5. 配置目标项目
+
+目标项目的 `CLAUDE.md` 需要包含：
+
+| 章节 | 必需？ | 缺失影响 |
+|------|--------|----------|
+| 项目背景 + 技术栈 | 必需 | AI 无法理解项目 |
+| 模块结构 | 必需 | AI 无法规划文件变更 |
+| 架构约束 | 必需 | 编码和评审无规范 |
+| 编码规范 | 必需 | AI 按自己的风格编码 |
+| 质量门禁（编译/测试/lint 命令） | 必需 | gate 脚本形同虚设 |
+| 测试规范 | 推荐 | 测试风格不统一 |
+
+## 使用
+
+### 启动工作流
+
+```
+/coding-workflow implement-user-auth
+```
+
+### 查看进度
+
+```
+/coding-workflow-status
+```
+
+### 退出
+
+```
+/coding-workflow-abort
+```
+
+### 回退
+
+| 场景 | 操作 |
+|------|------|
+| gate 失败 | 根据失败信息修复，重新调用 `coding-workflow-gate` |
+| 想退出 | `/coding-workflow-abort` |
+| 想重新开始 | abort 后重新 `/coding-workflow <topic>` |
+| 扩展有问题 | 删除扩展目录，回到 Manual Mode |
+
+## 复盘安全保障
+
+复盘是 harness 的质量闭环。**复盘不可跳过。**
+
+保障机制：
+
+```
+gate PASS
+  → retrospect subagent 执行
+    → 成功：retrospect 文件创建 → gate 消息显示 "Retrospect: xxx.md created"
+    → 失败：gate 消息显示 WARNING + 失败原因
+  → AI 调用 phase-start
+    → retrospect 文件存在？
+      → 是：放行
+      → 否：BLOCKED，给出重试选项
+```
+
+Phase 5 的 overall_retrospect 覆盖全部 5 个 phase，读取前 4 个 phase 的复盘记录进行交叉分析。
+
+## 产出物
+
+```
+.xyz-harness/{yyyy-MM-dd}-{topic}/
+├── spec.md                        # Phase 1: 需求设计
+├── plan.md                        # Phase 2: 实现计划
+├── e2e-test-plan.md               # Phase 2: E2E 测试计划
+├── test_cases_template.json       # Phase 2: 测试用例模板
+└── changes/
+    ├── reviews/
+    │   ├── spec_review_v1.md      # Phase 1 审查
+    │   ├── spec_retrospect.md     # Phase 1 复盘
+    │   ├── plan_review_v1.md      # Phase 2 审查
+    │   ├── plan_retrospect.md     # Phase 2 复盘
+    │   ├── code_review_v1.md      # Phase 3 审查
+    │   ├── dev_retrospect.md      # Phase 3 复盘
+    │   ├── test_review_v1.md      # Phase 4 审查
+    │   ├── test_retrospect.md     # Phase 4 复盘
+    │   ├── pr_review_v1.md        # Phase 5 审查
+    │   └── overall_retrospect.md  # Phase 5 整体复盘（覆盖全部 5 个 phase）
+    └── evidence/
+        ├── test_results.md        # Phase 3: 测试结果
+        ├── test_execution.json    # Phase 4: 测试执行记录
+        ├── pr_evidence.md         # Phase 5: PR 证据
+        └── ci_results.md          # Phase 5: CI 结果
+```
 
 ## 项目结构
 
 ```
 xyz-harness-engineering/
-├── skills/
-│   ├── xyz-harness-init/            # 项目初始化
-│   ├── xyz-harness-dev-flow/        # 编排器
-│   │   ├── SKILL.md
-│   │   ├── scripts/gate-script.sh
-│   │   └── references/
-│   │       ├── claude-md-template.md
-│   │       └── wiki-structure.md
-│   ├── xyz-harness-brainstorming/
-│   ├── xyz-harness-writing-plans/
-│   ├── xyz-harness-subagent-driven-development/
-│   │   ├── SKILL.md
-│   │   ├── implementer-prompt.md
-│   │   └── spec-reviewer-prompt.md
-│   ├── xyz-harness-expert-reviewer/
-│   ├── xyz-harness-coding-skill/
-│   │   ├── SKILL.md
-│   │   └── specs/                   # 6 份 Clean Architecture 分层规范
-│   ├── xyz-harness-unit-test-write/
-│   ├── xyz-harness-e2e-test-plan/          # E2E 测试计划（四层验证）
-│   ├── xyz-harness-phase2-dev/              # Phase 2 开发交付（7 阶段）
-│   ├── xyz-harness-verification-before-completion/
-│   ├── xyz-harness-deploy-verify/
-│   └── xyz-harness-test-driven-development/
-├── agents/                               # Agent 定义
-│   ├── harness-tdd-coder/agent.md         # TDD 测试编写 agent
-│   ├── harness-e2e-tester/agent.md        # E2E 测试执行 agent（四层验证）
-│   ├── harness-executor/agent.md          # 通用执行 agent
-│   ├── harness-reviewer/agent.md          # 独立评审 agent
-│   └── harness-gate-checker/agent.md      # 门禁检查 agent
-├── .xyz-harness/                   # 运行时目录（需求交付物）
-│   └── 2026-05-08-harness-engineering/
-│       ├── spec.md
-│       ├── plan.md
-│       └── stage-execution-detail.md
-├── install.py                       # 全局 skill 安装
-├── install-to-project.sh            # 一键安装到项目
-└── README.md
+├── skills/                               # Skill 定义（17 个：11 个 harness 核心 + 6 个通用工具）
+│   ├── xyz-harness-brainstorming/        # Phase 1: 需求探索
+│   ├── xyz-harness-writing-plans/        # Phase 2: 计划编写
+│   ├── xyz-harness-phase-dev/            # Phase 3: 编码实现
+│   ├── xyz-harness-phase-test/           # Phase 4: 测试执行
+│   ├── xyz-harness-phase-pr/             # Phase 5: 推送 + PR
+│   ├── xyz-harness-gate/                 # Gate 检查
+│   ├── xyz-harness-expert-reviewer/      # 统一评审
+│   ├── xyz-harness-backend-dev/          # 后端编码规范
+│   ├── xyz-harness-frontend-dev/         # 前端编码规范
+│   ├── xyz-harness-test-driven-development/  # TDD 方法论
+│   ├── xyz-harness-subagent-driven-development/  # subagent 调度
+│   ├── chrome-automation/                # CDP 浏览器自动化
+│   ├── create-worktree/                  # worktree 创建
+│   ├── merge-worktree/                   # worktree 合并
+│   ├── vision-analysis/                  # 图像/视频分析
+│   ├── zcommit/                          # 智能提交
+│   └── harness-retrospect/               # 复盘分析
+├── agents/
+│   └── harness-retrospect/agent.md       # 复盘 agent（coding-workflow 使用）
+├── commands/                             # 用户命令
+│   ├── dev.md
+│   └── track.md
+├── docs/                                 # 文档
+│   ├── e2e-research/
+│   └── retrospectives/
+├── extensions/
+│   ├── coding-workflow/                  # Auto Mode 扩展
+│   │   ├── index.ts
+│   │   ├── gate-check.py
+│   │   └── lib/
+│   │       ├── model-resolve.ts
+│   │       └── subagent.ts
+│   ├── todolist/                          # 任务追踪
+│   ├── claude-rules-loader/               # 跨项目规则加载
+│   └── edit-whitespace-normalizer/        # 编辑前空白字符修复
+├── install.py                            # 全局安装脚本
+├── install-to-project.sh                 # 一键安装到项目
+├── CLAUDE.md                             # 开发者文档
+└── README.md                             # 本文件
 ```
 
-## 文档索引
+## 依赖
 
-| 文档 | 说明 |
-|------|------|
-| [spec.md](.xyz-harness/2026-05-08-harness-engineering/spec.md) | 完整架构设计 |
-| [plan.md](.xyz-harness/2026-05-08-harness-engineering/plan.md) | 实施计划 |
-| [stage-execution-detail.md](.xyz-harness/2026-05-08-harness-engineering/stage-execution-detail.md) | 各阶段详细执行逻辑 |
+| 依赖 | 版本 | 用途 | 必需？ |
+|------|------|------|--------|
+| Pi | latest | AI 编码 Agent | 必需 |
+| Python 3 + PyYAML | 3.10+ | gate-check.py | 必需 |
+| Node.js | v21+ | coding-workflow 扩展 | Auto Mode 必需 |
+| Git | 2.x+ | worktree 管理 | 必需 |
+| `~/.pi/agent/subagent-models.json` | — | 模型配置 | Auto Mode 必需 |

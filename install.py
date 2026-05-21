@@ -21,7 +21,7 @@ AGENTS_DIR = SCRIPT_ROOT / "agents"
 PREFIX = "xyz-harness-"
 AGENT_PREFIX = "harness-"
 # 非 xyz-harness- 前缀但属于本项目的 skill
-EXTRA_SKILLS = {"chrome-automation", "vision-analysis", "zcommit", "create-worktree", "merge-worktree"}
+EXTRA_SKILLS = {"chrome-automation", "vision-analysis", "zcommit", "create-worktree", "merge-worktree", "harness-retrospect"}
 
 # 旧版 skill 清理映射：目标目录 → 需要清理的 skill 名称列表
 CLEANUP_MAP: dict[str, list[str]] = {

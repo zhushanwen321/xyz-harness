@@ -20,12 +20,10 @@
   "noFallthroughCasesInSwitch": true
   },
   "include": [
-  "extensions/coding-workflow/**/*.ts"
+  "extensions/**/*.ts"
   ],
   "exclude": [
   "node_modules",
-  ".xyz-harness",
-  "extensions/coding-workflow/scripts/hooks",
-  "extensions/coding-workflow/__tests__"
+  ".xyz-harness"
   ]
 }

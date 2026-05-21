@@ -207,16 +207,16 @@ for each Wave:
 
 **按 Group 选择模型：** 每个 Execution Group 有自己的模型配置（写在 plan.md 中）。主 agent 按 Group 配置派遣，无需自行选择。以下规则适用于 plan.md 编写时的模型建议。
 
-**机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`llm-simple-router/glm-5-turbo`。plan 足够清晰时大部分任务都属于此类。
+**机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`router-openai/ds-flash`。plan 足够清晰时大部分任务都属于此类。
 
-**集成和判断型任务**（跨文件协调、模式匹配、调试）：`llm-simple-router/glm-5.1`。
+**集成和判断型任务**（跨文件协调、模式匹配、调试）：`router-openai/glm-5.1`。
 
-**架构、设计和评审任务**：`llm-simple-router/glm-5.1`。
+**架构、设计和评审任务**：`router-openai/glm-5.1`。
 
 **任务复杂度信号：**
-- 涉及 1-2 个文件，spec 完整 → `llm-simple-router/glm-5-turbo`
-- 涉及多个文件，有集成关注点 → `llm-simple-router/glm-5.1`
-- 需要设计判断或广泛的代码库理解 → `llm-simple-router/glm-5.1`
+- 涉及 1-2 个文件，spec 完整 → `router-openai/ds-flash`
+- 涉及多个文件，有集成关注点 → `router-openai/glm-5.1`
+- 需要设计判断或广泛的代码库理解 → `router-openai/glm-5.1`
 
 ## Handling TDD Coder Status
 
@@ -249,7 +249,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
 1. If it's a context problem, provide more context and re-dispatch with the same model
-2. If the task requires more reasoning, re-dispatch with `llm-simple-router/glm-5.1`
+2. If the task requires more reasoning, re-dispatch with `router-openai/glm-5.1`
 3. If the task is too large, break it into smaller pieces
 4. If the plan itself is wrong, escalate to the human
 

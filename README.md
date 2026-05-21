@@ -488,6 +488,86 @@ python3 install.py
 - 安装位置：`~/.pi/agent/skills/xyz-harness-*` 和 `~/.agents/skills/xyz-harness-*`（symlink）
 - 自动清理旧版（不带 `xyz-harness-` 前缀的 dev-flow 等同名 skill）
 
+## coding-workflow 扩展
+
+### 是什么
+
+Pi 扩展，自动化 5-phase 编码工作流。核心设计：**AI 只能看到当前 phase 的 skill 指令**，无法获知整体流程，从而防止 AI 跳过 phase。
+
+手动模式（只有 skill）：AI 读 skill → 手动跑 gate → 手动 dispatch review
+自动模式（安装扩展）：`/coding-workflow <topic>` → 自动注入 skill + 自动 gate + 自动 review/retrospect + 自动 phase 切换
+
+### 安装
+
+```bash
+# 复制 4 个文件到全局扩展目录
+mkdir -p ~/.pi/agent/extensions/coding-workflow/lib
+cp index.ts gate-check.py ~/.pi/agent/extensions/coding-workflow/
+cp lib/model-resolve.ts lib/subagent.ts ~/.pi/agent/extensions/coding-workflow/lib/
+```
+
+重启 Pi 或 `/reload` 自动生效。
+
+### 卸载
+
+```bash
+rm -rf ~/.pi/agent/extensions/coding-workflow
+```
+
+重启 Pi 或 `/reload` 即可。11 个 harness skill 仍然保留在 `~/.pi/agent/skills/`，可以手动使用。
+
+### 使用
+
+```
+# 启动工作流
+/coding-workflow my-feature
+
+# 查看进度
+/coding-workflow-status
+
+# 退出工作流（杀子进程、重置状态）
+/coding-workflow-abort
+```
+
+启动后 AI 自动收到当前 phase 的 skill 指令，产出交付物后调用 `coding-workflow-gate` 提交验证。通过后调用 `coding-workflow-phase-start` 进入下一个 phase。整个过程 AI 不知道有多少 phase、下一个 phase 是什么。
+
+### 回退与退出
+
+| 场景 | 操作 |
+|------|------|
+| 想退出当前工作流 | `/coding-workflow-abort` |
+| gate 失败 | 根据失败信息修复，重新调用 `coding-workflow-gate` |
+| 想重新开始 | abort 后重新 `/coding-workflow <topic>` |
+| 扩展导致问题 | 删除扩展目录，回到纯 skill 模式 |
+
+**coding-workflow 不修改源代码**。它只做：注入 skill 内容 → 运行 gate 脚本 → 调度 review/retrospect subagent。所有实际编码由 AI 完成，受 git 管控。
+
+### 与 skill 的关系
+
+扩展和 skill 完全解耦：
+- 有扩展 = 自动驾驶（自动编排 phase 切换、gate、review）
+- 删扩展 = 手动驾驶（11 个 skill 仍在，手动触发）
+
+### 前置条件
+
+| 依赖 | 说明 |
+|------|------|
+| Python 3 + PyYAML | gate-check.py 需要 |
+| `~/.pi/agent/subagent-models.json` | 模型配置（review/retrospect subagent 用） |
+| harness skills 已安装 | `~/.pi/agent/skills/xyz-harness-*` |
+| `harness-retrospect` agent | `~/.pi/agent/agents/harness-retrospect/agent.md` |
+
+### 文件结构
+
+```
+~/.pi/agent/extensions/coding-workflow/
+├── index.ts              # 扩展入口（tools + commands + events）
+├── gate-check.py         # gate 验证脚本（5 phase）
+└── lib/
+    ├── model-resolve.ts  # 模型解析（按 task complexity）
+    └── subagent.ts       # subagent spawn + JSON streaming
+```
+
 ## 项目结构
 
 ```

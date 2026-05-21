@@ -1,4 +1,12 @@
 #!/bin/bash
+# ⚠️ DEPRECATED: 此脚本已被 merge-and-publish.sh 取代，不再维护。
+# 使用: bash merge-and-publish.sh <worktree-dir> [patch|minor|major]
+#
+# 原因: source 路径不兼容当前目录结构，功能已完整迁移到 merge-and-publish.sh。
+echo "⚠️ 此脚本已废弃，请使用 merge-and-publish.sh" >&2
+exit 1
+
+# === 以下为原始代码（保留供参考）===
 # 合并 PR 并发布：CI 检查 → merge --no-ff → 版本升级 → tag → push → release
 # Usage: merge-worktree-release.sh <pr-number-or-branch> [--version patch|minor|major] [--skip-ci] [--skip-release]
 # Example: merge-worktree-release.sh 42

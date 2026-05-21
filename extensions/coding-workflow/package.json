@@ -1,8 +1,0 @@
-{
-  "name": "coding-workflow",
-  "version": "0.1.0",
-  "description": "Coding workflow controller: design (Phase 1) + dev (Phase 2) stage enforcement",
-  "pi": {
-  "extensions": ["./index.ts"]
-  }
-}

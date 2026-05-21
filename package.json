@@ -1,0 +1,9 @@
+{
+  "name": "xyz-harness-engineering",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3"
+  }
+}

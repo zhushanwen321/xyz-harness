@@ -1,17 +1,32 @@
 ---
 name: xyz-harness-brainstorming
-description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
+description: >-
+  Phase 1 (spec) of the xyz-harness workflow. Explores user intent, requirements
+  and design before implementation, produces spec.md with independent review.
+  Use when the user says "start Phase 1", "spec phase", "write spec",
+  "brainstorm", or at the beginning of a harness workflow.
 ---
 
 ## Dev-flow 上下文
 
 | 项目 | 值 |
 |------|---|
-| 所在阶段 | Stage 1 需求讨论（前半段） |
-| 触发方式 | 由主 agent 直接执行（交互阶段，需多轮用户对话） |
+| 所在阶段 | Phase 1 (spec) brainstorming |
+| 执行者 | 主 agent（交互 + 编排） |
 | 上游 | 用户提出需求 |
-| 下游（完成后进入） | xyz-harness-writing-plans（Stage 1 后半段，紧接执行） |
+| 下游（完成后进入） | Phase 2 (plan) — 加载 writing-plans skill |
 | 回退目标 | 无前置阶段。如设计需修改，在本阶段内直接迭代 |
+
+### Agent/Skill 关联
+
+| 步骤 | 执行者 | Agent | Skill | 方式 |
+|------|--------|-------|-------|------|
+| Step 1: Codebase Scan | subagent | general-purpose | 无 | 纯扫描，无需 skill |
+| Step 2-4: Brainstorming | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
+| Step 5: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
+| Step 8: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
+| Spec Review | subagent | general-purpose | expert-reviewer | task prompt 指定 read |
+| Retrospect | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
 # Brainstorming Ideas Into Designs
 
@@ -96,7 +111,7 @@ Keep it concise — this is a reference, not documentation.
 **Subagent config:**
 | Item | Value |
 |------|-------|
-| Agent | harness-executor (read-only mode) |
+| Agent | general-purpose (read-only mode) |
 | Model | glm-5-turbo (mechanical scan, no complex reasoning) |
 | Tools | read, bash (no write) |
 
@@ -181,11 +196,39 @@ If the project is too large for a single spec, help the user decompose into sub-
 - Use elements-of-style:writing-clearly-and-concisely skill if available
 - Commit the design document to git
 
-### Step 6: Spec Completeness Check (Six Elements + Ambiguity Marking)
+**Implementation:**
+
+- Invoke the writing-plans skill to create a detailed implementation plan
+- Do NOT invoke any other skill. writing-plans is the next step.
+
+## 交付物：spec.md
+
+spec.md 必须包含 YAML frontmatter：
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 |
+|------|------|------|--------|------|
+| `verdict` | string | 是 | `"pass"` | 门禁通过标志 |
+
+**模板：**
+````
+```markdown
+---
+verdict: pass
+---
+
+# {Feature Title}
+
+## Background
+## Functional Requirements
+## Acceptance Criteria
+## Constraints
+## Complexity Assessment
+```
+````
+
+## Six-Element Completeness
 
 After writing the spec document, perform a structured completeness check before showing it to the user. This catches gaps that humans miss because "the agent will fill in the blanks, in ways you won't like" (Augment Code, 2026).
-
-#### Six-Element Completeness
 
 Verify the spec answers all six questions. For each missing element, add a `[MISSING]` marker and resolve it:
 
@@ -198,7 +241,7 @@ Verify the spec answers all six questions. For each missing element, add a `[MIS
 | **Task breakdown** | Is the work decomposed into independently verifiable units? | Not needed at spec stage (plan handles this) |
 | **Verification** | Are there concrete acceptance criteria, not just "does it work"? | Add criteria or mark `[AMBIGUOUS]` |
 
-#### Ambiguity Marking
+## Ambiguity Marking
 
 Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
@@ -221,7 +264,7 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 **Only proceed to user review when all `[AMBIGUOUS]` markers are resolved.**
 
-#### Inline Checks (from original self-review)
+## Inline Checks
 
 1. **Placeholder scan:** Any "TBD", "TODO", incomplete sections? Fix them.
 2. **Internal consistency:** Do any sections contradict each other?
@@ -229,17 +272,112 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
-**User Review Gate:**
-After the spec review loop passes, ask the user to review the written spec before proceeding:
+## Spec Review (独立审查)
 
-> "Spec written and committed to `<path>`. Please review it and let me know if you want to make any changes before we start writing out the implementation plan."
+写完 spec.md 后，dispatch 独立审查 subagent：
 
-Wait for the user's response. If they request changes, make them and re-run the spec review loop. Only proceed once the user approves.
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5.1
+   - **Task prompt**:
+     ```
+     你是独立审查专家。按以下步骤执行审查：
 
-**Implementation:**
+     1. read `skills/xyz-harness-expert-reviewer/SKILL.md`，找到「模式一：计划评审」章节，重点检查第 1 项 spec 完整性
+     2. read `CLAUDE.md`（获取项目架构约束）
+     3. read 待审查文件：`{topic_dir}/spec.md`
+     4. 按方法论逐项审查，将结果写入：
+        `{topic_dir}/changes/reviews/spec_review_v1.md`
+     5. YAML frontmatter 必须包含:
+        - `verdict`: "pass" 或 "fail"
+        - `must_fix`: 数字（open MUST_FIX 问题数量）
+     ```
 
-- Invoke the writing-plans skill to create a detailed implementation plan
-- Do NOT invoke any other skill. writing-plans is the next step.
+2. 审查轮次：
+   - must_fix == 0 → 通过
+   - must_fix > 0 → 修复 spec.md 后重新 dispatch（产出 spec_review_v2.md），最多 3 轮
+   - 3 轮后仍有 must_fix > 0 → 停止，记录未解决问题，由用户决定
+
+### spec_review 输出格式
+
+| 字段 | 类型 | 必填 | 允许值 | 说明 |
+|------|------|------|--------|------|
+| `verdict` | string | 是 | `"pass"` | 评审通过标志 |
+| `must_fix` | number | 是 | `0` | 必须修复的问题数量 |
+
+**模板：**
+````
+```markdown
+---
+verdict: pass
+must_fix: 0
+---
+
+# Spec Review — {topic}
+
+## Summary
+{one-line review conclusion}
+
+## Issues Found
+{list issues with severity levels}
+
+## Conclusion
+{verdict justification}
+```
+````
+
+## Retrospect (复盘)
+
+**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 2。
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Model**: llm-simple-router/glm-5-turbo
+   - **Task prompt**:
+     ```
+     你是复盘分析师。按以下步骤执行：
+
+     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     2. read 以下交付物文件：
+        - `{topic_dir}/spec.md`
+        - `{topic_dir}/changes/reviews/spec_review_v*.md`
+     3. 按方法论覆盖两个维度（Phase 执行 + Harness 体验），将结果写入：
+        `{topic_dir}/changes/reviews/spec_retrospect.md`
+     4. YAML frontmatter: `phase: spec`, `verdict: pass`
+     ```
+
+## Self-Check
+
+**铁律：禁止在未实际运行验证命令的情况下声称完成。**
+
+- [ ] spec.md 存在，YAML frontmatter 含 verdict: pass
+- [ ] spec_review 文件存在，verdict: pass, must_fix: 0
+- [ ] 运行 gate check 脚本确认：
+  ```bash
+  python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 1
+  ```
+- [ ] 读取输出，确认所有检查项 PASS
+- [ ] Requirements are clearly separated from implementation details
+- [ ] Acceptance criteria are testable
+- [ ] All constraints are documented
+- [ ] All [AMBIGUOUS] markers resolved
+
+## Gate Handoff
+
+在独立 Pi session 中检查 gate：
+
+```bash
+python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 1
+```
+
+或打开新的 Pi session，加载 xyz-harness-gate skill，告诉它：
+> "Check Phase 1 gate for topic `{topic}`"
+
+## Phase Transition
+
+Phase 1 完成后，告知用户：
+
+> "Phase 1 complete. spec.md created at {path}. Please run gate check in a separate session. When gate passes, come back and I'll run the retrospective. Then say 'start Phase 2' to continue."
 
 ## Key Principles
 

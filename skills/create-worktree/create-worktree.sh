@@ -1,16 +1,26 @@
 #!/bin/bash
 # 在 bare repo + worktree 结构中创建新 worktree
 # Usage: create-worktree.sh <branch-name> [base-branch]
-# Example: create-worktree.sh feat/new-feature main
+# Example: create-worktree.sh feat/new-feature master
 set -euo pipefail
 
-# Source shared library
-# Resolve to physical path (pwd -P follows directory symlinks)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-source "$SCRIPT_DIR/../_lib/workspace.sh"
-
 BRANCH_NAME="${1:?Usage: create-worktree.sh <branch-name> [base-branch]}"
+BASE_BRANCH="${2:-main}"
+# 分支名转目录名: feature/xxx -> feature-xxx
 DIR_NAME="${BRANCH_NAME//\//-}"
+
+# 从当前目录向上查找 workspace 根（包含 .bare/ 的目录）
+find_workspace_root() {
+    local dir="$1"
+    while [[ "$dir" != "/" ]]; do
+        if [[ -d "$dir/.bare" ]]; then
+            echo "$dir"
+            return 0
+        fi
+        dir="$(cd "$dir/.." && pwd)"
+    done
+    return 1
+}
 
 WORKSPACE_ROOT=$(find_workspace_root "$(pwd)") || {
     echo "Error: 未找到 workspace。当前目录及其父目录中没有 .bare/。"
@@ -18,15 +28,6 @@ WORKSPACE_ROOT=$(find_workspace_root "$(pwd)") || {
 }
 echo "Workspace: $WORKSPACE_ROOT"
 cd "$WORKSPACE_ROOT"
-
-# 自动检测基础分支：用户指定 > 远程 HEAD > 兜底 main
-if [[ -n "${2:-}" ]]; then
-    BASE_BRANCH="$2"
-else
-    BASE_BRANCH=$(git -C .bare remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') || true
-    BASE_BRANCH="${BASE_BRANCH:-main}"
-fi
-echo "基础分支: $BASE_BRANCH"
 
 git -C .bare rev-parse --is-bare-repository >/dev/null 2>&1 || {
     echo "Error: .bare/ 不是一个有效的 bare git 仓库。"
@@ -39,22 +40,37 @@ git -C .bare rev-parse --is-bare-repository >/dev/null 2>&1 || {
 }
 
 echo "Fetching from remote..."
-git -C .bare fetch origin --prune
+# 找到真正的远端（非 origin 的 remote，通常叫 github/upstream）
+REAL_REMOTE=$(git -C .bare remote | grep -v '^origin$' | head -1 || echo 'origin')
+git -C .bare fetch "$REAL_REMOTE" --prune
+# 同步 origin refs：让 origin/* 指向真正的远端 refs，
+# 这样基于 origin/main 创建的 worktree 能拿到最新代码
+if [[ "$REAL_REMOTE" != 'origin' ]]; then
+    echo "Syncing origin refs from $REAL_REMOTE..."
+    while IFS= read -r ref; do
+        [[ -z "$ref" ]] && continue
+        # ref 格式: github/main -> short_name: main
+        short_name="${ref#$REAL_REMOTE/}"
+        target_sha=$(git --git-dir="$WORKSPACE_ROOT/.bare" rev-parse "$ref")
+        git -C .bare update-ref "refs/remotes/origin/$short_name" "$target_sha"
+        echo "  origin/$short_name -> ${target_sha:0:8}"
+    done < <(git -C .bare for-each-ref --format="%(refname:short)" "refs/remotes/$REAL_REMOTE/" | sed "s|^$REAL_REMOTE/||")
+    # 同步本地 main 分支
+    local_main_sha=$(git --git-dir="$WORKSPACE_ROOT/.bare" rev-parse "refs/remotes/$REAL_REMOTE/main" 2>/dev/null || true)
+    if [[ -n "$local_main_sha" ]]; then
+        echo "$local_main_sha" > "$WORKSPACE_ROOT/.bare/refs/heads/main"
+        echo "  local main -> ${local_main_sha:0:8}"
+    fi
+fi
 
 if git -C .bare rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
     echo "分支 '$BRANCH_NAME' 已存在，直接检出..."
     git -C .bare worktree add "$WORKSPACE_ROOT/$DIR_NAME" "$BRANCH_NAME"
 else
-    # 关键：始终优先使用 origin/<base-branch>，确保基于 fetch 后的最新远程分支
-    # 本地分支 ref 在 bare repo 中可能是陈旧的，fetch 只更新 origin/* refs
-    BASE_REF="origin/$BASE_BRANCH"
+    # 优先用 bare repo 本地分支（worktree 工作流中最新的），回退到远程跟踪引用
+    BASE_REF="$BASE_BRANCH"
     if ! git -C .bare rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
-        # fallback: 尝试本地分支（可能远程名不是 origin 或分支名不同）
-        BASE_REF="$BASE_BRANCH"
-        if ! git -C .bare rev-parse --verify "$BASE_REF" >/dev/null 2>&1; then
-            echo "Error: 找不到基础分支 '$BASE_BRANCH'（本地和远程均不存在）"
-            exit 1
-        fi
+        BASE_REF="origin/$BASE_BRANCH"
     fi
     echo "创建分支 '$BRANCH_NAME' (基于 $BASE_REF)..."
     git -C .bare worktree add "$WORKSPACE_ROOT/$DIR_NAME" -b "$BRANCH_NAME" "$BASE_REF"
@@ -62,68 +78,61 @@ fi
 
 WORKTREE_PATH="$WORKSPACE_ROOT/$DIR_NAME"
 
-# 链接 workspace 根的共享 dev 配置到新 worktree
-link_shared_configs() {
-    local wt="$1"
-    local ws="$2"
-    local linked=false
+# 如果后续步骤失败，清理已创建的 worktree
+trap 'echo "安装失败，清理 worktree..."; cd "$WORKSPACE_ROOT"; git -C .bare worktree remove "$WORKTREE_PATH" 2>/dev/null' ERR
 
-    # backend/.env -> workspace 根 .env
-    if [[ -f "$ws/.env" ]] && [[ -d "$wt/backend" ]]; then
-        local env_target="$wt/backend/.env"
-        if [[ -L "$env_target" ]]; then
-            echo "backend/.env 已是符号链接，跳过"
-        elif [[ -f "$env_target" ]]; then
-            echo "警告: backend/.env 已存在（非符号链接），跳过。手动删除后重试: rm $env_target"
-        else
-            ln -s ../../.env "$env_target"
-            echo "已链接 backend/.env -> ../../.env (workspace 共享配置)"
-            linked=true
-        fi
-    fi
-
-    if [[ "$linked" == true ]]; then echo "共享配置链接完成"; fi
-}
-link_shared_configs "$WORKTREE_PATH" "$WORKSPACE_ROOT"
-
-# 从 main/master worktree 复制 .claude 本地配置
-for main_wt in main master; do
-    if [[ -f "$WORKSPACE_ROOT/$main_wt/.claude/settings.local.json" ]] && [[ -d "$WORKTREE_PATH/.claude" ]]; then
-        cp "$WORKSPACE_ROOT/$main_wt/.claude/settings.local.json" "$WORKTREE_PATH/.claude/"
-        echo "已复制 .claude/settings.local.json (from $main_wt)"
+# 从主分支 worktree 复制 .claude 本地配置
+# 自动检测主分支目录名（main 或 master）
+PRIMARY_DIR=""
+for candidate in main master; do
+    if [[ -d "$WORKSPACE_ROOT/$candidate" ]]; then
+        PRIMARY_DIR="$candidate"
         break
     fi
 done
 
+if [[ -n "$PRIMARY_DIR" ]] && [[ -f "$WORKSPACE_ROOT/$PRIMARY_DIR/.claude/settings.local.json" ]] && [[ -d "$WORKTREE_PATH/.claude" ]]; then
+    cp "$WORKSPACE_ROOT/$PRIMARY_DIR/.claude/settings.local.json" "$WORKTREE_PATH/.claude/"
+    echo "已复制 .claude/settings.local.json (from $PRIMARY_DIR)"
+fi
+
 cd "$WORKTREE_PATH"
 
-# 自动检测并安装依赖
-[[ -f "frontend/package.json" ]] && { echo "安装前端依赖..."; (cd frontend && pnpm install 2>&1 | tail -1) || (cd frontend && npm install 2>&1 | tail -1); }
-[[ -f "package.json" ]] && [[ ! -d "frontend" ]] && { npm install 2>&1 | tail -1; }
-[[ -f "backend/pyproject.toml" ]] && { echo "安装后端依赖..."; (cd backend && uv sync 2>&1 | tail -1); }
+# 检测项目级 setup hook（优先使用，跳过通用依赖安装）
+PROJECT_SETUP="$WORKSPACE_ROOT/.bare/custom-hooks/setup-worktree.sh"
+if [ -x "$PROJECT_SETUP" ]; then
+    echo "执行项目 setup hook: $PROJECT_SETUP"
+    bash "$PROJECT_SETUP" "$WORKTREE_PATH"
+else
+    # 通用依赖安装（无项目级 hook 时）
+    [[ -f "backend/pyproject.toml" ]] && { echo "安装后端依赖..."; (cd backend && uv sync 2>&1 | tail -1) || echo "  Warning: 后端依赖安装失败，请手动安装"; }
+    [[ -f "frontend/package.json" ]] && { echo "安装前端依赖..."; (cd frontend && pnpm install 2>&1 | tail -1) || echo "  Warning: 前端依赖安装失败，请手动安装"; }
+fi
 
-# 安装 git hooks（从已安装的 worktree 复制）
+# 安装 git hooks（worktree 兼容：从主分支 worktree 复制已安装的 hooks）
 install_hooks() {
-    local hooks_source=""
-    for wt in main master; do
-        local git_dir
-        git_dir="$WORKSPACE_ROOT/$wt/.git"
-        if [[ -f "$git_dir" ]]; then
-            git_dir=$(cd "$WORKSPACE_ROOT/$wt" && git rev-parse --git-dir 2>/dev/null)/hooks
-            [[ -f "$git_dir/pre-commit" ]] && { hooks_source="$git_dir"; break; }
+    local primary_hooks_dir
+    for candidate in main master; do
+        if [[ -d "$WORKSPACE_ROOT/$candidate" ]]; then
+            primary_hooks_dir=$(cd "$WORKSPACE_ROOT/$candidate" && git rev-parse --git-dir 2>/dev/null)/hooks
+            break
         fi
     done
+    [[ -z "$primary_hooks_dir" ]] && return
 
-    if [[ -n "$hooks_source" ]]; then
-        local worktree_hooks
-        worktree_hooks=$(git rev-parse --git-dir 2>/dev/null)/hooks
+    local worktree_hooks
+    worktree_hooks=$(git rev-parse --git-dir 2>/dev/null)/hooks
+
+    if [[ -f "$primary_hooks_dir/pre-commit" ]]; then
         mkdir -p "$worktree_hooks"
-        cp "$hooks_source/pre-commit" "$worktree_hooks/"
+        cp "$primary_hooks_dir/pre-commit" "$worktree_hooks/"
         chmod +x "$worktree_hooks/pre-commit"
-        echo "已安装 git hooks"
+        echo "已安装 git hooks (from primary worktree)"
     fi
 }
 install_hooks
+
+trap - ERR
 
 echo ""
 echo "============================================"

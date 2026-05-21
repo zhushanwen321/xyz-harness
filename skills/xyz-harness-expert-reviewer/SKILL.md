@@ -1,45 +1,43 @@
 ---
 name: xyz-harness-expert-reviewer
 description: >
-  统一评审 skill，支持两种模式：计划评审（审 spec+plan）和执行评审（审代码+测试）。
-  由 dev-flow 编排器在 Stage 3/10/13 自动调用。不独立触发。
+  统一评审 skill，支持三种模式：计划评审（审 spec+plan）、编码评审（审代码变更）、测试评审（审测试代码）。
+  当需要进行 spec/plan 评审、代码评审、或测试评审时使用。
 ---
 
-## Dev-flow 上下文
+## 适用场景
 
-| 项目 | 值 |
-|------|---|
-| 所在阶段 | Stage 3 Spec 评审 / Stage 10 编码评审 / Stage 13 测试评审（三种模式） |
-| 触发方式 | 由 dev-flow 派遣评审 subagent 加载 |
-| 上游 | Stage 3←Stage 1 完成；Stage 10←Stage 9 完成；Stage 13←Stage 11 完成 |
-| 下游（完成后进入） | 评审报告返回 dev-flow 主 agent，由主 agent 决定流转 |
-| 回退目标 | 不自行决定回退（rollback_target=null）。Stage 3 不通过→dev-flow 回退到 Stage 1；Stage 10 不通过→回退到 Stage 9；Stage 13 不通过→回退到 Stage 11 |
+| 模式 | 输入 | 说明 |
+|------|------|------|
+| 计划评审 | spec.md + plan.md | 评审 spec 完整性和 plan 可行性 |
+| 编码评审 | spec.md + git diff | 评审代码实现是否满足 spec |
+| 测试评审 | spec.md + 测试代码 diff | 评审测试覆盖度和质量 |
 
 # Expert Reviewer
 
 你是独立评审专家。你的职责是对 spec、plan、代码、测试进行**独立评审**。
 
-**你不继承任何执行者（编码/测试 subagent）的上下文。** 你只看到 dev-flow 传入的文档和 diff，看不到编码过程中的讨论、尝试和错误。这是刻意的设计——保证评审的客观性。
+**你不继承任何执行者的上下文。** 你只看到传入的文档和 diff，看不到编码过程中的讨论、尝试和错误。这是刻意的设计——保证评审的客观性。
 
 ---
 
 ## 两种评审模式
 
-dev-flow 通过传入的上下文区分模式。判断规则：
+通过传入的上下文区分模式。判断规则：
 - 输入包含 `spec.md` + `plan.md`，**无** git diff → **计划评审**
 - 输入包含 `spec.md` + git diff（代码变更）→ **编码评审**
 - 输入包含 `spec.md` + 测试代码 diff → **测试评审**
 
 ---
 
-## 模式一：计划评审（Stage 3 Spec 评审）
+## 模式一：计划评审
 
 ### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| plan.md | dev-flow 传入路径 | 是 |
+| spec.md | 传入路径 | 是 |
+| plan.md | 传入路径 | 是 |
 | CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分（优先 docs/standards.md + docs/architecture.md） |
 
 ### 检查维度
@@ -63,11 +61,24 @@ dev-flow 通过传入的上下文区分模式。判断规则：
 - plan 中是否有 spec 未提及的额外工作（需要标明）
 - 验收标准是否都能在 plan 的 task 中找到对应的实现步骤
 
+**4. Execution Groups 合理性**
+
+当 plan.md 包含 Execution Groups 时，额外检查：
+
+- **分组合理性**：每组文件数 ≤ 10 个。超过则建议拆分。每组 Task 数建议 ≤ 4，但不硬性限制（功能关联度优先）
+- **类型划分**：前端 Task 和后端 Task 是否正确分组（无混合类型 Group）
+- **功能关联度**：同组 Task 是否确实关联紧密（不应将无关 Task 强行合组）
+- **依赖关系**：Group 间依赖是否正确（被依赖 Group 排在前面）
+- **Wave 编排**：同一 Wave 内的 Group 是否真的可以并行（无文件冲突、无数据竞争）
+- **Subagent 配置完整性**：每组是否包含 Agent、Model、注入上下文、读取文件、修改/创建文件
+- **上下文充分性**：注入上下文是否足够让 subagent 独立完成（不含糊引用）
+- **文件数预估**：每组文件数标注是否合理（对比 Task 的文件变更表）
+
 **L1 后端检查清单（plan.md 中涉及后端的 task）：**
 
 当 plan.md 中有后端 task（API、数据库、业务逻辑）时，额外检查：
 
-**4. 后端设计充分性（L1）**
+**5. 后端设计充分性（L1）**
 - 后端 task 是否说明了"为什么"这样实现，而不只是"做什么"？
 - 存储变更是否有选型理由（新增字段/表的原因）？
 - API 端点设计是否与业务场景对应？
@@ -76,13 +87,13 @@ dev-flow 通过传入的上下文区分模式。判断规则：
 
 **L2 分支说明：**
 
-如果 plan.md 标注为 L2（复杂度），后端设计的详细评审由 `harness-backend-plan-reviewer` agent 独立执行（参见该 agent 的评审维度）。本 reviewer（expert-reviewer）在 L2 模式下负责：
+如果 plan.md 标注为 L2（复杂度），后端设计的详细评审由独立 subagent（general-purpose，task prompt 指定 read 本 skill 的后端设计评审维度）执行。本 reviewer（expert-reviewer）在 L2 模式下负责：
 - 评审 plan.md 总纲的完整性（目标、架构概述、task 列表、依赖关系）
 - 评审 plan-frontend.md 的前端设计质量
 - 评审前后端集成点（plan.md 中的依赖图是否正确，API 合约是否被正确引用）
 - 汇总 backend-plan-reviewer 的评审结果，产出最终综合评审报告
 
-L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复），只关注整体一致性。
+L2 时不重复检查后端设计细节（避免与后端专项评审重复），只关注整体一致性。
 
 ### 循环上限
 
@@ -94,17 +105,15 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
 
 ---
 
-## 模式二：执行评审
+## 模式二：编码评审
 
-### Stage 10 编码评审
-
-#### 输入
+### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| plan.md | dev-flow 传入路径 | 是 |
-| git diff（Stage 9 全部代码变更） | dev-flow 传入 | 是 |
+| spec.md | 传入路径 | 是 |
+| plan.md | 传入路径 | 是 |
+| git diff（全部代码变更） | 传入 | 是 |
 | CLAUDE.md + docs/ | 项目根目录 | 架构约束和编码规范部分 |
 
 #### 检查维度
@@ -148,14 +157,14 @@ L2 时不重复检查后端设计细节（避免与 backend-plan-reviewer 重复
   - 数据格式是否匹配消费者期望
   - 数据写入路径是否完整（无断裂/丢失）
 
-### Stage 13 测试评审
+## 模式三：测试评审
 
-#### 输入
+### 输入
 
 | 文件 | 来源 | 必读 |
 |------|------|------|
-| spec.md | dev-flow 传入路径 | 是 |
-| 测试代码 diff（Stage 11 产出） | dev-flow 传入 | 是 |
+| spec.md | 传入路径 | 是 |
+| 测试代码 diff | 传入 | 是 |
 | CLAUDE.md | 项目根目录 | 测试相关规范 |
 
 #### 检查维度
@@ -212,8 +221,9 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ### 交付物
 
-- Stage 10：`changes/reviews/code_review_v{N}.md`
-- Stage 13：`changes/reviews/test_review_v{N}.md`
+- 计划评审：`changes/reviews/plan_review_v{N}.md`
+- 编码评审：`changes/reviews/code_review_v{N}.md`
+- 测试评审：`changes/reviews/test_review_v{N}.md`
 
 ---
 
@@ -230,9 +240,50 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ## 统一输出格式
 
-所有评审报告遵循以下格式：
+所有评审报告必须包含 **YAML frontmatter**（机器可读元数据）和 **Markdown 正文**（人工可读详情）。
+
+### YAML 约束
+
+- `statistics.must_fix` 必须只计数 `status=open` 的 MUST_FIX 问题
+- `review.verdict` 必须是 `pass` 或 `fail`，与 MUST FIX 数量一致
+- `issues` 数组必须包含所有问题（含跨轮次的已解决问题），每个问题的 `id` 唯一
+- 第 2+ 轮评审必须继承上一轮的 `issues`，将已修复项的 `status` 改为 `resolved`
+
+**重要：门禁系统会解析 YAML frontmatter 来判定评审是否通过。**
+- 必须包含 `verdict` 字段（扁平或嵌套均可）
+- 必须包含 `must_fix` 字段��扁平或嵌套均可）
+- `verdict` 只允许 `pass` 或 `fail`，不允许中间状态（如 `passed_with_fixes`、`issues_found` 等）
 
 ```markdown
+---
+review:
+  type: spec_review | plan_review | e2e_review | code_review | test_review  # 必填，评审类型
+  round: 1                    # 必填，当前评审轮次，从 1 递增
+  timestamp: "2026-05-16T14:30:00"  # 必填，ISO 8601 格式
+  target: "path/to/reviewed/file"   # 必填，被评审的文件路径
+  verdict: pass | fail        # 必填，只能是 pass 或 fail（禁止其他值）
+                #   pass = 无 open 的 MUST_FIX
+                #   fail = 有 open 的 MUST_FIX
+  summary: "编码评审完成，第1轮，2条MUST FIX，需修改后重审"  # 必填，一句话摘要
+
+statistics:
+  total_issues: 5            # 必填，所有问题总数（含已解决）
+  must_fix: 2                # 必填，severity=MUST_FIX 且 status=open 的数量
+                #   注意：必须是当前未解决的数量，不是历史总数
+  must_fix_resolved: 1       # 选填，历史 MUST_FIX 已在本轮解决的数量
+  low: 2                     # 必填，severity=LOW 的问题数量
+  info: 1                    # 必填，severity=INFO 的问题数量
+
+issues:                      # 必填，全量问题列表（含已解决的）
+  - id: 1                    # 必填，唯一数字 ID，跨轮次不变
+  severity: MUST_FIX | LOW | INFO  # 必填，问题严重程度
+  location: "path/to/file:L42"     # 必填，文件:行号 或章节引用
+  title: "一句话描述问题"           # 必填，精炼的问题标题
+  status: open | resolved | dismissed  # 必填，open=未解决, resolved=已解决, dismissed=误报
+  raised_in_round: 1        # 必填，首次提出的轮次
+  resolved_in_round: null | 2  # 必填，解决时的轮次（未解决则为 null）
+---
+
 # {计划评审 / 编码评审 / 测试评审} v{N}
 
 ## 评审记录
@@ -286,25 +337,21 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ## 返回值格式
 
-评审完成后，向 dev-flow 主 agent 返回：
+评审完成后，返回结构化结果：
 
 ```json
 {
-  "status": "done",
+  "verdict": "pass | fail",
   "deliverables": ["changes/reviews/xxx_review_vN.md"],
-  "summary": "计划评审完成，第2轮通过，0条MUST FIX",
-  "reason": "",
-  "rollback_target": null
+  "summary": "计划评审完成，第2轮通过，0条MUST FIX"
 }
 ```
 
 | 字段 | 说明 |
 |------|------|
-| status | `done`（评审完成） |
+| verdict | `pass` 或 `fail` |
 | deliverables | 评审报告文件路径 |
 | summary | 一句话摘要，格式：`{评审类型}完成，第{N}轮{通过/需重审}，{M}条MUST FIX` |
-| reason | 空字符串（评审不使用 reason 字段） |
-| rollback_target | `null`（回退决策由 dev-flow 主 agent 做出，不由评审者决定） |
 
 ---
 
@@ -324,15 +371,15 @@ AC 覆盖矩阵格式（必须包含在评审报告中）：
 
 ### 步骤
 
-1. **读取输入** — 按 mode 读取必读文件
+1. **读取输入** — 按 mode 读取必读文件。第 2+ 轮还需读取上一轮评审报告的 YAML issues 列表
 2. **独立评审** — 按对应模式的检查维度逐项检查
-3. **问题标注** — 每条问题标注优先级，精确到位置
-4. **判断结论** — 有 MUST FIX → "需修改后重审"；无 MUST FIX → "通过"
-5. **写入报告** — 按统一输出格式写入 `changes/reviews/`
-6. **返回结果** — 按返回值格式返回给 dev-flow
+3. **问题标注** — 每条问题标注优先级，精确到位置。第 2+ 轮继承上一轮的 issues，更新状态
+4. **判断结论** — 有 open MUST FIX → verdict: fail；无 → verdict: pass
+5. **写入报告** — 按统一输出格式（含 YAML frontmatter）写入 `changes/reviews/`
+6. **返回结果** — 按返回值格式返回
 
 ### 轮次管理
 
 - 版本号从 1 开始递增（`v1`, `v2`, `v3`）
 - 旧版本不删除，保留完整评审历史
-- 达到循环上限仍未通过时，在报告中明确标注"已达上限"，由 dev-flow 升级到人工决策
+- 达到循环上限仍未通过时，在报告中明确标注"已达上限"，升级到人工决策

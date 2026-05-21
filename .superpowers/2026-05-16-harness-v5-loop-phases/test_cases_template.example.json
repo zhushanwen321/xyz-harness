@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "plan_ref": ".xyz-harness/2026-05-16-topic/plan.md",
+    "total_cases": 3
+  },
+  "cases": [
+    {
+      "id": "TC-1",
+      "name": "Gate L1 check returns correct errors for missing spec.md",
+      "category": "functional",
+      "priority": "P0",
+      "steps": [
+        "Delete spec.md from topicDir",
+        "Call gateSpec(topicDir)",
+        "Verify errors contain 'spec.md not found'"
+      ],
+      "expected": "Returns { passed: false, errors: ['spec.md not found...'] }",
+      "executions": []
+    },
+    {
+      "id": "TC-2",
+      "name": "Gate L1 check passes when all deliverables present",
+      "category": "functional",
+      "priority": "P0",
+      "steps": [
+        "Create valid spec.md with YAML verdict: pass",
+        "Create spec_review_v1.md with YAML must_fix: []",
+        "Call gateSpec(topicDir)",
+        "Verify returns { passed: true, errors: [] }"
+      ],
+      "expected": "Returns { passed: true, errors: [] }",
+      "executions": []
+    },
+    {
+      "id": "TC-3",
+      "name": "Loop restarts on gate FAIL and advances on PASS",
+      "category": "integration",
+      "priority": "P0",
+      "steps": [
+        "Set state to Phase 1 last stage (review spec)",
+        "Ensure spec.md missing → gate FAIL",
+        "Verify state resets to loopStartIndex=1",
+        "Create spec.md → gate PASS",
+        "Verify retrospect flow starts"
+      ],
+      "expected": "Gate FAIL → loopCount incremented + back to write spec; PASS → retrospect",
+      "executions": []
+    }
+  ]
+}

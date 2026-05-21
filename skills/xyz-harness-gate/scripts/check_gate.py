@@ -200,6 +200,44 @@ def check_phase_2(topic_dir):
 
 # ── Phase 3: Dev ───────────────────────────────────────────
 
+def _resolve_nested(data, field_path):
+    """Resolve a dot-separated field path from nested dict.
+    E.g. 'review.verdict' looks in data['review']['verdict'].
+    Falls back to top-level key if dot-path not found.
+    """
+    parts = field_path.split(".")
+    current = data
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None, False  # not found
+    return current, True
+
+
+def _flatten_review_fields(data):
+    """Try to extract verdict and must_fix from possibly nested frontmatter.
+    Returns (verdict, must_fix) as (str|None, int|None).
+    """
+    # Try top-level first
+    verdict = data.get("verdict") if isinstance(data, dict) else None
+    must_fix = data.get("must_fix") if isinstance(data, dict) else None
+
+    # Try nested: review.verdict
+    if verdict is None and isinstance(data, dict) and "review" in data:
+        review = data["review"]
+        if isinstance(review, dict):
+            verdict = review.get("verdict")
+
+    # Try nested: statistics.must_fix
+    if must_fix is None and isinstance(data, dict) and "statistics" in data:
+        stats = data["statistics"]
+        if isinstance(stats, dict):
+            must_fix = stats.get("must_fix")
+
+    return verdict, must_fix
+
+
 def check_phase_3(topic_dir):
     checks = []
 
@@ -223,10 +261,26 @@ def check_phase_3(topic_dir):
         if err:
             checks.append(("code_review", FAIL, err))
         else:
-            ok1, msg1 = check_field_str(data, "verdict", "pass")
-            ok2, msg2 = check_field_int(data, "must_fix", 0)
-            checks.append(("code_review verdict", PASS if ok1 else FAIL, msg1))
-            checks.append(("code_review must_fix", PASS if ok2 else FAIL, msg2))
+            verdict, must_fix = _flatten_review_fields(data)
+            # Check verdict
+            if verdict is None:
+                checks.append(("code_review verdict", FAIL, "'verdict' field missing (checked top-level and review.verdict)"))
+            elif not isinstance(verdict, str):
+                checks.append(("code_review verdict", FAIL, f"'verdict' type={type(verdict).__name__}, expected str"))
+            elif verdict != "pass":
+                checks.append(("code_review verdict", FAIL, f"'verdict'={repr(verdict)}, expected 'pass'"))
+            else:
+                checks.append(("code_review verdict", PASS, f"'verdict'={repr(verdict)}"))
+
+            # Check must_fix
+            if must_fix is None:
+                checks.append(("code_review must_fix", FAIL, "'must_fix' field missing (checked top-level and statistics.must_fix)"))
+            elif not isinstance(must_fix, int):
+                checks.append(("code_review must_fix", FAIL, f"'must_fix' type={type(must_fix).__name__}, expected int"))
+            elif must_fix != 0:
+                checks.append(("code_review must_fix", FAIL, f"'must_fix'={must_fix}, expected 0"))
+            else:
+                checks.append(("code_review must_fix", PASS, f"'must_fix'={must_fix}"))
 
     return checks
 

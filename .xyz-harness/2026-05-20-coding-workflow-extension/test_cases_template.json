@@ -1,0 +1,276 @@
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "integration",
+      "title": "Workflow startup creates topic directory and initializes state",
+      "description": "Verify /coding-workflow command creates topic directory, initializes state with currentPhase=1, and renders TUI widget",
+      "steps": [
+        "Run /coding-workflow test-feature",
+        "Check .xyz-harness/{date}-test-feature/ directory exists",
+        "Verify state.currentPhase === 1",
+        "Verify TUI widget shows Phase 1 as current"
+      ]
+    },
+    {
+      "id": "TC-1-02",
+      "type": "integration",
+      "title": "Phase 1 context injection contains brainstorming skill only",
+      "description": "Verify before_agent_start injects only xyz-harness-brainstorming skill content, no other phase skills",
+      "steps": [
+        "Check before_agent_start injection contains [CODING WORKFLOW — STRICT MODE]",
+        "Verify injection contains brainstorming skill content",
+        "Verify injection does NOT contain writing-plans, phase-dev, phase-test, or phase-pr skill content"
+      ]
+    },
+    {
+      "id": "TC-1-03",
+      "type": "integration",
+      "title": "Concurrent workflow startup is rejected",
+      "description": "Verify starting a second workflow when one is already active returns an error",
+      "steps": [
+        "Start first workflow with /coding-workflow topic-a",
+        "Attempt /coding-workflow topic-b",
+        "Verify error message about existing active workflow"
+      ]
+    },
+    {
+      "id": "TC-2-01",
+      "type": "integration",
+      "title": "Gate tool rejects wrong phase number",
+      "description": "Verify coding-workflow-gate rejects phase number that doesn't match current phase",
+      "steps": [
+        "With currentPhase=1, call coding-workflow-gate(phase=2)",
+        "Verify error: phase mismatch"
+      ]
+    },
+    {
+      "id": "TC-2-02",
+      "type": "integration",
+      "title": "Gate check passes when deliverables are complete",
+      "description": "Verify gate-check.py returns PASS when all deliverables exist and have correct YAML frontmatter",
+      "steps": [
+        "Prepare complete Phase 1 deliverables (spec.md + spec_review with verdict=pass, must_fix=0)",
+        "Call coding-workflow-gate(phase=1)",
+        "Verify gate passes and review subagent is dispatched"
+      ]
+    },
+    {
+      "id": "TC-2-03",
+      "type": "integration",
+      "title": "Gate check fails with specific error items",
+      "description": "Verify gate-check.py failure returns specific items that AI can fix",
+      "steps": [
+        "Prepare incomplete Phase 1 deliverables (missing spec_review)",
+        "Call coding-workflow-gate(phase=1)",
+        "Verify error contains specific failure items",
+        "Fix the issue and retry gate",
+        "Verify gate passes on retry"
+      ]
+    },
+    {
+      "id": "TC-2-04",
+      "type": "integration",
+      "title": "Review subagent dispatches with correct model and system prompt",
+      "description": "Verify review subagent uses taskComplexity=medium, expert-reviewer skill as system prompt",
+      "steps": [
+        "Trigger gate pass (Phase 1)",
+        "Verify subagent spawn args include --model resolved from medium complexity",
+        "Verify system prompt file contains expert-reviewer skill content",
+        "Verify output file path follows {topicDir}/changes/reviews/spec_review_v{N}.md pattern"
+      ]
+    },
+    {
+      "id": "TC-2-05",
+      "type": "integration",
+      "title": "Review must_fix loop creates versioned files",
+      "description": "Verify review with must_fix > 0 creates v1, then after fix creates v2",
+      "steps": [
+        "First gate call: review returns must_fix=2 (creates spec_review_v1.md)",
+        "AI fixes issues",
+        "Second gate call: review returns must_fix=0 (creates spec_review_v2.md)",
+        "Verify version numbers are sequential"
+      ]
+    },
+    {
+      "id": "TC-2-06",
+      "type": "integration",
+      "title": "Retrospect subagent dispatches after review passes",
+      "description": "Verify retrospect subagent runs after review must_fix=0, using harness-retrospect agent as system prompt",
+      "steps": [
+        "Complete gate + review (must_fix=0)",
+        "Verify retrospect subagent uses taskComplexity=low",
+        "Verify output file: {topicDir}/changes/reviews/spec_retrospect.md"
+      ]
+    },
+    {
+      "id": "TC-3-01",
+      "type": "integration",
+      "title": "Phase start tool transitions to next phase",
+      "description": "Verify coding-workflow-phase-start increments currentPhase and triggers compact",
+      "steps": [
+        "After Phase 1 gate passes, call coding-workflow-phase-start()",
+        "Verify state.currentPhase === 2",
+        "Verify compact() was called with customInstructions",
+        "Verify new phase skill is injected after compact"
+      ]
+    },
+    {
+      "id": "TC-3-02",
+      "type": "integration",
+      "title": "Phase start rejects if gate not passed",
+      "description": "Verify calling phase-start before gate passes returns error",
+      "steps": [
+        "Without passing gate, call coding-workflow-phase-start()",
+        "Verify error: gate not passed"
+      ]
+    },
+    {
+      "id": "TC-3-03",
+      "type": "integration",
+      "title": "Compact failure does not block phase transition",
+      "description": "Verify that if compact() fails, new phase instructions are still injected",
+      "steps": [
+        "Trigger phase-start",
+        "Force compact to fail",
+        "Verify pi.sendUserMessage is still called with new phase instructions"
+      ]
+    },
+    {
+      "id": "TC-4-01",
+      "type": "integration",
+      "title": "TUI widget shows correct phase progress",
+      "description": "Verify widget displays all 5 phases with correct status icons",
+      "steps": [
+        "Start workflow (Phase 1)",
+        "Verify widget: Phase 1=current, Phase 2-5=pending",
+        "Pass Phase 1 gate, start Phase 2",
+        "Verify widget: Phase 1=passed, Phase 2=current, Phase 3-5=pending"
+      ]
+    },
+    {
+      "id": "TC-4-02",
+      "type": "integration",
+      "title": "Footer status shows phase number",
+      "description": "Verify ctx.ui.setStatus shows 'Phase N/5'",
+      "steps": [
+        "Start workflow",
+        "Verify footer status: 'Phase 1/5'",
+        "Transition to Phase 3",
+        "Verify footer status: 'Phase 3/5'"
+      ]
+    },
+    {
+      "id": "TC-5-01",
+      "type": "integration",
+      "title": "Phase 5 injection includes no-merge constraint",
+      "description": "Verify Phase 5 before_agent_start includes CRITICAL RULE about not merging PR",
+      "steps": [
+        "Transition to Phase 5",
+        "Check injection contains 'MUST NOT merge the PR'",
+        "Check injection contains 'only create the PR, verify CI passes, produce evidence'"
+      ]
+    },
+    {
+      "id": "TC-5-02",
+      "type": "integration",
+      "title": "Phase 5 completion returns done message without phase-start",
+      "description": "Verify Phase 5 gate pass returns completion message, does not require phase-start",
+      "steps": [
+        "Pass Phase 5 gate",
+        "Verify tool returns 'All phases completed' or similar",
+        "Verify no phase-start call is needed",
+        "Verify widget is cleared"
+      ]
+    },
+    {
+      "id": "TC-6-01",
+      "type": "integration",
+      "title": "State recovery after session resume",
+      "description": "Verify workflow state is correctly restored after /resume",
+      "steps": [
+        "Start workflow, advance to Phase 3",
+        "Execute /resume",
+        "Verify state.currentPhase === 3",
+        "Verify phaseResults has Phase 1 and 2 as passed",
+        "Verify widget renders correctly"
+      ]
+    },
+    {
+      "id": "TC-7-01",
+      "type": "integration",
+      "title": "Abort kills active subprocesses and clears state",
+      "description": "Verify /coding-workflow-abort kills running subagent processes and resets state",
+      "steps": [
+        "Start workflow",
+        "Trigger gate check (subagent running)",
+        "Execute /coding-workflow-abort",
+        "Verify activeSubprocesses is empty",
+        "Verify state.isActive === false",
+        "Verify widget cleared"
+      ]
+    },
+    {
+      "id": "TC-7-02",
+      "type": "integration",
+      "title": "New workflow can start after abort",
+      "description": "Verify a new workflow can be started after aborting the previous one",
+      "steps": [
+        "Start and abort workflow",
+        "Start new /coding-workflow new-topic",
+        "Verify new workflow initializes correctly with currentPhase=1"
+      ]
+    },
+    {
+      "id": "TC-8-01",
+      "type": "integration",
+      "title": "Subagent spawn failure returns retryable error",
+      "description": "Verify spawn error (ENOENT) is caught and returns clear error message",
+      "steps": [
+        "Make pi CLI unavailable",
+        "Trigger gate check with review dispatch",
+        "Verify error message mentions spawn failure",
+        "Verify error is retryable (workflow not stuck)"
+      ]
+    },
+    {
+      "id": "TC-8-02",
+      "type": "integration",
+      "title": "Tool renderCall and renderResult display correct information",
+      "description": "Verify custom rendering shows phase number, topic, and status",
+      "steps": [
+        "Call coding-workflow-gate(phase=1)",
+        "Verify renderCall shows 'Phase 1 Gate Check' + topicDir",
+        "Verify renderResult shows pass/fail icon and summary"
+      ]
+    },
+    {
+      "id": "TC-9-01",
+      "type": "integration",
+      "title": "Workflow status command shows current progress",
+      "description": "Verify /coding-workflow-status displays topic, current phase, and passed phases",
+      "steps": [
+        "Start workflow, pass Phase 1",
+        "Execute /coding-workflow-status",
+        "Verify notify shows topic name, current phase, passed phases"
+      ]
+    },
+    {
+      "id": "TC-10-01",
+      "type": "integration",
+      "title": "Full 5-phase workflow completes end-to-end",
+      "description": "Execute complete workflow from Phase 1 through Phase 5, verifying all transitions and deliverables",
+      "steps": [
+        "/coding-workflow e2e-test",
+        "Complete Phase 1 (spec) → gate → review → retrospect → phase-start",
+        "Complete Phase 2 (plan) → gate → review → retrospect → phase-start",
+        "Complete Phase 3 (dev) → gate → review → retrospect → phase-start",
+        "Complete Phase 4 (test) → gate → review → retrospect → phase-start",
+        "Complete Phase 5 (PR) → gate → review → retrospect",
+        "Verify all review files exist with correct version numbers",
+        "Verify all retrospect files exist",
+        "Verify completion message received"
+      ]
+    }
+  ]
+}

@@ -203,6 +203,12 @@ if [[ -z "$WS_ROOT" ]]; then
 fi
 
 MAIN_WT=$(find_main_worktree "$WS_ROOT")
+if [[ -z "$MAIN_WT" ]]; then
+    echo -e "${RED}Error: workspace 中没有 main worktree（需要 $WS_ROOT/main 或 $WS_ROOT/master 目录）${NC}"
+    echo "  bare repo workspace 模式要求必须有 main worktree 用于 bump/tag/push。"
+    echo "  创建: cd $WS_ROOT && git-cwt main"
+    exit 1
+fi
 
 # 自动检测 GitHub repo（workspace root 不是 git repo，gh 无法自动发现）
 if [[ -z "${GH_REPO:-}" ]]; then
@@ -346,20 +352,8 @@ fi
 echo ""
 echo -e "${BOLD}═══ 阶段 3/6: Post-merge CI 验证 ═══${NC}"
 
-if [[ -n "$MAIN_WT" ]]; then
-    git -C "$MAIN_WT" fetch "$GH_REMOTE" main 2>&1 | tail -1
-    MAIN_SHA=$(git -C "$MAIN_WT" rev-parse "$GH_REMOTE/main")
-else
-    # 没有 main worktree 时，用 bare repo 或当前 worktree
-    _git_dir="${WS_ROOT}/.bare"
-    if [[ -d "$_git_dir" ]]; then
-        git --git-dir="$_git_dir" fetch "$GH_REMOTE" main 2>&1 | tail -1 || true
-        MAIN_SHA=$(git --git-dir="$_git_dir" rev-parse "$GH_REMOTE/main")
-    else
-        git -C "$WORKTREE_DIR" fetch "$GH_REMOTE" main 2>&1 | tail -1 || true
-        MAIN_SHA=$(git -C "$WORKTREE_DIR" rev-parse "$GH_REMOTE/main")
-    fi
-fi
+git -C "$MAIN_WT" fetch "$GH_REMOTE" main 2>&1 | tail -1
+MAIN_SHA=$(git -C "$MAIN_WT" rev-parse "$GH_REMOTE/main")
 
 echo "  main SHA: $MAIN_SHA"
 
@@ -409,10 +403,6 @@ if [[ -n "$PUBLISH_SH" ]]; then
             exit 1
         }
     else
-        if [[ -z "$MAIN_WT" ]]; then
-            echo -e "${RED}Error: 本地发布脚本需要在 main worktree 运行${NC}"
-            exit 1
-        fi
         (
             cd "$MAIN_WT"
             bash "$PUBLISH_SH" "$VERSION_TYPE"
@@ -422,18 +412,13 @@ if [[ -n "$PUBLISH_SH" ]]; then
         }
     fi
     # 发布脚本自行处理版本 bump 和 tag，读取版本号
-    if [[ -n "$MAIN_WT" ]] && [[ -f "$MAIN_WT/package.json" ]]; then
-        NEW_VERSION=$(node -p "require('$MAIN_WT/package.json').version")
-    else
-        NEW_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "unknown")
-    fi
+    NEW_VERSION=$(node -p "require('$MAIN_WT/package.json').version")
 else
     # 4b. 没有项目发布脚本 → 自行 bump 版本 + tag + push
     TAG=""
 
-    # 确定操作目录
+    # 在 main worktree 中执行 bump/tag/push
     OP_DIR="$MAIN_WT"
-    [[ -z "$OP_DIR" ]] && OP_DIR="$WORKTREE_DIR"
 
     if [[ -n "$OP_DIR" ]] && [[ -f "$OP_DIR/package.json" ]]; then
         CURRENT_VERSION=$(node -p "require('$OP_DIR/package.json').version")
@@ -508,10 +493,7 @@ TAG="v${NEW_VERSION}"
 REPO_URL=$(gh repo view $GH_FLAG --json url --jq '.url' 2>/dev/null || echo "")
 
 # 5a. 生成 commit 清单
-LAST_TAG=""
-if [[ -n "$MAIN_WT" ]]; then
-    LAST_TAG=$(git -C "$MAIN_WT" describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-fi
+LAST_TAG=$(git -C "$MAIN_WT" describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
 if [[ -n "$LAST_TAG" ]]; then
     LOG_RANGE="$LAST_TAG..HEAD"
@@ -519,7 +501,7 @@ else
     LOG_RANGE="HEAD~30..HEAD"
 fi
 
-cd "${MAIN_WT:-$OP_DIR}"
+cd "$MAIN_WT"
 git log "$LOG_RANGE" --pretty=format:"%s" --no-merges > "$COMMIT_FILE" 2>/dev/null || echo "(无 commit)" > "$COMMIT_FILE"
 
 # 执行 generate-release-notes.sh 钩子（可预处理 commit 清单）

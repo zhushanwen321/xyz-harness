@@ -15,6 +15,10 @@ xyz-harness V5 — AI 编码工作流引擎。两套运行模式：
 
 技术栈：TypeScript (Pi Extension API)、Python (gate-check.py)、Markdown (skill/agent 定义)。
 
+## 术语表
+
+核心术语定义见 [CONTEXT.md](./CONTEXT.md)。包括 Phase、Stage、Gate（GL1/GL2/Retrospect）、Skill（Phase/Reference/Gate）、Subagent（System/Task）、指令注入层级（IL0-IL3）等概念。
+
 ---
 
 ## AI 控制哲学
@@ -298,3 +302,35 @@ else:
 ```bash
 git commit --no-verify -m "message"
 ```
+
+## 文档索引
+
+### docs/ 目录结构
+
+```
+docs/
+├── CONTEXT.md                                    # 核心术语表
+├── adr/                                          # 架构决策记录
+│   └── 0001-six-dimension-evaluation-framework.md # 为什么用六维度框架
+├── research/                                     # 业界调研
+│   ├── 00-summary.md                              # 调研汇总（跨维度发现 + 改进优先级）
+│   ├── 01-context-management.md                   # 上下文管理最佳实践
+│   ├── 02-tool-system-and-orchestration.md         # 工具系统 + 执行编排
+│   ├── 03-evaluation-and-constraints.md            # 评估观测 + 约束恢复
+│   └── 04-state-and-memory.md                      # 状态与记忆
+├── e2e-research/                                  # E2E 测试调研（历史）
+├── retospectives/                                 # 复盘记录（历史）
+├── harness-current-state-assessment.md            # V5 现状评估（每个维度做了什么 + 缺什么）
+└── harness-design-framework.md                    # 六维度诊断框架（差距分析 + 补充方向）
+```
+
+### 关键文档
+
+| 文档 | 用途 |
+|------|------|
+| [CONTEXT.md](./CONTEXT.md) | 核心术语表（Phase、Stage、Gate、Skill、Subagent 等精确定义） |
+| [docs/harness-current-state-assessment.md](./docs/harness-current-state-assessment.md) | V5 现状评估：六维度逐项分析已实现和不足 |
+| [docs/harness-design-framework.md](./docs/harness-design-framework.md) | 六维度诊断框架：成熟系统做法 + 26 个 gap + 优先级矩阵 |
+| [docs/research/00-summary.md](./docs/research/00-summary.md) | 业界调研汇总：3 个跨维度发现 + P0/P1/P2 改进建议 |
+| [docs/adr/0001-six-dimension-evaluation-framework.md](./docs/adr/0001-six-dimension-evaluation-framework.md) | ADR：为什么选择六维度评估框架 |
+| [docs/adr/0002-integrate-grill-with-docs-as-steps.md](./docs/adr/0002-integrate-grill-with-docs-as-steps.md) | ADR：grill-with-docs 集成为 Step 而非独立 Phase |

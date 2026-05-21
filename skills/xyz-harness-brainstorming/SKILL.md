@@ -22,9 +22,10 @@ description: >-
 | 步骤 | 执行者 | Agent | Skill | 方式 |
 |------|--------|-------|-------|------|
 | Step 1: Codebase Scan | subagent | general-purpose | 无 | 纯扫描，无需 skill |
-| Step 2-4: Brainstorming | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
+| Step 2-4: Brainstorming + Terminology | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
 | Step 5: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
-| Step 8: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
+| Step 7: Terminology & ADR | 主 agent | — | 无 | MUST + Nullable |
+| Step 9: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
 | Spec Review | subagent | general-purpose | expert-reviewer | task prompt 指定 read |
 | Retrospect | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
@@ -47,13 +48,14 @@ Every project goes through this process. A todo list, a single-function utility,
 You MUST create a task for each of these items and complete them in order:
 
 1. **Scan codebase** — dispatch read-only subagent to explore project structure, existing APIs, types, and patterns. Output: `infrastructure-scan.md` (see below)
-2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. Use scan results to ask higher-quality questions
+2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. Use scan results to ask higher-quality questions. **Terminology Step (MUST + Nullable):** 在提问过程中，主动识别 spec 中的模糊术语并提议精确定义（见 Terminology Step 章节）
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
 5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
 6. **Spec completeness check** — verify all six elements are covered, mark ambiguities as `[AMBIGUOUS]`, fix or confirm each with user (see below)
-7. **User reviews written spec** — ask user to review the spec file before proceeding
-8. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+7. **Terminology & ADR Step (MUST + Nullable)** — 从 spec 中提取术语写入/更新 `CONTEXT.md`，评估 spec 中的决策是否需要创建 ADR（见 Terminology & ADR Step 章节）
+8. **User reviews written spec** — ask user to review the spec file before proceeding
+9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
 
@@ -263,6 +265,57 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 - User says "figure it out" → pick the most reasonable value and note the decision
 
 **Only proceed to user review when all `[AMBIGUOUS]` markers are resolved.**
+
+## Terminology Step (嵌入 Step 2)
+
+**MUST + Nullable：** 必须执行，但产出可为空。
+
+在与用户讨论需求的过程中，主动识别 spec 中的模糊术语。具体做法：
+
+1. **标记模糊术语：** 当用户或你自己使用了一个可能有多种理解的词时，立即指出并提议精确定义
+   - 例："你说的'工作区'是指 bare repo + worktree 的物理结构，还是用户看到的逻辑概念？"
+   - 例："'账户'——你指的是 Customer 还是 User？这是两个不同的概念"
+
+2. **检查已有术语表：** 如果项目根目录存在 `CONTEXT.md`，read 它，检查用户使用的术语是否与已有定义冲突
+   - 冲突时立即指出："你的术语表定义 'cancellation' 为 X，但你似乎在说 Y — 哪个是对的？"
+
+3. **记录结果：** 将识别到的模糊术语及其定义记录下来（可用于后续 Step 7 的 CONTEXT.md 产出）
+
+**产出可为空：** 如果需求非常简单，讨论中未出现模糊术语，写"无需额外术语定义"即可。但必须过一遍这个检查。
+
+## Terminology & ADR Step (Step 7)
+
+**MUST + Nullable：** 必须执行，但产出可为空。
+
+spec.md 写完后、用户审核前，执行以下两个子步骤：
+
+### 7a. CONTEXT.md 产出
+
+1. **Read 已有 `CONTEXT.md`**（如果项目根目录存在）
+2. **从 spec.md 中提取核心领域术语**，包括但不限于：
+   - spec 中出现的业务实体名称
+   - 有多种可能理解的术语
+   - 与代码实现直接对应的概念（如 API 路径、数据模型名称）
+3. **Write 或更新 `CONTEXT.md`**：为每个术语提供一句话定义 + 避免使用的同义词
+   - 如果已有 `CONTEXT.md`，只追加新术语，不修改已有定义
+   - 格式遵循 grill-with-docs skill 的 CONTEXT-FORMAT.md
+4. **检查 spec 与 CONTEXT.md 的一致性**：spec 中使用的术语是否与 CONTEXT.md 定义对齐
+
+**产出可为空：** 如果 spec 中无新增领域术语（如纯 bug 修复），跳过写入。但必须执行评估。
+
+### 7b. ADR 评估
+
+1. **Read `docs/adr/` 目录**，确认当前已有 ADR 编号
+2. **扫描 spec.md 中的决策**，逐个评估是否满足三条件：
+   - **难以逆转：** 改变决策的成本是否显著？
+   - **无上下文会惊讶：** 未来读者是否会问"为什么这样做？"
+   - **真实权衡：** 是否存在有意义的替代方案？
+3. **对满足三条件的决策，创建 ADR**：`docs/adr/{NNNN}-{slug}.md`
+   - 格式：1-3 句话说明上下文、决策和原因
+   - 编号从已有最大值递增
+4. **不满足三条件的决策，不创建 ADR**
+
+**产出可为空：** 如果无决策满足三条件，不写 ADR。但必须执行评估。
 
 ## Inline Checks
 

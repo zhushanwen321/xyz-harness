@@ -134,6 +134,14 @@ if [[ -f "package.json" ]]; then
         (cd frontend && { npm ci 2>&1 || npm install 2>&1; })
     fi
 
+    # 通用扫描：安装有独立 package.json 但缺 node_modules 的子目录
+    for _subdir in */; do
+        [[ -f "${_subdir}package.json" ]] || continue
+        [[ -e "${_subdir}node_modules" ]] && continue
+        echo "  📦 安装 ${_subdir%/} 依赖中..."
+        (cd "$_subdir" && { npm ci 2>&1 || npm install 2>&1; })
+    done
+
     pass "依赖已就绪"
 else
     skip "未检测到 package.json，跳过依赖安装"

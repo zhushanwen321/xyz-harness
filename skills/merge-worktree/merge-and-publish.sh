@@ -107,7 +107,8 @@ find_pr_for_branch() {
     local branch="$1"
     [[ -z "$branch" ]] && return
     local pr_num
-    pr_num=$(gh pr list --state all --head "$branch" --json number --jq '.[0].number' 2>/dev/null) || true
+    local repo_flag="${GH_REPO:+--repo $GH_REPO}"
+    pr_num=$(gh pr list $repo_flag --state all --head "$branch" --json number --jq '.[0].number' 2>/dev/null) || true
     echo "${pr_num:-}"
 }
 
@@ -203,6 +204,20 @@ fi
 
 MAIN_WT=$(find_main_worktree "$WS_ROOT")
 
+# 自动检测 GitHub repo（workspace root 不是 git repo，gh 无法自动发现）
+if [[ -z "${GH_REPO:-}" ]]; then
+  # 从 worktree 的 remote URL 提取 owner/repo
+  _remote_url=$(git -C "$WORKTREE_DIR" remote get-url github 2>/dev/null \
+    || git -C "$WORKTREE_DIR" remote get-url origin 2>/dev/null || true)
+  if [[ -n "$_remote_url" ]]; then
+    # 支持 git@github.com:owner/repo.git 和 https://github.com/owner/repo.git
+    GH_REPO=$(echo "$_remote_url" | sed -E 's#.*github.com[:/]([^/]+/[^/]+)(\.git)?$#\1#')
+    GH_REPO="${GH_REPO%.git}"
+    export GH_REPO
+    echo "  检测到 repo: $GH_REPO"
+  fi
+fi
+
 # 断点文件
 CHECKPOINT_DIR="$WS_ROOT/.merge-checkpoints/${BRANCH_NAME//\//-}"
 mkdir -p "$CHECKPOINT_DIR" 2>/dev/null || true
@@ -220,8 +235,17 @@ if [[ -z "$PR_NUMBER" ]]; then
     exit 1
 fi
 
-PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
-PR_TITLE=$(gh pr view "$PR_NUMBER" --json title --jq '.title' 2>/dev/null || echo "")
+GH_FLAG="${GH_REPO:+--repo $GH_REPO}"
+
+# 在 bare-repo workspace 模式下，origin 指向本地 bare repo，
+# GitHub 是另一个 remote（通常叫 github）。自动检测。
+GH_REMOTE="origin"
+if [[ -n "$GH_REPO" ]] && git -C "$WORKTREE_DIR" remote get-url github &>/dev/null; then
+    GH_REMOTE="github"
+fi
+
+PR_STATE=$(gh pr view "$PR_NUMBER" $GH_FLAG --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+PR_TITLE=$(gh pr view "$PR_NUMBER" $GH_FLAG --json title --jq '.title' 2>/dev/null || echo "")
 
 echo "══════════════════════════════════════════════════"
 echo -e "${BOLD}端到端合并发布流程${NC}"
@@ -267,7 +291,7 @@ if [[ "$PR_STATE" == "MERGED" ]]; then
     echo -e "  ${GREEN}⏭️  PR 已合并，跳过${NC}"
 elif [[ "$PR_STATE" == "OPEN" ]]; then
     echo "  检查 PR CI 状态..."
-    CI_DATA=$(gh pr view "$PR_NUMBER" --json statusCheckRollup 2>&1) || {
+    CI_DATA=$(gh pr view "$PR_NUMBER" $GH_FLAG --json statusCheckRollup 2>&1) || {
         echo -e "${YELLOW}Warning: 无法获取 CI 状态，继续合并${NC}"
         CI_DATA='{"statusCheckRollup":[]}'
     }
@@ -286,7 +310,7 @@ elif [[ "$PR_STATE" == "OPEN" ]]; then
         while [[ $ELAPSED -lt 600 ]]; do
             sleep 30
             ELAPSED=$((ELAPSED + 30))
-            CI_DATA=$(gh pr view "$PR_NUMBER" --json statusCheckRollup 2>&1)
+            CI_DATA=$(gh pr view "$PR_NUMBER" $GH_FLAG --json statusCheckRollup 2>&1)
             CI_CONCLUSIONS=$(echo "$CI_DATA" | jq -r '[.statusCheckRollup[] | .conclusion] | unique | join(",")' 2>/dev/null || echo "")
             if ! echo "$CI_CONCLUSIONS" | grep -qi "pending\|queued\|in_progress"; then
                 break
@@ -300,8 +324,8 @@ elif [[ "$PR_STATE" == "OPEN" ]]; then
     fi
 
     echo -e "  ${GREEN}✅ PR CI 通过，开始合并${NC}"
-    gh pr merge "$PR_NUMBER" --merge --delete-branch 2>&1 || {
-        PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
+    gh pr merge "$PR_NUMBER" $GH_FLAG --merge --delete-branch 2>&1 || {
+        PR_STATE=$(gh pr view "$PR_NUMBER" $GH_FLAG --json state --jq '.state' 2>/dev/null || echo "UNKNOWN")
         if [[ "$PR_STATE" == "MERGED" ]]; then
             echo -e "  ${GREEN}PR 已合并（可能被其他进程合并）${NC}"
         else
@@ -323,11 +347,18 @@ echo ""
 echo -e "${BOLD}═══ 阶段 3/6: Post-merge CI 验证 ═══${NC}"
 
 if [[ -n "$MAIN_WT" ]]; then
-    git -C "$MAIN_WT" fetch origin main 2>&1 | tail -1
-    MAIN_SHA=$(git -C "$MAIN_WT" rev-parse origin/main)
+    git -C "$MAIN_WT" fetch "$GH_REMOTE" main 2>&1 | tail -1
+    MAIN_SHA=$(git -C "$MAIN_WT" rev-parse "$GH_REMOTE/main")
 else
-    git -C "${WS_ROOT}" fetch origin main 2>&1 | tail -1 || true
-    MAIN_SHA=$(git -C "${WS_ROOT}" rev-parse origin/main 2>/dev/null || git rev-parse origin/main)
+    # 没有 main worktree 时，用 bare repo 或当前 worktree
+    _git_dir="${WS_ROOT}/.bare"
+    if [[ -d "$_git_dir" ]]; then
+        git --git-dir="$_git_dir" fetch "$GH_REMOTE" main 2>&1 | tail -1 || true
+        MAIN_SHA=$(git --git-dir="$_git_dir" rev-parse "$GH_REMOTE/main")
+    else
+        git -C "$WORKTREE_DIR" fetch "$GH_REMOTE" main 2>&1 | tail -1 || true
+        MAIN_SHA=$(git -C "$WORKTREE_DIR" rev-parse "$GH_REMOTE/main")
+    fi
 fi
 
 echo "  main SHA: $MAIN_SHA"
@@ -400,6 +431,7 @@ else
     # 4b. 没有项目发布脚本 → 自行 bump 版本 + tag + push
     TAG=""
 
+    # 确定操作目录
     OP_DIR="$MAIN_WT"
     [[ -z "$OP_DIR" ]] && OP_DIR="$WORKTREE_DIR"
 
@@ -414,7 +446,8 @@ else
         else
             (
                 cd "$OP_DIR"
-                git pull origin main 2>&1 | tail -1
+                git fetch "$GH_REMOTE" main 2>&1 | tail -1
+                git merge --ff-only FETCH_HEAD 2>&1 | tail -1 || { echo "  ${RED}Error: 无法 fast-forward main${NC}"; exit 1; }
                 npm version "$VERSION_TYPE" --no-git-tag-version 2>&1
                 NEW_VERSION=$(node -p "require('./package.json').version")
                 TAG="v$NEW_VERSION"
@@ -424,7 +457,7 @@ else
                 git add package.json package-lock.json 2>/dev/null || true
                 git commit -m "chore: bump version to $NEW_VERSION" 2>/dev/null || echo "  无变更需提交"
                 git tag "$TAG" 2>/dev/null || echo "  Tag 已存在"
-                git push origin main --tags 2>&1 | tail -1
+                git push "$GH_REMOTE" HEAD:refs/heads/main --tags 2>&1 | tail -1
             )
             # 从 OP_DIR 重新读取版本号（子 shell 中的变量不传回）
             NEW_VERSION=$(node -p "require('$OP_DIR/package.json').version")
@@ -438,7 +471,7 @@ else
         echo "  非 npm 项目，创建 tag: $TAG"
         if [[ -n "$OP_DIR" ]]; then
             git -C "$OP_DIR" tag "$TAG" 2>/dev/null || true
-            git -C "$OP_DIR" push origin --tags 2>&1 | tail -1
+            git -C "$OP_DIR" push "$GH_REMOTE" --tags 2>&1 | tail -1
         fi
     fi
 
@@ -472,7 +505,7 @@ echo ""
 echo -e "${BOLD}═══ 阶段 5/6: Release ═══${NC}"
 
 TAG="v${NEW_VERSION}"
-REPO_URL=$(gh repo view --json url --jq '.url' 2>/dev/null || echo "")
+REPO_URL=$(gh repo view $GH_FLAG --json url --jq '.url' 2>/dev/null || echo "")
 
 # 5a. 生成 commit 清单
 LAST_TAG=""
@@ -518,23 +551,23 @@ else
 fi
 
 # 5c. 创建或更新 Release
-EXISTING_RELEASE=$(gh release view "$TAG" --json isDraft,id --jq '.' 2>/dev/null || echo "")
+EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id --jq '.' 2>/dev/null || echo "")
 
 if [[ -n "$EXISTING_RELEASE" ]]; then
     echo "  更新已有 Release: $TAG"
-    gh release edit "$TAG" --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
+    gh release edit "$TAG" $GH_FLAG --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
     RELEASE_URL="${REPO_URL}/releases/tag/$TAG"
 
     # 如果已有 release 是 Draft 且不是 --draft 模式，发布它
     IS_DRAFT=$(echo "$EXISTING_RELEASE" | jq -r '.isDraft')
     if [[ "$IS_DRAFT" == "true" ]] && ! $DRAFT_MODE; then
         echo "  发布 Draft Release..."
-        gh release edit "$TAG" --draft=false 2>&1 || true
+        gh release edit "$TAG" $GH_FLAG --draft=false 2>&1 || true
     fi
 else
     echo "  创建 Release: $TAG"
     if $DRAFT_MODE; then
-        RELEASE_URL=$(gh release create "$TAG" \
+        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
             --title "v$NEW_VERSION" \
             --notes-file "$FINAL_NOTES_FILE" \
             --draft \
@@ -544,7 +577,7 @@ else
         }
         echo -e "  ${GREEN}✅ Draft Release 已创建${NC}"
     else
-        RELEASE_URL=$(gh release create "$TAG" \
+        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
             --title "v$NEW_VERSION" \
             --notes-file "$FINAL_NOTES_FILE" \
             --target main 2>&1 | tail -1) || {
@@ -598,8 +631,8 @@ for _wt_entry in "$WS_ROOT"/*/; do
     echo "    同步 $_wt_name ($_branch)..."
     (
         cd "$_wt_name"
-        git fetch origin main 2>&1 | tail -1
-        git merge --no-ff origin/main 2>&1 | tail -1 || {
+        git fetch "$GH_REMOTE" main 2>&1 | tail -1
+        git merge --no-ff "$GH_REMOTE/main" 2>&1 | tail -1 || {
             echo -e "    ${YELLOW}冲突: $_wt_name${NC}"
         }
     )
@@ -621,6 +654,6 @@ echo "  分支: $BRANCH_NAME (已清理)"
 if $DRAFT_MODE; then
     echo ""
     echo "  Draft Release 需要手动发布:"
-    echo "    gh release edit $TAG --draft=false"
+    echo "    gh release edit $TAG $GH_FLAG --draft=false"
 fi
 echo "══════════════════════════════════════════════════"

@@ -22,6 +22,7 @@ description: >-
 | 步骤 | 执行者 | Agent | Skill | 方式 |
 |------|--------|-------|-------|------|
 | Write plan.md | 主 agent | — | writing-plans (本 skill) | 主 agent 上下文加载 |
+| ADR evaluation | 主 agent | — | 无 | MUST + Nullable |
 | L2: plan-backend + api-contract | subagent | general-purpose | writing-plans (L2 章节) | task prompt 指定 read |
 | L2: plan-frontend | subagent | general-purpose | writing-plans (L2 章节) | task prompt 指定 read |
 | L2: API 对齐 | subagent | general-purpose | 无 | 读取 sub-documents 对比 |
@@ -345,6 +346,23 @@ After writing the complete plan, look at the spec with fresh eyes and check the 
 **3. Type consistency:** Do the types, method signatures, and property names you used in later tasks match what you defined in earlier tasks? A function called `clearLayers()` in Task 3 but `clearFullLayers()` in Task 7 is a bug.
 
 If you find issues, fix them inline. No need to re-review — just fix and move on. If you find a spec requirement with no task, add the task.
+
+## ADR Evaluation Step
+
+**MUST + Nullable：** 必须执行，但产出可为空。
+
+plan 交付物全部完成后、dispatch review subagent 前，执行 ADR 评估：
+
+1. **Read `docs/adr/` 目录**，确认当前已有 ADR 编号（延续 Phase 1 的编号）
+2. **Read 项目根目录 `CONTEXT.md`**（如果存在），确认术语定义
+3. **扫描 plan.md 中的新决策**（Phase 1 未覆盖的），逐个评估三条件：
+   - **难以逆转：** 架构选型、技术锁定、集成模式等
+   - **无上下文会惊讶：** 与常规做法不同的决策
+   - **真实权衡：** 存在替代方案但选择了特定方案
+4. **满足三条件的决策，创建 ADR**：`docs/adr/{NNNN}-{slug}.md`
+5. **不满足三条件，不创建 ADR**
+
+**产出可为空：** 如果 plan 中无新决策满足三条件（常见于简单需求），不写 ADR。但必须执行评估。
 
 ## 交付物：e2e-test-plan.md
 

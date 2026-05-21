@@ -112,7 +112,7 @@ Keep it concise — this is a reference, not documentation.
 | Item | Value |
 |------|-------|
 | Agent | general-purpose (read-only mode) |
-| Model | glm-5-turbo (mechanical scan, no complex reasoning) |
+| Model | router-openai/ds-flash (mechanical scan, no complex reasoning) |
 | Tools | read, bash (no write) |
 
 **After scan completes:** Read `infrastructure-scan.md` and use it to:
@@ -278,7 +278,7 @@ Fix any issues inline. No need to re-review — just fix and move on.
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5.1
+   - **Model**: router-openai/glm-5.1
    - **Task prompt**:
      ```
      你是独立审查专家。按以下步骤执行审查：
@@ -332,12 +332,12 @@ must_fix: 0
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5-turbo
+   - **Model**: router-openai/ds-flash
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：
 
-     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     1. 回顾 system prompt 中已包含的复盘方法论
      2. read 以下交付物文件：
         - `{topic_dir}/spec.md`
         - `{topic_dir}/changes/reviews/spec_review_v*.md`

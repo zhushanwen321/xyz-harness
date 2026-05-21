@@ -111,12 +111,12 @@ If any test fails: diagnose → fix → re-run → update execution json.
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5-turbo
+   - **Model**: router-openai/ds-flash
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：
 
-     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     1. 回顾 system prompt 中已包含的复盘方法论
      2. read 以下交付物文件：
         - `{topic_dir}/test_cases_template.json`
         - `{topic_dir}/changes/evidence/test_execution.json`

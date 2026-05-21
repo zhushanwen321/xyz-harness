@@ -118,12 +118,12 @@ All CI checks passed.
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: llm-simple-router/glm-5-turbo
+   - **Model**: router-openai/ds-flash
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行整体复盘（覆盖全部 5 个 phase）：
 
-     1. read `agents/harness-retrospect/agent.md` 获取复盘方法论
+     1. 回顾 system prompt 中已包含的复盘方法论
      2. read 之前 4 个 phase 的复盘记录（如果存在）：
         - `{topic_dir}/changes/reviews/spec_retrospect.md`（Phase 1）
         - `{topic_dir}/changes/reviews/plan_retrospect.md`（Phase 2）

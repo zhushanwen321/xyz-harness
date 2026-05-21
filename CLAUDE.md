@@ -2,8 +2,10 @@
 
 ## 项目背景
 
-xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 extension 工具。
-所有的开发流程由用户手动触发 skill 引导 AI 完成。
+xyz-harness V5 — AI 编码工作流引擎。两套运行模式：
+
+- **Manual Mode（纯 Skill）**：用户手动触发 skill，手动跑 gate，手动 dispatch review/retrospect
+- **Auto Mode（coding-workflow 扩展）**：`/coding-workflow <topic>` 启动，自动编排 phase 切换、gate、review、retrospect
 
 包含：
 - `extensions/todolist/` — Pi 扩展：任务追踪
@@ -11,17 +13,126 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 - `skills/` — SKILL.md 技能定义（11 个）
 - `agents/` — Agent 定义（harness-retrospect 复盘 agent）
 
-技术栈：TypeScript (Pi Extension API)、Markdown (skill/agent 定义)。
+技术栈：TypeScript (Pi Extension API)、Python (gate-check.py)、Markdown (skill/agent 定义)。
+
+---
+
+## AI 控制哲学
+
+### 核心原则：AI 是不可信的执行者
+
+AI 不是协作者，是一个**智商有限但极其狡猾的执行者**。它会：
+- **跳过检查**：说"已验证"但实际没跑命令
+- **伪造结果**：编造测试通过、覆盖率达标的假象
+- **偷看上下文**：利用之前 phase 的记忆跳过当前阶段
+- **提前规划**：在 spec 阶段就开始思考代码实现
+- **静默降级**：遇到困难时悄悄降低标准而不是报告
+
+Harness 的全部设计目标就是防止这些行为。
+
+### 五层防御体系
+
+| 层级 | 机制 | 防御目标 |
+|------|------|---------|
+| **L1 上下文隔离** | 每个 phase 只注入当前 skill，compact 清除历史 | 防止 AI 利用前序 phase 记忆偷跑或跳过 |
+| **L2 脚本门禁** | gate-check.py 验证文件存在 + YAML frontmatter | AI 无法伪造脚本输出 |
+| **L3 独立评审** | review subagent 不继承主 agent 上下文 | 评审者不受编码者 bias 影响 |
+| **L4 强制复盘** | retrospect 失败 → phase-start BLOCKED | 复盘不可跳过，复盘缺失 = 无法推进 |
+| **L5 结果可见** | gate PASS 消息包含 review + retrospect 状态 | 失败不再是 console.warn 静默吞掉 |
+
+### AI 逃脱模式与对策
+
+| AI 逃脱行为 | Harness 对策 |
+|------------|-------------|
+| 跳过 gate 直接进入下一 phase | phase-start 必须检查 phaseResults[当前] = "passed" |
+| 跳过复盘直接推进 | phase-start 检查 retrospect 文件存在，不存在则 BLOCKED |
+| 评审和编码是同一个人 | review subagent 独立进程、独立上下文、独立模型 |
+| 利用之前 phase 的知识偷跑 | compact() 在 phase 切换时清除对话历史 |
+| 复盘 subagent 失败但继续推进 | gate PASS 消息中包含 WARNING，phase-start 二次拦截 |
+| 伪造测试结果 | gate-check.py 检查 YAML frontmatter 中的 verdict 字段 |
+| 不读 skill 指令直接凭感觉干活 | before_agent_start 强制注入 skill 内容 |
+| Phase 5 合并 PR（不可逆操作） | skill 注入中明确 "MUST NOT merge the PR" |
+
+### 信息隔离规则
+
+AI **不得知道**：
+- 一共有多少个 phase（只知道当前 phase）
+- 下一个 phase 是什么
+- 之前 phase 的详细讨论内容（compact 后只保留 deliverables 路径）
+- 其他项目的 harness 运行历史
+
+AI **只需知道**：
+- 当前 phase 的 skill 指令
+- topic 目录路径
+- 当前 phase 的交付物要求
+- coding-workflow-gate 和 coding-workflow-phase-start 两个工具的使用时机
+
+### 复盘安全保障
+
+复盘（retrospect）是 harness 的质量闭环，不能跳过。安全保障链：
+
+```
+gate check pass
+  → dispatch review subagent
+  → dispatch retrospect subagent
+    → 成功：retrospect 文件创建
+    → 失败：gate PASS 消息中显示 WARNING
+  → AI 调用 phase-start
+    → 检查 retrospect 文件存在？
+      → 存在：放行，进入下一 phase
+      → 不存在：BLOCKED，给出重试或手动创建选项
+```
+
+任何一环失败都有下游拦截，复盘不会静默丢失。
+
+---
 
 ## 架构设计
 
-### 哲学
+### Auto Mode（coding-workflow 扩展）
 
-- **Pure Skill**：没有强制约束（no auto-gate, no state file, no loop engine）
-- **Manual Control**：用户决定何时开始 phase、何时推进、何时检查 gate
-- **Separate Gate**：gate 检查在独立对话中执行，避免 bias
-- **审查和复盘强制 subagent**：审查（review）和复盘（retrospect）通过 dispatch 独立 subagent 执行，保证客观性
-- **编码由 AI 自主决定**：简单项目主 agent 直接编码，复杂项目可参考 subagent-driven-development dispatch subagent
+```
+用户: /coding-workflow <topic>
+  → 创建 topic 目录
+  → state.currentPhase = 1
+  → before_agent_start 注入 Phase 1 skill
+  → AI 按 skill 工作，产出 deliverables
+  → AI 调用 coding-workflow-gate(phase=1)
+    → gate-check.py 验证文件 → pass/fail
+    → dispatch review subagent → review_v*.md
+    → dispatch retrospect subagent → retrospect.md
+    → 返回 PASS/FAIL
+  → AI 调用 coding-workflow-phase-start()
+    → 检查 retrospect 文件 → BLOCKED/放行
+    → state.currentPhase += 1
+    → compact() 清除历史
+    → 注入 Phase 2 skill
+  → ...重复直到 Phase 5 完成
+```
+
+### Manual Mode（纯 Skill）
+
+```
+用户: "start Phase 1"
+  → brainstorming skill 加载 → AI 按 guide 工作
+  → 产出 spec.md
+  → dispatch 审查 subagent → spec_review_v*.md
+  → dispatch 复盘 subagent → spec_retrospect.md
+  → gate check（独立 session）
+
+用户: "start Phase 2"
+  → ...同上
+```
+
+### Phase 列表
+
+| Phase | Skill | 产出 | Retrospect |
+|-------|-------|------|-----------|
+| 1 spec | xyz-harness-brainstorming | spec.md | spec_retrospect.md |
+| 2 plan | xyz-harness-writing-plans | plan.md, e2e-test-plan.md, test_cases_template.json | plan_retrospect.md |
+| 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md | dev_retrospect.md |
+| 4 test | xyz-harness-phase-test | test_execution.json | test_retrospect.md |
+| 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md | overall_retrospect.md |
 
 ### Subagent 执行模型
 
@@ -34,43 +145,6 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 ```
 
 不创建专用 agent（harness-retrospect 除外），避免维护成本。
-
-### 工作流程
-
-```
-用户: "start Phase 1"
-  → brainstorming skill 加载 → AI 按 guide 工作
-  → 产出 spec.md
-  → dispatch 审查 subagent → spec_review_v*.md
-  → dispatch 复盘 subagent → spec_retrospect.md
-  → gate check（独立 session）
-
-用户: "start Phase 2"
-  → writing-plans skill 加载 → AI 按 guide 工作
-  → 产出 plan.md + e2e-test-plan.md + test_cases_template.json
-  → dispatch 审查 subagent → plan_review_v*.md
-  → dispatch 复盘 subagent → plan_retrospect.md
-  → gate check（独立 session）
-
-用户: "start Phase 3"
-  → phase-dev skill 加载 → AI 按 guide 工作
-  → 产出 源代码 + test_results.md
-  → dispatch 审查 subagent → code_review_v*.md
-  → dispatch 复盘 subagent → dev_retrospect.md
-  → gate check（独立 session）
-
-...Phase 4, 5 类似
-```
-
-### Phase 列表
-
-| Phase | Skill | 产出 |
-|-------|-------|------|
-| 1 spec | xyz-harness-brainstorming | spec.md + spec_review + spec_retrospect |
-| 2 plan | xyz-harness-writing-plans | plan.md, e2e-test-plan.md, test_cases_template.json, plan_review + plan_retrospect |
-| 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md + code_review + dev_retrospect |
-| 4 test | xyz-harness-phase-test | test_execution.json + test_retrospect |
-| 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md + overall_retrospect |
 
 ## 文档索引
 
@@ -87,19 +161,76 @@ xyz-harness V5 — Manual Skill-Driven Workflow。不包含任何强制性的 ex
 | Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | 前端编码规范（编码时参考） |
 | TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | TDD 方法论（编码时参考） |
 | Subagent-Driven Dev | `skills/xyz-harness-subagent-driven-development/SKILL.md` | subagent 调度模式参考 |
-| Retrospect Agent | `agents/harness-retrospect/agent.md` | 复盘 agent（每个 phase 完成后 dispatch） |
+| Retrospect | `skills/harness-retrospect/SKILL.md`（全局）或 `agents/harness-retrospect/agent.md`（项目） | 复盘方法论（subagent system prompt） |
 
 ## Extension
 
 - `extensions/todolist/` — Todolist 扩展（任务追踪工具）
 - `~/.pi/agent/extensions/force-loop/` — Loop 循环机制（Pi 基础工具）
-
-无其他 harness extension。
+- `~/.pi/agent/extensions/coding-workflow/` — Auto mode 扩展（phase 自动编排）
 
 ## 质量门禁
 
-- 无自动门禁。所有 gate 检查通过 `xyz-harness-gate` skill 在独立 Pi 会话中手动执行。
-- Gate check 脚本：`skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} {phase_number}`
+### Auto Mode
+
+- gate-check.py 自动运行，验证 deliverables 完整性
+- review subagent 自动 dispatch，验证 deliverables 质量
+- retrospect subagent 自动 dispatch，产出复盘记录
+- phase-start 检查 retrospect 文件存在，不存在则 BLOCKED
+
+### Manual Mode
+
+- gate-check.py 手动运行：`skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} {phase_number}`
+- review 和 retrospect 手动 dispatch
+
+### Gate Check 脚本检查项
+
+| Phase | 检查内容 |
+|-------|---------|
+| 1 | spec.md 存在 + verdict:pass + spec_review 存在 + verdict:pass + must_fix:0 |
+| 2 | plan.md + e2e-test-plan.md + test_cases_template.json + plan_review |
+| 3 | test_results.md + code_review |
+| 4 | test_execution.json（所有 case passed） |
+| 5 | pr_evidence.md (pr_created:true) + ci_results.md (ci_passed:true) |
+
+## coding-workflow 扩展开发指南
+
+### 文件结构
+
+```
+~/.pi/agent/extensions/coding-workflow/
+├── index.ts              # 扩展入口（tools + commands + events）
+├── gate-check.py         # gate 验证脚本（5 phase）
+└── lib/
+    ├── model-resolve.ts  # 模型解析（按 task complexity）
+    └── subagent.ts       # subagent spawn + JSON streaming
+```
+
+### 前置条件
+
+| 依赖 | 说明 |
+|------|------|
+| Python 3 + PyYAML | gate-check.py 需要 |
+| `~/.pi/agent/subagent-models.json` | 模型配置（review/retrospect subagent 用） |
+| harness skills 已安装 | `~/.pi/agent/skills/xyz-harness-*` |
+| harness-retrospect 可发现 | 全局 agents 或 skills 目录中 |
+
+### Retrospect Agent 发现路径
+
+扩展按以下顺序搜索 retrospect agent：
+1. `~/.pi/agent/agents/harness-retrospect/agent.md`（标准安装位置）
+2. `~/.pi/agent/skills/harness-retrospect/agent.md`（skill 注册位置）
+3. `~/Code/xyz-harness-engineering-workspace/xyz-harness-engineering/agents/harness-retrospect/agent.md`（开发时 fallback）
+
+搜索逻辑在 `index.ts` 的 `RETROSPECT_AGENT_SEARCH_PATHS` 常量和 `getRetrospectAgentContent()` 函数中。
+
+### Subagent 模型选择
+
+扩展使用 `~/.pi/agent/subagent-models.json` 中的模型配置：
+- Review subagent：`taskComplexity: "medium"` → ds-flash / kimi-for-coding
+- Retrospect subagent：`taskComplexity: "low"` → glm-5-turbo / ds-flash
+
+不要在 skill 中硬编码 `llm-simple-router/xxx` 这样的 provider。`llm-simple-router` 不是合法的 provider 前缀。
 
 ## Skill YAML Frontmatter 注意事项
 
@@ -113,30 +244,15 @@ SKILL.md 文件的 YAML frontmatter 由 Pi 读取解析，以下陷阱会导致�
 - **特殊 YAML 字符**：`{}`, `[]`, `>`, `|`, `!`, `&`, `*` 等
 - **以 YAML 保留字开头**：`true`, `false`, `yes`, `no`, `null`, `on`, `off` 等
 
-### 引号和块标量使用规则
+### 推荐用 `>-` 块标量
 
-| 值特征 | 推荐方式 | 示例 |
-|--------|---------|------|
-| 含双引号 | `>-` 块标量（推荐）或外层单引号 | 见下方 |
-| 不含双引号 | 外层双引号 | `description: "file exists, YAML parses"` |
-| 含单引号 | 外层双引号，内层 escape | `description: "It\'s working"` |
-| 都不含 | 可不加，但含冒号时仍需加 | — |
-
-**推荐用 `>-` 块标量**（folded block scalar with strip）：
-- description 等长文本写在多行，每行缩进 2 空格
-- 自动折叠为一行，`-` 去掉末尾换行
-- 不需要处理引号转义
-- 示例：
 ```yaml
 description: >-
   Gate check for harness. Trigger: "run gate check",
   "verify deliverables", "check gate".
 ```
-会被解析为：`Gate check for harness. Trigger: "run gate check", "verify deliverables", "check gate".`
 
 ### 验证命令
-
-修改 SKILL.md 的 frontmatter 后，用以下命令验证 YAML 解析（读取完整文件，不限于 `head -4`，因为 block scalar 可能跨多行）：
 
 ```bash
 python3 -c "
@@ -156,10 +272,6 @@ else:
 "
 ```
 
-### 历史修复
-
-- 2026-05-17: `xyz-harness-gate/SKILL.md` description 含 `Trigger: "run gate check"`，冒号后的空格被 YAML 误判为 mapping 键值分隔符。修复方式：改用 `>-` block scalar 折叠格式，不需要处理引号转义。
-
 ## Pre-commit Hook
 
 项目配置了 git pre-commit hook，自动校验 skill/agent/command 文件的 YAML frontmatter 格式。
@@ -169,16 +281,6 @@ else:
 ```
 .bare/hooks/pre-commit
 ```
-
-由于使用 bare repo + worktree 结构，hook 路径通过 bare repo 的 `core.hooksPath` 配置生效（已在 `.bare/config` 中设置）：
-
-```bash
-# .bare/config
-[core]
-	hooksPath = /Users/zhushanwen/Code/xyz-harness-engineering-workspace/.bare/hooks
-```
-
-hook 会自动对所有 worktree 生效。
 
 ### 校验范围
 
@@ -191,15 +293,8 @@ hook 会自动对所有 worktree 生效。
 | `agents/*/agent.md` | Agent 定义文件 |
 | `.pi/agents/*.md` | Pi Agent 定义文件 |
 
-### 校验内容
-
-1. **YAML 解析**：确保 frontmatter 能被 `yaml.safe_load()` 正确解析
-2. **冒号陷阱检测**：检测 unquoted description 中是否包含 `: `（冒号+空格），防止 YAML 误判为嵌套 mapping
-
 ### 跳过 hook
 
 ```bash
 git commit --no-verify -m "message"
-# 或
-SKIP=pre-commit git commit -m "message"
 ```

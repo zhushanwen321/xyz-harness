@@ -237,29 +237,10 @@ function getExpertReviewerContent(): string {
 	}
 }
 
-// Retrospect agent search paths (ordered by priority)
-const RETROSPECT_AGENT_SEARCH_PATHS = [
-	// 1. Global agents directory (standard install location)
-	path.join(os.homedir(), ".pi", "agent", "agents", "harness-retrospect", "agent.md"),
-	// 2. Global skills directory (if registered as skill)
-	path.join(os.homedir(), ".pi", "agent", "skills", "harness-retrospect", "agent.md"),
-	// 3. xyz-harness-engineering project (dev-time fallback)
-	path.join(os.homedir(), "Code", "xyz-harness-engineering-workspace",
-		"xyz-harness-engineering", "agents", "harness-retrospect", "agent.md"),
-];
-
-function getRetrospectAgentContent(): string {
-	for (const searchPath of RETROSPECT_AGENT_SEARCH_PATHS) {
-		if (fs.existsSync(searchPath)) {
-			return fs.readFileSync(searchPath, "utf8");
-		}
-	}
-	throw new Error(
-		`Retrospect agent not found. Searched:\n` +
-		RETROSPECT_AGENT_SEARCH_PATHS.map(p => `  - ${p}`).join("\n") +
-		`\nInstall: cp agents/harness-retrospect/agent.md ~/.pi/agent/agents/harness-retrospect/agent.md`,
-	);
-}
+// Retrospect skill path — used to build followUp message for main agent
+const RETROSPECT_SKILL_PATH = path.join(
+	os.homedir(), ".pi", "agent", "skills", "harness-retrospect", "SKILL.md",
+);
 
 function buildReviewTaskPrompt(
 	phaseConfig: PhaseConfig,
@@ -288,7 +269,7 @@ function buildReviewTaskPrompt(
 	].join("\n");
 }
 
-function buildRetrospectTaskPrompt(
+function buildRetrospectFollowUp(
 	phaseConfig: PhaseConfig,
 	topicDir: string,
 ): string {
@@ -296,41 +277,35 @@ function buildRetrospectTaskPrompt(
 		topicDir, "changes", "reviews",
 		`${phaseConfig.retrospectPrefix}.md`,
 	);
-	const deliverableList = phaseConfig.deliverables
-		.map((d) => `- ${path.join(topicDir, d)}`)
-		.join("\n");
-
-	// Phase 5 (overall) needs to read all previous phase retrospects
 	const isOverall = phaseConfig.phase === 5;
-	let inputSection: string;
+
+	const parts = [
+		`现在执行 Phase ${phaseConfig.phase}（${phaseConfig.name}）的${isOverall ? "整体" : ""}复盘。`,
+		``,
+		`步骤：`,
+		`1. read ${RETROSPECT_SKILL_PATH} 获取复盘方法论`,
+		`2. 基于你在本 phase 中的完整工作经历，按方法论覆盖两个维度（Phase 执行质量 + Harness 体验）`,
+];
+
 	if (isOverall) {
 		const prevRetrospects = PHASES
 			.filter(p => p.phase < 5)
-			.map(p => `- ${path.join(topicDir, "changes", "reviews", `${p.retrospectPrefix}.md`)}`)
+			.map(p => `   - ${path.join(topicDir, "changes", "reviews", `${p.retrospectPrefix}.md`)}`)
 			.join("\n");
-		inputSection = [
-			`2. read 之前 4 个 phase 的复盘记录（如果存在）：`,
+		parts.push(
+			`3. read 之前 phase 的复盘记录（如果存在）：`,
 			prevRetrospects,
-			`3. read Phase 5 交付物：`,
-			deliverableList,
-		].join("\n");
-	} else {
-		inputSection = [
-			`2. read 以下交付物文件：`,
-			deliverableList,
-		].join("\n");
+		);
 	}
 
-	return [
-		`你是复盘分析师。你的 system prompt 已包含复盘方法论，无需额外加载。`,
-		`按以下步骤执行${isOverall ? "整体（覆盖全部 5 个 phase）" : ""}复盘：`,
+	parts.push(
+		`4. 将复盘结果写入：${retrospectPath}`,
+		"5. YAML frontmatter: `phase: " + phaseConfig.name.toLowerCase() + "`, `verdict: pass`",
 		``,
-		`1. 回顾 system prompt 中的复盘方法论（两个维度：Phase 执行 + Harness 体验）`,
-		inputSection,
-		`4. 按方法论覆盖两个维度${isOverall ? "，回顾全部 5 个 phase" : ""}，将结果写入：`,
-		`   ${retrospectPath}`,
-		`5. YAML frontmatter: \`phase: ${phaseConfig.name.toLowerCase()}\`, \`verdict: pass\``,
-	].join("\n");
+		`完成后调用 coding-workflow-phase-start() 进入下一阶段。`,
+	);
+
+	return parts.join("\n");
 }
 
 // ─── Subagent dispatch helpers ───────────────────────────
@@ -379,39 +354,8 @@ async function dispatchReviewSubagent(
 	return { success: true, reviewPath, result };
 }
 
-async function dispatchRetrospectSubagent(
-	phaseConfig: PhaseConfig,
-	topicDir: string,
-	signal: AbortSignal | undefined,
-	onUpdate: ((partial: any) => void) | undefined,
-): Promise<{ success: boolean; error?: string }> {
-	const modelResult = await resolveModelByComplexity("low");
-	if (!modelResult.ok) {
-		return { success: false, error: modelResult.error };
-	}
-
-	const systemPrompt = getRetrospectAgentContent();
-	const taskPrompt = buildRetrospectTaskPrompt(phaseConfig, topicDir);
-
-	cleanupOldTempFiles();
-	const result = await runSingleAgent({
-		task: taskPrompt,
-		systemPrompt,
-		resolvedModel: modelResult.ref,
-		thinkingLevel: COMPLEXITY_DEFAULT_THINKING.low,
-		cwd: topicDir,
-		signal,
-		onUpdate,
-		processRegistry: activeSubprocesses,
-	});
-
-	if (result.exitCode !== 0) {
-		const errMsg = result.stderr || getFinalOutput(result.messages) || "Unknown error";
-		return { success: false, error: `Retrospect subagent failed: ${errMsg}` };
-	}
-
-	return { success: true };
-}
+// Retrospect is now executed in the main agent's context (not as a subagent).
+// This gives the AI full conversation history for higher-quality retrospectives.
 
 // ─── Widget ──────────────────────────────────────────────
 
@@ -595,21 +539,8 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			// 4. Dispatch retrospect subagent — track result for visibility
-			let retrospectOk = false;
-			let retrospectError = "";
-			try {
-				const rr = await dispatchRetrospectSubagent(
-					phaseConfig, state.topicDir, signal, onUpdate,
-				);
-				retrospectOk = rr.success;
-				if (!rr.success && rr.error) {
-					retrospectError = rr.error;
-				}
-			} catch (err) {
-				retrospectError = err instanceof Error ? err.message : String(err);
-				console.warn(`[coding-workflow] Retrospect subagent failed: ${retrospectError}`);
-			}
+			// 4. Retrospect is now done in main agent context — send followUp
+			//    State is updated after gate passes; retrospect file check happens in phase-start.
 
 			// Guard: abort may have reset state during async operations
 			if (!state.isActive) {
@@ -628,25 +559,28 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				? formatUsageStats(reviewResult.result.usage, reviewResult.result.model)
 				: "";
 
+			// Send followUp instructing main agent to write retrospect
+			// (main agent has full conversation history for higher-quality retrospective)
+			const retrospectFollowUp = buildRetrospectFollowUp(phaseConfig, state.topicDir);
+
 			if (params.phase >= 5) {
-				const rrNote = !retrospectOk
-					? `\n\nWARNING: Overall retrospect failed (${retrospectError}). The overall_retrospect.md was NOT created. You can create it manually.`
-					: `\nRetrospect: overall_retrospect.md created.`;
+				pi.sendUserMessage(
+					retrospectFollowUp + `\n\n这是最后一个 phase，写完复盘后工作流结束。`,
+					{ deliverAs: "followUp" },
+				);
 				return {
 					content: [{
 						type: "text",
-						text: `Gate PASSED. All deliverables verified.${usageLine ? ` ${usageLine}` : ""}${rrNote}\n\nWorkflow complete.`,
+						text: `Gate PASSED. All deliverables verified.${usageLine ? ` ${usageLine}` : ""}\n\n按 followUp 指令写完复盘后，工作流结束。`,
 					}],
 				};
 			}
 
-			const rrNote = !retrospectOk
-				? `\n\nWARNING: Retrospect failed (${retrospectError}). ${phaseConfig.retrospectPrefix}.md was NOT created. Gate will still pass, but you should create it manually.`
-				: `\nRetrospect: ${phaseConfig.retrospectPrefix}.md created.`;
+			pi.sendUserMessage(retrospectFollowUp, { deliverAs: "followUp" });
 			return {
 				content: [{
 					type: "text",
-					text: `Gate PASSED. Review: verdict=pass, must_fix=0.${usageLine ? ` ${usageLine}` : ""}${rrNote}\n\nIMPORTANT: Call coding-workflow-phase-start() now to proceed. Do not do any other work first.`,
+					text: `Gate PASSED. Review: verdict=pass, must_fix=0.${usageLine ? ` ${usageLine}` : ""}\n\nIMPORTANT: 按 followUp 指令写完复盘后，再调用 coding-workflow-phase-start() 进入下一阶段。`,
 				}],
 			};
 		},
@@ -718,9 +652,9 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 							text:
 								`BLOCKED: Phase ${state.currentPhase} retrospect file not found:\n` +
 								`  ${retrospectPath}\n\n` +
-								`This means the retrospect subagent failed during gate check.\n` +
+								`This means the retrospect was not written during the previous step.\n` +
 								`Options:\n` +
-								`1. Re-run gate: call coding-workflow-gate(phase=${state.currentPhase}) to retry\n` +
+								`1. Read the harness-retrospect skill and write the retrospect now, then call coding-workflow-phase-start() again\n` +
 								`2. Create retrospect file manually, then call coding-workflow-phase-start() again`,
 						}],
 						isError: true,

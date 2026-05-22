@@ -229,8 +229,9 @@ function reconstructState(ctx: ExtensionContext, state: WorkflowState): void {
 				state.topicDir = data.topicDir ?? "";
 				state.topicName = data.topicName ?? "";
 				state.phaseResults = data.phaseResults ?? {};
-				state.gateInProgress = data.gateInProgress ?? false;
-				state.gateRetryCount = data.gateRetryCount ?? 0;
+				// gateInProgress always reset on reconstruct — stale mutex from crash would block all gate calls
+				state.gateInProgress = false;
+				state.gateRetryCount = 0;
 				state.compactRetryCount = data.compactRetryCount ?? 0;
 			}
 			break;
@@ -244,6 +245,22 @@ function reconstructState(ctx: ExtensionContext, state: WorkflowState): void {
 		state.isActive = false;
 		state.currentPhase = 0;
 		state.phaseResults = {};
+	}
+	// Validate phaseResults consistency: all phases before currentPhase must be "passed"
+	if (state.isActive && state.currentPhase > 1) {
+		for (let p = 1; p < state.currentPhase; p++) {
+			if (state.phaseResults[p] !== "passed") {
+				// State is inconsistent — roll back to last consistent phase
+				state.currentPhase = p;
+				// Remove any phaseResults after the gap
+				for (const key of Object.keys(state.phaseResults)) {
+					if (Number(key) >= p) {
+						delete state.phaseResults[Number(key)];
+					}
+				}
+				break;
+			}
+		}
 	}
 }
 
@@ -275,7 +292,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
 			if (!state.isActive) {
 				return {
-					text: `No active workflow. Say /coding-workflow <topic> to start one.`,
+					content: [{ type: "text", text: `No active workflow. Say /coding-workflow <topic> to start one.` }],
 					isError: true,
 				};
 			}
@@ -287,6 +304,19 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 					}],
 					isError: true,
 				};
+			}
+
+			// Verify ALL prior phases have passed
+			for (let p = 1; p < state.currentPhase; p++) {
+				if (state.phaseResults[p] !== "passed") {
+					return {
+						content: [{
+							type: "text",
+							text: `BLOCKED: Phase ${p} (${PHASES[p - 1]!.name}) has not passed yet. All prior phases must pass before this gate.`,
+						}],
+						isError: true,
+					};
+				}
 			}
 
 			// Mutex: prevent concurrent gate calls
@@ -326,6 +356,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			const gateResult = await runGateScript(GATE_SCRIPT_PATH, state.topicDir, params.phase);
 			if (!gateResult.passed) {
 				state.gateInProgress = false;
+				persistState(pi, state);
 				return {
 					content: [{
 						type: "text",
@@ -346,6 +377,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
 				state.gateInProgress = false;
+				persistState(pi, state);
 				return {
 					content: [{
 						type: "text",
@@ -357,6 +389,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 			if (!reviewResult.success) {
 				state.gateInProgress = false;
+				persistState(pi, state);
 				return {
 					content: [{
 						type: "text",
@@ -374,6 +407,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 					reviewContent = fs.readFileSync(reviewResult.reviewPath, "utf8");
 				} catch { /* ignore */ }
 				state.gateInProgress = false;
+				persistState(pi, state);
 				return {
 					content: [{
 						type: "text",
@@ -389,6 +423,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			// Guard: abort may have reset state during async operations
 			if (!state.isActive) {
 				state.gateInProgress = false;
+				persistState(pi, state);
 				return {
 					content: [{ type: "text", text: "Workflow was aborted during gate check." }],
 					isError: true,
@@ -470,7 +505,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
 			if (!state.isActive) {
 				return {
-					text: `No active workflow.`,
+					content: [{ type: "text", text: `No active workflow.` }],
 					isError: true,
 				};
 			}
@@ -485,56 +520,44 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			// Safety net: check retrospect file existence AND frontmatter integrity
-			const prevPhaseConfig = PHASES[state.currentPhase - 1];
-			if (prevPhaseConfig) {
+			// Safety net: check ALL prior phases' retrospect files
+			const missingRetrospects: string[] = [];
+			for (let p = 1; p < state.currentPhase; p++) {
+				const prevConfig = PHASES[p - 1]!;
 				const retrospectPath = path.join(
 					state.topicDir, "changes", "reviews",
-					`${prevPhaseConfig.retrospectPrefix}.md`,
+					`${prevConfig.retrospectPrefix}.md`,
 				);
 				if (!fs.existsSync(retrospectPath)) {
-					return {
-						content: [{
-							type: "text",
-							text:
-								`BLOCKED: Phase ${state.currentPhase} retrospect file not found:\n` +
-								`  ${retrospectPath}\n\n` +
-								`This means the retrospect was not written during the previous step.\n` +
-								`Options:\n` +
-								`1. Read the harness-retrospect skill and write the retrospect now, then call coding-workflow-phase-start() again\n` +
-								`2. Create retrospect file manually, then call coding-workflow-phase-start() again`,
-						}],
-						isError: true,
-					};
-				}
-
-				// Validate frontmatter integrity (not just file existence)
-				const retrospectContent = fs.readFileSync(retrospectPath, "utf8");
-				const fmFirst = retrospectContent.indexOf("---");
-				const fmSecond = retrospectContent.indexOf("---", fmFirst + 3);
-				let retrospectVerdict: string | undefined;
-				if (fmFirst >= 0 && fmSecond > fmFirst) {
-					try {
-						const fmData = yaml.load(retrospectContent.slice(fmFirst + 3, fmSecond)) as Record<string, unknown>;
-						retrospectVerdict = typeof fmData?.verdict === "string" ? fmData.verdict : undefined;
-					} catch {
-						// YAML parse error — treat as missing
+					missingRetrospects.push(`Phase ${p} (${prevConfig.name}): ${retrospectPath}`);
+				} else {
+					const rContent = fs.readFileSync(retrospectPath, "utf8");
+					const fmFirst = rContent.indexOf("---");
+					const fmSecond = rContent.indexOf("---", fmFirst + 3);
+					let hasValidVerdict = false;
+					if (fmFirst >= 0 && fmSecond > fmFirst) {
+						try {
+							const fmData = yaml.load(rContent.slice(fmFirst + 3, fmSecond)) as Record<string, unknown>;
+							hasValidVerdict = typeof fmData?.verdict === "string";
+						} catch { /* treat as invalid */ }
+					}
+					if (!hasValidVerdict) {
+						missingRetrospects.push(`Phase ${p} (${prevConfig.name}): frontmatter 缺少 verdict — ${retrospectPath}`);
 					}
 				}
-
-				if (fmFirst < 0 || fmSecond < 0 || !retrospectVerdict) {
-					return {
-						content: [{
-							type: "text",
-							text:
-								`BLOCKED: Phase ${state.currentPhase} retrospect file has invalid frontmatter:\n` +
-								`  ${retrospectPath}\n\n` +
-								`Required: YAML frontmatter with \`verdict\` field.\n` +
-								`Fix the frontmatter, then call coding-workflow-phase-start() again.`,
-						}],
-						isError: true,
-					};
-				}
+			}
+			if (missingRetrospects.length > 0) {
+				const fixInstructions = missingRetrospects.map((m) => `  - ${m}`).join("\n");
+				return {
+					content: [{
+						type: "text",
+						text:
+							`BLOCKED: Retrospect check failed. Missing or invalid:\n\n` +
+							`${fixInstructions}\n\n` +
+							`Read harness-retrospect skill, write the missing retrospects, then call coding-workflow-phase-start() again.`,
+					}],
+					isError: true,
+				};
 			}
 
 			// Compact retry limit
@@ -889,6 +912,53 @@ function checkProjectProtection(projectRoot: string): string[] {
 				filePath: string;
 			}>,
 		);
+
+		// HARD BLOCK: check ALL prior phases' retrospects before allowing current phase
+		const missingRetrospects: string[] = [];
+		for (let p = 1; p < state.currentPhase; p++) {
+			const prevConfig = PHASES[p - 1]!;
+			const retrospectPath = path.join(
+				state.topicDir, "changes", "reviews",
+				`${prevConfig.retrospectPrefix}.md`,
+			);
+			if (!fs.existsSync(retrospectPath)) {
+				missingRetrospects.push(`Phase ${p} (${prevConfig.name}): ${retrospectPath}`);
+			} else {
+				// Also validate frontmatter integrity
+				const content = fs.readFileSync(retrospectPath, "utf8");
+				const fmFirst = content.indexOf("---");
+				const fmSecond = content.indexOf("---", fmFirst + 3);
+				let hasValidVerdict = false;
+				if (fmFirst >= 0 && fmSecond > fmFirst) {
+					try {
+						const fmData = yaml.load(content.slice(fmFirst + 3, fmSecond)) as Record<string, unknown>;
+						hasValidVerdict = typeof fmData?.verdict === "string";
+					} catch { /* treat as invalid */ }
+				}
+				if (!hasValidVerdict) {
+					missingRetrospects.push(`Phase ${p} (${prevConfig.name}): frontmatter 缺少 verdict — ${retrospectPath}`);
+				}
+			}
+		}
+		if (missingRetrospects.length > 0) {
+			const retrospectSkillPath = skillResolver.resolvePath("harness-retrospect");
+			const fixInstructions = missingRetrospects.map((m) => `  - ${m}`).join("\n");
+			return {
+				message: {
+					customType: "coding-workflow-context",
+					content:
+						`[CODING WORKFLOW BLOCKED]\n\n` +
+						`Phase ${state.currentPhase} (${phaseConfig.name}) 无法启动。以下前置 phase 的复盘缺失或不完整：\n\n` +
+						`${fixInstructions}\n\n` +
+						`复盘是强制性的，不能跳过。按以下步骤补齐：\n` +
+						`1. read ${retrospectSkillPath} 获取复盘方法论\n` +
+						`2. 对每个缺失的复盘，基于该 phase 的产出文件编写 retrospect\n` +
+						`3. YAML frontmatter 必须包含 verdict 字段\n` +
+						`4. 所有复盘补齐后，重新开始当前 turn（状态会自动重新检查）`,
+					display: true,
+				},
+			};
+		}
 
 		let skillContent: string;
 		try {

@@ -285,7 +285,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
     1: PhaseSpec(
         name="Spec",
         deliverables=[
-            FileCheck(path="spec.md", fields=[FieldCheck("verdict", "str")]),
+            FileCheck(path="spec.md", fields=[FieldCheck("verdict", "str", "pass")]),
         ],
         reviews=[
             ReviewCheck(prefix="spec_review_v"),

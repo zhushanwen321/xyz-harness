@@ -2,8 +2,17 @@
   "name": "xyz-harness-engineering",
   "private": true,
   "type": "module",
+  "scripts": {
+    "lint": "eslint extensions/ --ext .ts",
+    "type-check": "tsc --noEmit"
+  },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.8.0",
-    "typescript": "^6.0.3"
+    "@typescript-eslint/eslint-plugin": "^8.59.4",
+    "@typescript-eslint/parser": "^8.59.4",
+    "eslint": "^10.4.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.4"
   }
 }

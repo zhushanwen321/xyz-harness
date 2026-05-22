@@ -16,8 +16,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
 import { formatUsageStats } from "./lib/subagent.js";
-import { runGateScript, type GateResult } from "./lib/gate-runner.js";
-import { dispatchReviewSubagent, buildRetrospectFollowUp, type ReviewDispatchResult } from "./lib/review-dispatcher.js";
+import { runGateScript } from "./lib/gate-runner.js";
+import { dispatchReviewSubagent, buildRetrospectFollowUp } from "./lib/review-dispatcher.js";
 
 import * as yaml from "js-yaml";
 import { SkillResolver } from "./lib/skill-resolver.js";
@@ -524,8 +524,61 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 	// ── Command: /coding-workflow ──────────────────────────
 
+	/**
+	 * Extract recent user messages from the current session branch.
+	 * Returns up to 5 most recent user messages in chronological order.
+	 */
+	function extractRecentUserMessages(ctx: {
+		sessionManager: { getBranch(): unknown[] };
+	}): string[] {
+		const branch = ctx.sessionManager.getBranch() as Array<{
+			type: string;
+			message?: {
+				role: string;
+				content: string | Array<{ type: string; text: string }>;
+			};
+		}>;
+		const userMessages: string[] = [];
+
+		for (const entry of branch) {
+			if (entry.type === "message" && entry.message?.role === "user") {
+				const content = entry.message.content;
+				if (typeof content === "string") {
+					userMessages.push(content);
+				} else if (Array.isArray(content)) {
+					const texts = content
+						.filter((c) => c.type === "text")
+						.map((c) => c.text);
+					if (texts.length > 0) {
+						userMessages.push(texts.join("\n"));
+					}
+				}
+			}
+		}
+
+		// branch returns leaf\u2192root, reverse to get chronological, take last 5
+		userMessages.reverse();
+		return userMessages.slice(-5);
+	}
+
+	/**
+	 * Infer a short topic slug from conversation text.
+	 * Takes first meaningful words from the first line.
+	 */
+	function inferTopicFromContext(text: string): string {
+		const firstLine = text.split("\n")[0].trim();
+		const words = firstLine
+			.replace(/[^\u4e00-\u9fff\w\s-]/g, "")
+			.split(/\s+/)
+			.filter((w) => w.length > 0 && w.length < 30)
+			.slice(0, 4);
+		if (words.length === 0) return "untitled";
+		return words.join("-").toLowerCase().slice(0, 60);
+	}
+
 	pi.registerCommand("coding-workflow", {
-		description: "Start a coding workflow: /coding-workflow <topic>",
+		description: "Start a coding workflow: /coding-workflow [requirement]. " +
+			"With no args, extracts requirement from conversation context.",
 		handler: async (args, ctx) => {
 			if (state.isActive) {
 				ctx.ui.notify(
@@ -535,25 +588,40 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const topic = args.trim();
-			if (!topic) {
-				ctx.ui.notify("Usage: /coding-workflow <topic>", "warning");
-				return;
+			const trimmed = args.trim();
+			let requirementText: string;
+			let slug: string;
+			const today = new Date().toISOString().slice(0, 10);
+
+			if (trimmed) {
+				// Mode 2: explicit requirement text provided
+				requirementText = trimmed;
+				slug = trimmed
+					.replace(/[^\w\s-]/g, "")
+					.split(/\s+/)
+					.slice(0, 5)
+					.join("-")
+					.toLowerCase()
+					.slice(0, 60);
+			} else {
+				// Mode 1: extract requirement from conversation context
+				const messages = extractRecentUserMessages(ctx);
+				if (messages.length === 0) {
+					ctx.ui.notify(
+						"No conversation context found. Provide a requirement: /coding-workflow <requirement>",
+						"warning",
+					);
+					return;
+				}
+				requirementText = messages.join("\n---\n");
+				slug = inferTopicFromContext(requirementText);
+				ctx.ui.notify(`Inferred topic from conversation context: ${slug}`, "info");
 			}
 
-			// Generate topic slug
-			const today = new Date().toISOString().slice(0, 10);
-			const slug = topic
-				.replace(/[^\w\s-]/g, "")
-				.split(/\s+/)
-				.slice(0, 5)
-				.join("-")
-				.toLowerCase()
-				.slice(0, 60);
 			const topicName = `${today}-${slug}`;
+			const topicDir = path.join(process.cwd(), ".xyz-harness", topicName);
 
 			// Create topic directory
-			const topicDir = path.join(process.cwd(), ".xyz-harness", topicName);
 			try {
 				fs.mkdirSync(path.join(topicDir, "changes", "reviews"), { recursive: true });
 				fs.mkdirSync(path.join(topicDir, "changes", "evidence"), { recursive: true });
@@ -574,12 +642,20 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 			ctx.ui.notify(`Coding workflow started: ${topicName}`, "info");
 
-			pi.sendUserMessage(
-				`Workflow "${topicName}" initialized. Workspace: ${topicDir}\n\n` +
-				`Task instructions will be injected shortly. Read them, produce deliverables, ` +
-				`then call coding-workflow-gate(phase=1).`,
-				{ deliverAs: "followUp" },
-			);
+			// Include conversation context as reference when explicit requirement is given
+			const recentMessages = !trimmed ? [] : extractRecentUserMessages(ctx);
+			let userPrompt: string;
+			if (trimmed) {
+				userPrompt = `以下是要实现的需求：\n\n${requirementText}\n\n`;
+				if (recentMessages.length > 0) {
+					userPrompt += `相关对话上下文作为参考：\n\n${recentMessages.join("\n---\n")}\n\n`;
+				}
+				userPrompt += `---\n\n[CODING WORKFLOW] 工作流已初始化。\n工作目录：${topicDir}\n\n请按 skill 指令进入 Phase 1（Brainstorming），通过逐次提问澄清并细化上述需求，最终输出 spec.md。`;
+			} else {
+				userPrompt = `根据对话上下文提炼的需求：\n\n${requirementText}\n\n---\n\n[CODING WORKFLOW] 工作流已初始化。\n工作目录：${topicDir}\n\n请按 skill 指令进入 Phase 1（Brainstorming），通过逐次提问澄清并细化需求，最终输出 spec.md。`;
+			}
+
+			pi.sendUserMessage(userPrompt, { deliverAs: "followUp" });
 		},
 	});
 
@@ -631,7 +707,68 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	// ── Event: before_agent_start ──────────────────────────
+// ── Helper: check project protection level ──────────────
+
+function checkProjectProtection(projectRoot: string): string[] {
+	const warnings: string[] = [];
+
+	// Skip if project root doesn't look right
+	if (!projectRoot || !fs.existsSync(projectRoot)) return warnings;
+
+	// Check TypeScript strict
+	const tsconfigPath = path.join(projectRoot, "tsconfig.json");
+	if (fs.existsSync(tsconfigPath)) {
+		try {
+			const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, "utf-8"));
+			if (!tsconfig.compilerOptions?.strict) {
+				warnings.push("tsconfig.json 未开启 strict 模式");
+			}
+		} catch { /* ignore */ }
+	}
+
+	// Check ESLint (TS project)
+	const hasEslint =
+		fs.existsSync(path.join(projectRoot, "eslint.config.mjs")) ||
+		fs.existsSync(path.join(projectRoot, "eslint.config.js")) ||
+		fs.existsSync(path.join(projectRoot, ".eslintrc.json"));
+	if (!hasEslint) {
+		const pkgPath = path.join(projectRoot, "package.json");
+		if (fs.existsSync(pkgPath)) {
+			try {
+				const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+				const deps = { ...pkg.devDependencies, ...pkg.dependencies } as Record<string, string>;
+				if (!deps.eslint) warnings.push("ESLint 未安装或未配置");
+			} catch { /* ignore */ }
+		}
+	}
+
+	// Check Ruff (Python project)
+	const pyprojPath = path.join(projectRoot, "pyproject.toml");
+	if (fs.existsSync(pyprojPath)) {
+		try {
+			const content = fs.readFileSync(pyprojPath, "utf-8");
+			if (!content.includes("[tool.ruff]")) {
+				warnings.push("pyproject.toml 缺少 [tool.ruff] 配置");
+			}
+		} catch { /* ignore */ }
+	}
+
+	// Check git hook
+	const hookPath = path.join(projectRoot, ".git", "hooks", "pre-commit");
+	if (!fs.existsSync(hookPath)) {
+		warnings.push("Git pre-commit hook 未安装");
+	}
+
+	// Check CI
+	const workflowsDir = path.join(projectRoot, ".github", "workflows");
+	if (!fs.existsSync(workflowsDir) || fs.readdirSync(workflowsDir).length === 0) {
+		warnings.push("CI pipeline 未配置（.github/workflows/）");
+	}
+
+	return warnings;
+}
+
+// ── Event: before_agent_start ──────────────────────────
 
 	pi.on("before_agent_start", async (event, _ctx) => {
 		if (!state.isActive) return;
@@ -681,6 +818,19 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			injection +=
 				`\n\nCRITICAL RULE:\n` +
 				`- You MUST NOT merge the PR. Create it, verify CI, produce evidence — nothing more.`;
+		}
+
+		// Phase 3 (dev) — project protection pre-check
+		if (state.currentPhase === 3) {
+			const projectRoot = path.resolve(state.topicDir, "..", "..");
+			const protectionWarnings = checkProjectProtection(projectRoot);
+			if (protectionWarnings.length > 0) {
+				injection +=
+					`\n\n⚠ PROJECT PROTECTION CHECK:\n` +
+					`以下防护未就位，可能导致代码不合规或 CI 失败：\n` +
+					protectionWarnings.map((w) => `  - ${w}`).join("\n") +
+					`\n建议：开始编码前先补齐基础防护，参考 xyz-harness-code-standard-protection skill。`;
+			}
 		}
 
 		return {

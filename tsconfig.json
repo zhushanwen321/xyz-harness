@@ -12,7 +12,7 @@
   "lib": ["ES2022"],
   "types": ["node"],
   "strict": true,
-  "noImplicitAny": false,
+  "noImplicitAny": true,
   "noUnusedLocals": false,
   "noUnusedParameters": false,
   "strictNullChecks": true,

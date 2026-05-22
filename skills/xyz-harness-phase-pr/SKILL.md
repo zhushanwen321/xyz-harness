@@ -49,6 +49,43 @@ Push code changes, verify CI, create a Pull Request, pass gate check, then compl
 
 ## Steps
 
+### 0. CI/防护预检（提交前）
+
+在推送代码之前，先确认项目的 CI 配置是否到位，避免 PR 因 CI 失败被拒绝。
+
+**检查项**：
+1. CI 配置文件是否存在：`.github/workflows/` 下是否有 workflow 文件
+2. 项目根目录是否有 linter 配置
+3. 代码是否已通过本地 lint 检查
+
+```bash
+# 检查 CI 配置
+if ls .github/workflows/*.yml 2>/dev/null | head -1 | grep -q .; then
+  echo "✅ CI 已配置"
+else
+  echo "⚠ 项目未配置 CI pipeline，PR 可能因缺少自动化检查被拒绝"
+fi
+
+# 检查防护配置
+if [ -f package.json ]; then
+  # TS/Node 项目
+  if grep -q '"lint"' package.json 2>/dev/null; then
+    echo "✅ Lint script 已配置"
+    npm run lint --silent 2>/dev/null || echo "⚠ Lint 存在错误"
+  fi
+elif grep -q '\[tool.ruff\]' pyproject.toml 2>/dev/null; then
+  echo "✅ Ruff 已配置"
+  ruff check . --diff 2>/dev/null || echo "⚠ Ruff 存在错误"
+fi
+```
+
+**处理逻辑**：
+- CI 已配置且本地 lint 通过 → 继续推送
+- CI 已配置但本地 lint 失败 → 修复 lint 错误后再推送（CI 会拦截不通过的代码）
+- CI 未配置 → 在 `pr_evidence.md` 中额外记录 `ci_configured: false` 和风险说明
+  - 参考 `xyz-harness-code-standard-protection` skill 的 CI 模板章节补齐配置
+  - 读取 `references/implementation-templates.md` 的 "CI 模板" 章节
+
 ### 1. Push Code
 
 ```bash

@@ -572,7 +572,7 @@ export default function editWhitespaceNormalizer(pi: ExtensionAPI) {
   const fileIndentCache = new Map<string, FileIndentCacheEntry>();
   const promptedProjects = new Set<string>();
   const projectStyleCache = new Map<string, IndentStyle>();
-  let skipCache: SkipCache = loadSkipCache();
+  const skipCache: SkipCache = loadSkipCache();
 
   // ── Cache helpers ──
 

@@ -148,6 +148,7 @@ class FieldCheck:
     name: str
     type: str  # "str" | "int" | "bool"
     expected: Any = None
+    optional: bool = False
 
 
 @dataclass
@@ -306,7 +307,11 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
         deliverables=[
             FileCheck(
                 path="changes/evidence/test_results.md",
-                fields=[FieldCheck("verdict", "str", "pass"), FieldCheck("all_passing", "bool", True)],
+                fields=[
+                    FieldCheck("verdict", "str", "pass"),
+                    FieldCheck("all_passing", "bool", True),
+                    FieldCheck("linter_passed", "bool", True, optional=True),
+                ],
             ),
         ],
         reviews=[
@@ -323,7 +328,13 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
     5: PhaseSpec(
         name="PR",
         deliverables=[
-            FileCheck(path="changes/evidence/pr_evidence.md", fields=[FieldCheck("pr_created", "bool", True)]),
+            FileCheck(
+                path="changes/evidence/pr_evidence.md",
+                fields=[
+                    FieldCheck("pr_created", "bool", True),
+                    FieldCheck("ci_configured", "bool", True, optional=True),
+                ],
+            ),
             FileCheck(path="changes/evidence/ci_results.md", fields=[FieldCheck("ci_passed", "bool", True)]),
         ],
         reviews=[],
@@ -352,6 +363,10 @@ def run_phase_checks(topic_dir: str, spec: PhaseSpec) -> list:
                 checks.append((fc.path, FAIL, err))
             else:
                 for f in fc.fields:
+                    # Skip optional fields that don't exist
+                    if f.optional and f.name not in data:
+                        checks.append((f"{fc.path} {f.name}", PASS, f"optional '{f.name}' skipped"))
+                        continue
                     if f.type == "str":
                         ok, msg = check_field_str(data, f.name, f.expected)
                     elif f.type == "int":

@@ -65,6 +65,42 @@ Implement the feature according to plan.md, following TDD methodology, then get 
 
 ## Steps
 
+### 0. 防护预检（编码前）
+
+在开始编码之前，先确认项目的基本防护配置是否到位。
+
+**检查项**：
+1. linter 配置是否存在（`eslint.config.*`、`pyproject.toml` 中的 `[tool.ruff]`）
+2. tsconfig.json 是否开启 `strict: true`（TS 项目）
+3. pre-commit hook 是否已安装（`.git/hooks/pre-commit` 存在且非空）
+4. 项目根目录是否有 `.githooks/` 目录
+
+```bash
+# 检查 linter
+LINT_OK=false
+if ls eslint.config.* 2>/dev/null | head -1 | grep -q .; then
+  LINT_OK=true; echo "✅ ESLint 已配置"
+elif grep -q '\[tool.ruff\]' pyproject.toml 2>/dev/null; then
+  LINT_OK=true; echo "✅ Ruff 已配置"
+else
+  echo "⚠ 项目未配置 linter"
+fi
+
+# 检查 pre-commit
+if [ -s .git/hooks/pre-commit ] || [ -d .githooks ]; then
+  echo "✅ Git hook 已安装"
+else
+  echo "⚠ 未安装 git hook"
+fi
+```
+
+**处理逻辑**：
+- 基本防护已齐备（linter + typecheck + hook）→ 继续编码
+- 缺少 linter 或 typecheck → 按快速通道补齐基础配置后再编码
+  - 告知用户："项目缺少 X 防护，建议先补齐再编码"
+  - 参考 `xyz-harness-code-standard-protection` skill 的快速通道：Python 项目 3 步 / Vue/TS 项目 3 步
+- 项目本身是文档仓库或纯工具脚本 → 跳过，不需要防护
+
 ### 1. TDD / 编码
 
 根据 task 类型选择开发流程：

@@ -67,9 +67,9 @@ Gate 内部的分层验证机制。
 确定性的脚本验证（gate-check.py）。检查文件存在性、YAML frontmatter 格式和字段值。AI 无法伪造脚本输出。
 _Avoid_: L1 检查（与 IL1 混淆）、机械检查
 
-**GL2 — AI Review（AI 评审）**:
-独立 System Subagent 的语义评审。检查内容质量、spec 合规、架构合规等需要判断力的维度。评审者不继承执行者的上下文。
-_Avoid_: L2 检查（与 IL2 混淆）
+**GL2 — Gate Review（防伪造验证）**:
+Gate 自动 dispatch 的 System Subagent。验证 deliverable 是否真实可信（非伪造），不审查内容质量。使用 gate-reviewer skill。产出 `gate_review_{phase}.md`。
+_Avoid_: L2 检查（与 IL2 混淆）、内容审查
 
 **Retrospect**:
 Gate 流程的最后一环。独立 System Subagent 产出的阶段复盘文件，覆盖执行质量和 Harness 可用性两个维度。不验证质量（永远 verdict: pass），而是记录过程改进建议。
@@ -84,7 +84,10 @@ Deliverable 的子类。存放在 `changes/evidence/` 目录下的客观证据�
 _Avoid_: 证明、凭据
 
 **Review**:
-Deliverable 的子类。存放在 `changes/reviews/` 下的评审文件。包括 GL2 评审（`*_review_v{N}.md`）和 Retrospect（`*_retrospect.md`）。
+Deliverable 的子类。存放在 `changes/reviews/` 下的评审文件。包括：
+- Task Review（`*_review_v{N}.md`）：phase 执行过程中的内容质量审查，由主 agent 按 skill 指令 dispatch
+- Gate Review（`gate_review_{phase}.md`）：gate 阶段的防伪造验证，由 gate tool 自动 dispatch
+- Retrospect（`*_retrospect.md`）：阶段复盘文件
 
 ## Skill
 
@@ -96,7 +99,7 @@ Deliverable 的子类。存放在 `changes/reviews/` 下的评审文件。包括
 _Avoid_: 主 skill、核心 skill
 
 **Reference Skill**:
-不驱动 Phase 执行，而是被主 agent 或 subagent 在需要时通过 IL2 加载的方法论参考。包括：expert-reviewer、backend-dev、frontend-dev、TDD、subagent-driven-development。
+不驱动 Phase 执行，而是被主 agent 或 subagent 在需要时通过 IL2 加载的方法论参考。包括：expert-reviewer、gate-reviewer、backend-dev、frontend-dev、TDD、subagent-driven-development。
 _Avoid_: 辅助 skill、次要 skill
 
 **Gate Skill**:
@@ -108,7 +111,7 @@ _Avoid_: 辅助 skill、次要 skill
 由主 agent 或 Harness 扩展派遣的独立 AI 执行单元。拥有独立的上下文、独立的模型选择、独立的工具集。不继承派遣者的对话历史。
 
 **System Subagent**:
-由 Harness 扩展代码自动派遣的 Subagent。派遣逻辑硬编码在 `coding-workflow-gate` tool 的 execute 函数中。包括 Review Subagent 和 Retrospect Subagent。
+由 Harness 扩展代码自动派遣的 Subagent。派遣逻辑硬编码在 `coding-workflow-gate` tool 的 execute 函数中。包括 Gate Review Subagent（防伪造验证）。Task Review Subagent 由主 agent 按 skill 指令 dispatch，不属于 System Subagent。
 _Avoid_: 自动 subagent
 
 **Task Subagent**:
@@ -165,11 +168,11 @@ Deliverable 是统称。Evidence 和 Review 是 Deliverable 的子类，按性�
 >
 > **QA**: 典型的 YAML 类型问题。AI 把 `all_passing: "true"` 写成了字符串。修一下，重新跑 Gate。
 >
-> **Dev**: 修好了。这次 GL1 过了，GL2 的 Review Subagent 也返回 verdict: pass, must_fix: 0。
+> **Dev**: 修好了。这次 GL1 过了，GL2 的 Gate Review Subagent 也返回 verdict: pass, must_fix: 0。
 >
-> **QA**: 那 Retrospect Subagent 跑了吗？Gate 是 GL1 + GL2 + Retrospect 三合一。
+> **QA**: 那 Retrospect 跑了吗？Gate 是 GL1 + GL2 + Retrospect 三合一。
 >
-> **Dev**: 跑了，`dev_retrospect.md` 已生成。现在可以调用 phase-start 了。
+> **Dev**: Retrospect 是主 agent 写的，`dev_retrospect.md` 已生成。现在可以调用 phase-start 了。
 >
 > **QA**: phase-start 会检查 Retrospect 文件存在，然后做 Compact 进入 Phase 4。Phase 4 的 IL1 会注入 xyz-harness-phase-test 的 Skill。
 >

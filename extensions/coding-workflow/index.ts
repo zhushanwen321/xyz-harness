@@ -36,7 +36,7 @@ interface PhaseConfig {
 	retrospectPrefix: string;
 	/** Phase-specific deliverable file paths (relative to topicDir) */
 	deliverables: string[];
-	/** Review mode description for the expert-reviewer skill */
+	/** Review mode description (used by task review in skills, not gate review) */
 	reviewMode: string;
 }
 
@@ -88,6 +88,8 @@ interface WorkflowState {
 	gateInProgress: boolean;   // mutex: prevent concurrent gate calls
 	gateRetryCount: number;    // per-phase gate retry counter
 	compactRetryCount: number; // per-phase phase-start retry counter (compact failures)
+	pendingInit: boolean;      // waiting for AI to generate slug and call init tool
+	pendingRequirement: string; // requirement text waiting for init
 }
 
 const DEFAULT_STATE: WorkflowState = {
@@ -99,6 +101,8 @@ const DEFAULT_STATE: WorkflowState = {
 	gateInProgress: false,
 	gateRetryCount: 0,
 	compactRetryCount: 0,
+	pendingInit: false,
+	pendingRequirement: "",
 };
 
 const MAX_GATE_RETRIES = 10;  // per phase
@@ -209,6 +213,8 @@ function persistState(pi: ExtensionAPI, state: WorkflowState): void {
 		topicDir: state.topicDir,
 		topicName: state.topicName,
 		phaseResults: state.phaseResults,
+		pendingInit: state.pendingInit,
+		pendingRequirement: state.pendingRequirement,
 	});
 }
 
@@ -233,6 +239,8 @@ function reconstructState(ctx: ExtensionContext, state: WorkflowState): void {
 				state.gateInProgress = false;
 				state.gateRetryCount = 0;
 				state.compactRetryCount = data.compactRetryCount ?? 0;
+				state.pendingInit = data.pendingInit ?? false;
+				state.pendingRequirement = data.pendingRequirement ?? "";
 			}
 			break;
 		}
@@ -290,6 +298,12 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			"Do NOT call any other tools between gate PASS and following the gate result instructions",
 		],
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			if (state.pendingInit) {
+				return {
+					content: [{ type: "text", text: "Workflow is pending initialization. Call coding-workflow-init first to set the slug." }],
+					isError: true,
+				};
+			}
 			if (!state.isActive) {
 				return {
 					content: [{ type: "text", text: `No active workflow. Say /coding-workflow <topic> to start one.` }],
@@ -452,7 +466,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			// 4. Retrospect is now done in main agent context — send followUp
+			// 4. Retrospect is now done in main agent context — send steer
 			//    State is updated after gate passes; retrospect file check happens in phase-start.
 
 			// Guard: abort may have reset state during async operations
@@ -476,28 +490,28 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				? formatUsageStats(reviewResult.result.usage, reviewResult.result.model)
 				: "";
 
-			// Send followUp instructing main agent to write retrospect
+			// Send steer instructing main agent to write retrospect
 			// (main agent has full conversation history for higher-quality retrospective)
 			const retrospectFollowUp = buildRetrospectFollowUp(phaseConfig, state.topicDir, skillResolver, PHASES);
 
 			if (params.phase >= 5) {
 				pi.sendUserMessage(
 					retrospectFollowUp + `\n\n这是最后一个 phase，写完复盘后工作流结束。`,
-					{ deliverAs: "followUp" },
+					{ deliverAs: "steer" },
 				);
 				return {
 					content: [{
 						type: "text",
-						text: `Gate PASSED. All deliverables verified.${usageLine ? ` ${usageLine}` : ""}\n\n按 followUp 指令写完复盘后，工作流结束。`,
+						text: `Gate PASSED. All deliverables verified.${usageLine ? ` ${usageLine}` : ""}\n\n按 steer 指令写完复盘后，工作流结束。`,
 					}],
 				};
 			}
 
-			pi.sendUserMessage(retrospectFollowUp, { deliverAs: "followUp" });
+			pi.sendUserMessage(retrospectFollowUp, { deliverAs: "steer" });
 			return {
 				content: [{
 					type: "text",
-					text: `Gate PASSED. Review: verdict=pass, must_fix=0.${usageLine ? ` ${usageLine}` : ""}\n\nIMPORTANT: 按 followUp 指令写完复盘后，再调用 coding-workflow-phase-start() 进入下一阶段。`,
+					text: `Gate PASSED. Review: verdict=pass, must_fix=0.${usageLine ? ` ${usageLine}` : ""}\n\nIMPORTANT: 按 steer 指令写完复盘后，再调用 coding-workflow-phase-start() 进入下一阶段。`,
 				}],
 			};
 		},
@@ -522,6 +536,116 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	// ── Tool: coding-workflow-init ────────────────────────────
+
+	pi.registerTool({
+		name: "coding-workflow-init",
+		label: "Coding Workflow Init",
+		description:
+			"Initialize the coding workflow with a generated slug. " +
+			"Call this after reviewing the requirement and generating an appropriate short slug. " +
+			"This creates the workspace directory and starts Phase 1.",
+		parameters: Type.Object({
+			slug: Type.String({
+				description:
+					"A short, descriptive, English slug for the topic (e.g. 'cart-coupon', 'user-auth'). " +
+					"Lowercase, hyphen-separated, max 60 chars. " +
+					"Must accurately summarize the core requirement.",
+			}),
+		}),
+		promptSnippet: "Initialize workflow with generated slug",
+		promptGuidelines: [
+			"Call coding-workflow-init AFTER reviewing the requirement and generating a slug",
+			"The slug must be English, lowercase, hyphen-separated, concise",
+			"Do NOT include date prefix — it is added automatically",
+		],
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			if (!state.pendingInit) {
+				return {
+					content: [{ type: "text", text: "No pending workflow initialization. Use /coding-workflow to start one." }],
+					isError: true,
+				};
+			}
+
+			// Validate slug format
+			const slug = params.slug
+				.toLowerCase()
+				.replace(/[^a-z0-9-]/g, "-")
+				.replace(/-+/g, "-")
+				.replace(/^-|-$/g, "")
+				.slice(0, 60);
+
+			if (!slug || slug.length < 2) {
+				return {
+					content: [{ type: "text", text: "Slug is too short or empty after normalization. Provide a meaningful English slug." }],
+					isError: true,
+				};
+			}
+
+			const today = new Date().toISOString().slice(0, 10);
+			const topicName = `${today}-${slug}`;
+			const topicDir = path.join(process.cwd(), ".xyz-harness", topicName);
+
+			// Check for directory collision
+			if (fs.existsSync(topicDir)) {
+				return {
+					content: [{ type: "text", text: `Directory already exists: ${topicDir}. Choose a different slug.` }],
+					isError: true,
+				};
+			}
+
+			// Create topic directory
+			try {
+				fs.mkdirSync(path.join(topicDir, "changes", "reviews"), { recursive: true });
+				fs.mkdirSync(path.join(topicDir, "changes", "evidence"), { recursive: true });
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [{ type: "text", text: `Failed to create topic directory: ${msg}` }],
+					isError: true,
+				};
+			}
+
+			// Transition from pending to active
+			state.pendingInit = false;
+			state.pendingRequirement = "";
+			state.isActive = true;
+			state.currentPhase = 1;
+			state.topicDir = topicDir;
+			state.topicName = topicName;
+			state.phaseResults = {};
+			persistState(pi, state);
+			updateWidget(ctx, state);
+
+			ctx.ui.notify(`Coding workflow initialized: ${topicName}`, "info");
+
+			return {
+				content: [{
+					type: "text",
+					text:
+						`Workflow initialized: ${topicName}\n` +
+						`Workspace: ${topicDir}\n\n` +
+						`Phase 1 skill instructions will be injected automatically. ` +
+						`Follow the skill to produce spec.md, then call coding-workflow-gate(phase=1).`,
+				}],
+			};
+		},
+
+		renderCall(args, theme) {
+			return new Text(
+				theme.fg("toolTitle", theme.bold("coding-workflow-init ")) +
+				theme.fg("accent", String(args.slug ?? "?")),
+				0, 0,
+			);
+		},
+
+		renderResult(result, _opts, theme) {
+			const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+			const icon = result.isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
+			return new Text(`${icon} ${text.split("\n")[0]}`, 0, 0);
+		},
+	});
+
 	// ── Tool: coding-workflow-phase-start ──────────────────
 
 	pi.registerTool({
@@ -538,6 +662,12 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			"Do NOT call this if gate returned FAIL — fix issues and retry gate instead",
 		],
 		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			if (state.pendingInit) {
+				return {
+					content: [{ type: "text", text: "Workflow is pending initialization. Call coding-workflow-init first to set the slug." }],
+					isError: true,
+				};
+			}
 			if (!state.isActive) {
 				return {
 					content: [{ type: "text", text: `No active workflow.` }],
@@ -645,7 +775,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 					persistState(pi, state);
 					pi.sendUserMessage(
 						`New task instructions injected. Read them, produce deliverables, then call coding-workflow-gate(phase=${state.currentPhase}).`,
-						{ deliverAs: "followUp" },
+						{ deliverAs: "steer" },
 					);
 				},
 				onError: (error) => {
@@ -658,7 +788,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 						`Compact failed (attempt ${state.compactRetryCount}/${MAX_COMPACT_RETRIES}): ${error.message}\n\n` +
 						`Phase advancement was rolled back. Call coding-workflow-phase-start() to retry, ` +
 						`or use /coding-workflow-abort to cancel.`,
-						{ deliverAs: "followUp" },
+						{ deliverAs: "steer" },
 					);
 				},
 			});
@@ -725,24 +855,10 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		return userMessages.slice(-5);
 	}
 
-	/**
-	 * Infer a short topic slug from conversation text.
-	 * Takes first meaningful words from the first line.
-	 */
-	function inferTopicFromContext(text: string): string {
-		const firstLine = text.split("\n")[0].trim();
-		const words = firstLine
-			.replace(/[^\u4e00-\u9fff\w\s-]/g, "")
-			.split(/\s+/)
-			.filter((w) => w.length > 0 && w.length < 30)
-			.slice(0, 4);
-		if (words.length === 0) return "untitled";
-		return words.join("-").toLowerCase().slice(0, 60);
-	}
-
 	pi.registerCommand("coding-workflow", {
 		description: "Start a coding workflow: /coding-workflow [requirement]. " +
-			"With no args, extracts requirement from conversation context.",
+			"With no args, extracts requirement from conversation context. " +
+			"AI generates slug, then calls coding-workflow-init to finalize.",
 		handler: async (args, ctx) => {
 			if (state.isActive) {
 				ctx.ui.notify(
@@ -752,23 +868,18 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const trimmed = args.trim();
-			let requirementText: string;
-			let slug: string;
-			const today = new Date().toISOString().slice(0, 10);
+			if (state.pendingInit) {
+				ctx.ui.notify(
+					"A workflow initialization is already pending. Generate a slug and call coding-workflow-init.",
+					"warning",
+				);
+				return;
+			}
 
-			if (trimmed) {
-				// Mode 2: explicit requirement text provided
-				requirementText = trimmed;
-				slug = trimmed
-					.replace(/[^\w\s-]/g, "")
-					.split(/\s+/)
-					.slice(0, 5)
-					.join("-")
-					.toLowerCase()
-					.slice(0, 60);
-			} else {
-				// Mode 1: extract requirement from conversation context
+			const trimmed = args.trim();
+
+			// No-args mode: verify conversation context exists before proceeding
+			if (!trimmed) {
 				const messages = extractRecentUserMessages(ctx);
 				if (messages.length === 0) {
 					ctx.ui.notify(
@@ -777,49 +888,28 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 					);
 					return;
 				}
-				requirementText = messages.join("\n---\n");
-				slug = inferTopicFromContext(requirementText);
-				ctx.ui.notify(`Inferred topic from conversation context: ${slug}`, "info");
 			}
 
-			const topicName = `${today}-${slug}`;
-			const topicDir = path.join(process.cwd(), ".xyz-harness", topicName);
-
-			// Create topic directory
-			try {
-				fs.mkdirSync(path.join(topicDir, "changes", "reviews"), { recursive: true });
-				fs.mkdirSync(path.join(topicDir, "changes", "evidence"), { recursive: true });
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err);
-				ctx.ui.notify(`Failed to create topic directory: ${msg}`, "error");
-				return;
-			}
-
-			// Initialize state
-			state.isActive = true;
-			state.currentPhase = 1;
-			state.topicDir = topicDir;
-			state.topicName = topicName;
-			state.phaseResults = {};
+			// Store requirement, set pending state
+			state.pendingInit = true;
+			state.pendingRequirement = trimmed || "(from conversation context)";
 			persistState(pi, state);
-			updateWidget(ctx, state);
 
-			ctx.ui.notify(`Coding workflow started: ${topicName}`, "info");
+			ctx.ui.notify("Coding workflow: requirement captured, waiting for slug generation.", "info");
 
-			// Include conversation context as reference when explicit requirement is given
-			const recentMessages = !trimmed ? [] : extractRecentUserMessages(ctx);
-			let userPrompt: string;
-			if (trimmed) {
-				userPrompt = `以下是要实现的需求：\n\n${requirementText}\n\n`;
-				if (recentMessages.length > 0) {
-					userPrompt += `相关对话上下文作为参考：\n\n${recentMessages.join("\n---\n")}\n\n`;
-				}
-				userPrompt += `---\n\n[CODING WORKFLOW] 工作流已初始化。\n工作目录：${topicDir}\n\n请按 skill 指令进入 Phase 1（Brainstorming），通过逐次提问澄清并细化上述需求，最终输出 spec.md。`;
-			} else {
-				userPrompt = `根据对话上下文提炼的需求：\n\n${requirementText}\n\n---\n\n[CODING WORKFLOW] 工作流已初始化。\n工作目录：${topicDir}\n\n请按 skill 指令进入 Phase 1（Brainstorming），通过逐次提问澄清并细化需求，最终输出 spec.md。`;
-			}
+			const source = trimmed ? "你输入的需求" : "之前对话中讨论的需求";
 
-			pi.sendUserMessage(userPrompt, { deliverAs: "followUp" });
+			// command handler runs while agent is idle — no deliverAs needed
+			pi.sendUserMessage(
+				`[CODING WORKFLOW] 需求已记录。\n\n` +
+				`请根据${source}，生成一个简短的英文 slug（小写、连字符分隔，不超过 60 字符），\n` +
+				`然后调用 coding-workflow-init(slug="你的slug") 完成初始化。\n\n` +
+				`slug 要求：\n` +
+				`- 简洁准确地概括需求核心\n` +
+				`- 纯英文、小写、连字符分隔\n` +
+				`- 例如：user-auth、cart-coupon、api-rate-limit\n` +
+				`- 不要包含日期前缀（系统自动添加）`
+			);
 		},
 	});
 
@@ -828,6 +918,10 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 	pi.registerCommand("coding-workflow-status", {
 		description: "Show current coding workflow status",
 		handler: async (_args, ctx) => {
+			if (state.pendingInit) {
+				ctx.ui.notify("Workflow pending initialization. Generate a slug and call coding-workflow-init.", "info");
+				return;
+			}
 			if (!state.isActive) {
 				ctx.ui.notify("No active coding workflow.", "info");
 				return;
@@ -850,6 +944,13 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 	pi.registerCommand("coding-workflow-abort", {
 		description: "Abort current coding workflow, kill subprocesses, reset state",
 		handler: async (_args, ctx) => {
+			if (state.pendingInit) {
+				state.pendingInit = false;
+				state.pendingRequirement = "";
+				persistState(pi, state);
+				ctx.ui.notify("Pending workflow initialization cancelled.", "info");
+				return;
+			}
 			if (!state.isActive) {
 				ctx.ui.notify("No active coding workflow.", "info");
 				return;
@@ -935,7 +1036,7 @@ function checkProjectProtection(projectRoot: string): string[] {
 // ── Event: before_agent_start ──────────────────────────
 
 	pi.on("before_agent_start", async (event, _ctx) => {
-		if (!state.isActive) return;
+		if (!state.isActive || state.pendingInit) return;
 
 		const phaseConfig = PHASES[state.currentPhase - 1];
 		if (!phaseConfig) return;
@@ -1063,7 +1164,7 @@ function checkProjectProtection(projectRoot: string): string[] {
 	// ── Event: turn_end ────────────────────────────────────
 
 	pi.on("turn_end", async (_event, ctx) => {
-		if (!state.isActive) return;
+		if (!state.isActive || state.pendingInit) return;
 		updateWidget(ctx, state);
 	});
 

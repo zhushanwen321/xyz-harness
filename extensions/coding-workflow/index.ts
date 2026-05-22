@@ -85,6 +85,9 @@ interface WorkflowState {
 	topicDir: string;     // absolute path
 	topicName: string;
 	phaseResults: Record<number, "passed">;
+	gateInProgress: boolean;   // mutex: prevent concurrent gate calls
+	gateRetryCount: number;    // per-phase gate retry counter
+	compactRetryCount: number; // per-phase phase-start retry counter (compact failures)
 }
 
 const DEFAULT_STATE: WorkflowState = {
@@ -93,7 +96,13 @@ const DEFAULT_STATE: WorkflowState = {
 	topicDir: "",
 	topicName: "",
 	phaseResults: {},
+	gateInProgress: false,
+	gateRetryCount: 0,
+	compactRetryCount: 0,
 };
+
+const MAX_GATE_RETRIES = 10;  // per phase
+const MAX_COMPACT_RETRIES = 3; // per phase-start
 
 // Runtime state (not persisted)
 const activeSubprocesses: ChildProcess[] = [];
@@ -220,6 +229,9 @@ function reconstructState(ctx: ExtensionContext, state: WorkflowState): void {
 				state.topicDir = data.topicDir ?? "";
 				state.topicName = data.topicName ?? "";
 				state.phaseResults = data.phaseResults ?? {};
+				state.gateInProgress = data.gateInProgress ?? false;
+				state.gateRetryCount = data.gateRetryCount ?? 0;
+				state.compactRetryCount = data.compactRetryCount ?? 0;
 			}
 			break;
 		}
@@ -277,11 +289,43 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
+			// Mutex: prevent concurrent gate calls
+			if (state.gateInProgress) {
+				return {
+					content: [{
+						type: "text",
+						text: `Gate check is already in progress. Wait for it to finish before retrying.`,
+					}],
+					isError: true,
+				};
+			}
+
+			// Retry limit
+			if (state.gateRetryCount >= MAX_GATE_RETRIES) {
+				return {
+					content: [{
+						type: "text",
+							text:
+							`Gate retry limit reached (${MAX_GATE_RETRIES}) for Phase ${params.phase}. ` +
+							`This usually means there are persistent issues that need manual intervention.\n\n` +
+							`Options:\n` +
+							`1. Use /coding-workflow-abort to cancel and start over\n` +
+							`2. Manually inspect the deliverables and fix the root cause`,
+					}],
+					isError: true,
+				};
+			}
+
+			state.gateInProgress = true;
+			state.gateRetryCount += 1;
+			persistState(pi, state);
+
 			const phaseConfig = PHASES[params.phase - 1];
 
 			// 1. Run gate script
 			const gateResult = await runGateScript(GATE_SCRIPT_PATH, state.topicDir, params.phase);
 			if (!gateResult.passed) {
+				state.gateInProgress = false;
 				return {
 					content: [{
 						type: "text",
@@ -301,6 +345,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
+				state.gateInProgress = false;
 				return {
 					content: [{
 						type: "text",
@@ -311,6 +356,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			}
 
 			if (!reviewResult.success) {
+				state.gateInProgress = false;
 				return {
 					content: [{
 						type: "text",
@@ -327,6 +373,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				try {
 					reviewContent = fs.readFileSync(reviewResult.reviewPath, "utf8");
 				} catch { /* ignore */ }
+				state.gateInProgress = false;
 				return {
 					content: [{
 						type: "text",
@@ -341,13 +388,16 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 			// Guard: abort may have reset state during async operations
 			if (!state.isActive) {
+				state.gateInProgress = false;
 				return {
 					content: [{ type: "text", text: "Workflow was aborted during gate check." }],
 					isError: true,
 				};
 			}
 
-			// 5. Update state
+			// 5. Update state — reset retry counters on success
+			state.gateInProgress = false;
+			state.gateRetryCount = 0;
 			state.phaseResults[params.phase] = "passed";
 			persistState(pi, state);
 			updateWidget(ctx, state);
@@ -435,7 +485,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			// Safety net: check that the retrospect file was created
+			// Safety net: check retrospect file existence AND frontmatter integrity
 			const prevPhaseConfig = PHASES[state.currentPhase - 1];
 			if (prevPhaseConfig) {
 				const retrospectPath = path.join(
@@ -457,9 +507,54 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 						isError: true,
 					};
 				}
+
+				// Validate frontmatter integrity (not just file existence)
+				const retrospectContent = fs.readFileSync(retrospectPath, "utf8");
+				const fmFirst = retrospectContent.indexOf("---");
+				const fmSecond = retrospectContent.indexOf("---", fmFirst + 3);
+				let retrospectVerdict: string | undefined;
+				if (fmFirst >= 0 && fmSecond > fmFirst) {
+					try {
+						const fmData = yaml.load(retrospectContent.slice(fmFirst + 3, fmSecond)) as Record<string, unknown>;
+						retrospectVerdict = typeof fmData?.verdict === "string" ? fmData.verdict : undefined;
+					} catch {
+						// YAML parse error — treat as missing
+					}
+				}
+
+				if (fmFirst < 0 || fmSecond < 0 || !retrospectVerdict) {
+					return {
+						content: [{
+							type: "text",
+							text:
+								`BLOCKED: Phase ${state.currentPhase} retrospect file has invalid frontmatter:\n` +
+								`  ${retrospectPath}\n\n` +
+								`Required: YAML frontmatter with \`verdict\` field.\n` +
+								`Fix the frontmatter, then call coding-workflow-phase-start() again.`,
+						}],
+						isError: true,
+					};
+				}
+			}
+
+			// Compact retry limit
+			if (state.compactRetryCount >= MAX_COMPACT_RETRIES) {
+				return {
+					content: [{
+						type: "text",
+							text:
+							`Phase-start retry limit reached (${MAX_COMPACT_RETRIES}). ` +
+							`Compact keeps failing, context isolation cannot be guaranteed.\n\n` +
+							`Options:\n` +
+							`1. Use /coding-workflow-abort to cancel\n` +
+							`2. Restart the Pi session manually and resume the workflow`,
+					}],
+					isError: true,
+				};
 			}
 
 			// Advance phase
+			state.compactRetryCount += 1;
 			state.currentPhase += 1;
 			persistState(pi, state);
 			updateWidget(ctx, state);
@@ -469,6 +564,9 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				state.isActive = false;
 				state.currentPhase = 0;
 				state.phaseResults = {};
+				state.gateInProgress = false;
+				state.gateRetryCount = 0;
+				state.compactRetryCount = 0;
 				persistState(pi, state);
 				updateWidget(ctx, state);
 				return {
@@ -485,6 +583,8 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			ctx.compact({
 				customInstructions,
 				onComplete: () => {
+					state.compactRetryCount = 0;
+					persistState(pi, state);
 					pi.sendUserMessage(
 						`New task instructions injected. Read them, produce deliverables, then call coding-workflow-gate(phase=${state.currentPhase}).`,
 						{ deliverAs: "followUp" },
@@ -492,8 +592,14 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				},
 				onError: (error) => {
 					console.warn(`[coding-workflow] Compact failed: ${error.message}`);
+					// Rollback phase advancement — context isolation failed
+					state.currentPhase -= 1;
+					persistState(pi, state);
+					updateWidget(ctx, state);
 					pi.sendUserMessage(
-						`New task instructions injected. Read them, produce deliverables, then call coding-workflow-gate(phase=${state.currentPhase}).`,
+						`Compact failed (attempt ${state.compactRetryCount}/${MAX_COMPACT_RETRIES}): ${error.message}\n\n` +
+						`Phase advancement was rolled back. Call coding-workflow-phase-start() to retry, ` +
+						`or use /coding-workflow-abort to cancel.`,
 						{ deliverAs: "followUp" },
 					);
 				},

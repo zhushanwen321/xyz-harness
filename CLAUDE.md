@@ -52,7 +52,7 @@ Harness 的全部设计目标就是防止这些行为。
 | 跳过复盘直接推进 | phase-start 检查 retrospect 文件存在，不存在则 BLOCKED |
 | 评审和编码是同一个人 | review subagent 独立进程、独立上下文、独立模型 |
 | 利用之前 phase 的知识偷跑 | compact() 在 phase 切换时清除对话历史 |
-| 复盘 subagent 失败但继续推进 | gate PASS 消息中包含 WARNING，phase-start 二次拦截 |
+| 主 agent 未写复盘就调 phase-start | phase-start 检查 retrospect frontmatter 完整性，不存在或无效则 BLOCKED |
 | 伪造测试结果 | gate-check.py 检查 YAML frontmatter 中的 verdict 字段 |
 | 不读 skill 指令直接凭感觉干活 | before_agent_start 强制注入 skill 内容 |
 | Phase 5 合并 PR（不可逆操作） | skill 注入中明确 "MUST NOT merge the PR" |
@@ -78,13 +78,13 @@ AI **只需知道**：
 ```
 gate check pass
   → dispatch review subagent
-  → dispatch retrospect subagent
-    → 成功：retrospect 文件创建
-    → 失败：gate PASS 消息中显示 WARNING
+  → gate PASS + followUp 指示主 agent 写复盘
+    → 主 agent 写 retrospect → 文件创建
+    → 跳过复盘 → phase-start 检查时 BLOCKED
   → AI 调用 phase-start
-    → 检查 retrospect 文件存在？
-      → 存在：放行，进入下一 phase
-      → 不存在：BLOCKED，给出重试或手动创建选项
+    → 检查 retrospect 文件 frontmatter 完整性？
+      → 有效：放行，compact → 进入下一 phase
+      → 不存在或 frontmatter 无效：BLOCKED，给出重试或手动创建选项
 ```
 
 任何一环失败都有下游拦截，复盘不会静默丢失。
@@ -104,12 +104,12 @@ gate check pass
   → AI 调用 coding-workflow-gate(phase=1)
     → gate-check.py 验证文件 → pass/fail
     → dispatch review subagent → review_v*.md
-    → dispatch retrospect subagent → retrospect.md
-    → 返回 PASS/FAIL
+    → 返回 PASS + followUp 指示主 agent 写复盘
+  → AI 写 retrospect → retrospect.md
   → AI 调用 coding-workflow-phase-start()
-    → 检查 retrospect 文件 → BLOCKED/放行
+    → 检查 retrospect 文件 frontmatter → BLOCKED/放行
     → state.currentPhase += 1
-    → compact() 清除历史
+    → compact() 清除历史（失败则回退 state）
     → 注入 Phase 2 skill
   → ...重复直到 Phase 5 完成
 ```
@@ -121,7 +121,7 @@ gate check pass
   → brainstorming skill 加载 → AI 按 guide 工作
   → 产出 spec.md
   → dispatch 审查 subagent → spec_review_v*.md
-  → dispatch 复盘 subagent → spec_retrospect.md
+  → 主 agent 写复盘 → spec_retrospect.md
   → gate check（独立 session）
 
 用户: "start Phase 2"
@@ -179,7 +179,7 @@ gate check pass
 
 - gate-check.py 自动运行，验证 deliverables 完整性
 - review subagent 自动 dispatch，验证 deliverables 质量
-- retrospect subagent 自动 dispatch，产出复盘记录
+- retrospect 由主 agent 在 followUp 中完成，产出复盘记录
 - phase-start 检查 retrospect 文件存在，不存在则 BLOCKED
 
 ### Manual Mode
@@ -215,7 +215,7 @@ gate check pass
 | 依赖 | 说明 |
 |------|------|
 | Python 3 + PyYAML | gate-check.py 需要 |
-| `~/.pi/agent/subagent-models.json` | 模型配置（review/retrospect subagent 用） |
+| `~/.pi/agent/subagent-models.json` | 模型配置（review subagent 用） |
 | harness skills 已安装 | `~/.pi/agent/skills/xyz-harness-*` |
 | harness-retrospect skill 已安装 | `~/.pi/agent/skills/` 或项目 skills/ 中 |
 
@@ -232,7 +232,7 @@ gate check pass
 
 扩展使用 `~/.pi/agent/subagent-models.json` 中的模型配置：
 - Review subagent：`taskComplexity: "medium"` → ds-flash / kimi-for-coding
-- Retrospect subagent：`taskComplexity: "low"` → glm-5-turbo / ds-flash
+- Retrospect 由主 agent 在 followUp 中直接完成，不需要 subagent
 
 不要在 skill 中硬编码 `llm-simple-router/xxx` 这样的 provider。`llm-simple-router` 不是合法的 provider 前缀。
 

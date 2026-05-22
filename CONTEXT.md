@@ -26,6 +26,14 @@ _Avoid_: workspace（与 Harness Workspace 混淆）
 **Loop**:
 Phase 内部的迭代机制。当 Gate 返回 FAIL 时，AI 修复 deliverables 后重新提交 Gate，形成循环。循环起点由 Phase 定义。当前实现为隐式循环（AI 自主重试），计划升级为显式状态机。
 
+**Execution Group**:
+plan.md 中按文件边界划分的 Task 分组。同一 Group 内的 Task 修改同一批文件，由单个 Task Subagent 串行执行。不同 Group 之间通过依赖关系和 Wave 编排决定执行顺序。命名约定：BG（Backend Group）、FG（Frontend Group）等。
+_Avoid_: 任务组（太泛）
+
+**Wave**:
+Execution Group 之间的执行批次。同一 Wave 内的 Group 可并行派遣 Task Subagent，不同 Wave 之间串行。由 plan.md 的依赖图推导得出。同一 Wave 内最多 3 个 subagent 并行（Semaphore 限制），同一文件不允许多个 subagent 同时修改。
+_Avoid_: 轮次（太泛）、批次（与 batch 混淆）
+
 ## 指令注入
 
 **Instruction Layer（IL）**:

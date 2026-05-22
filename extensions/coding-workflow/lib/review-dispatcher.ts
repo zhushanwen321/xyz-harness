@@ -60,6 +60,7 @@ function buildReviewTaskPrompt(
 	phaseConfig: PhaseConfigForReview,
 	topicDir: string,
 	nextVersion: number,
+	skillPath: string,
 ): string {
 	const reviewPath = path.join(
 		topicDir, "changes", "reviews",
@@ -72,7 +73,7 @@ function buildReviewTaskPrompt(
 	return [
 		`你是独立审查专家。按以下步骤执行审查：`,
 		``,
-		`1. read \`skills/xyz-harness-expert-reviewer/SKILL.md\`，找到「${phaseConfig.reviewMode}」章节`,
+		`1. read \`${skillPath}\`，找到「${phaseConfig.reviewMode}」章节`,
 		`2. read 以下待审查文件：`,
 		deliverableList,
 		`3. 按方法论逐项审查，将结果写入：`,
@@ -143,12 +144,13 @@ export async function dispatchReviewSubagent(
 	}
 
 	const systemPrompt = skillResolver.resolve("xyz-harness-expert-reviewer");
+	const skillPath = skillResolver.resolvePath("xyz-harness-expert-reviewer");
 	const nextVersion = getNextReviewVersion(topicDir, phaseConfig.reviewPrefix);
 	const reviewPath = path.join(
 		topicDir, "changes", "reviews",
 		`${phaseConfig.reviewPrefix}_v${nextVersion}.md`,
 	);
-	const taskPrompt = buildReviewTaskPrompt(phaseConfig, topicDir, nextVersion);
+	const taskPrompt = buildReviewTaskPrompt(phaseConfig, topicDir, nextVersion, skillPath);
 
 	cleanupOldTempFiles();
 	const result = await runSingleAgent({

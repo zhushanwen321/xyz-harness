@@ -319,6 +319,41 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				}
 			}
 
+			// Verify ALL prior phases have review files (Phase 3+ only)
+			if (state.currentPhase >= 3) {
+				const missingReviews: string[] = [];
+				for (let p = 1; p < state.currentPhase; p++) {
+					const prevConfig = PHASES[p - 1]!;
+					if (prevConfig.reviewPrefix) {
+						const reviewsDir = path.join(state.topicDir, "changes", "reviews");
+						if (fs.existsSync(reviewsDir)) {
+							const files = fs.readdirSync(reviewsDir);
+							const hasReview = files.some(f =>
+								f.startsWith(prevConfig.reviewPrefix + "_v") && f.endsWith(".md"),
+							);
+							if (!hasReview) {
+								missingReviews.push(`Phase ${p} (${prevConfig.name}): no ${prevConfig.reviewPrefix}_v*.md found`);
+							}
+						} else {
+							missingReviews.push(`Phase ${p} (${prevConfig.name}): reviews/ directory not found`);
+						}
+					}
+				}
+				if (missingReviews.length > 0) {
+					const fixInstructions = missingReviews.map((m) => `  - ${m}`).join("\n");
+					return {
+						content: [{
+							type: "text",
+							text:
+								`BLOCKED: Reviews are mandatory and cannot be skipped.\n\n` +
+								`Missing reviews:\n${fixInstructions}\n\n` +
+								`All prior phases must have review files before proceeding.`,
+						}],
+						isError: true,
+					};
+				}
+			}
+
 			// Mutex: prevent concurrent gate calls
 			if (state.gateInProgress) {
 				return {

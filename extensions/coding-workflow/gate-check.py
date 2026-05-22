@@ -162,7 +162,6 @@ class FileCheck:
 @dataclass
 class ReviewCheck:
     prefix: str  # e.g. "spec_review_v"
-    nested: bool = False  # True 时用 _flatten_review_fields
 
 
 @dataclass
@@ -278,6 +277,22 @@ def validate_test_execution(topic_dir, checks):
     else:
         checks.append(("final round passed", PASS, f"round {last_round}: all passed"))
 
+    # 7. Verification method statistics (optional, informational only)
+    method_counts = {"automated": 0, "code_review": 0, "manual": 0, "unspecified": 0}
+    for rec in records:
+        method = rec.get("verification_method", "unspecified")
+        if method in method_counts:
+            method_counts[method] += 1
+        else:
+            method_counts["unspecified"] += 1
+
+    total = len(records)
+    if total > 0:
+        method_summary = ", ".join(
+            f"{k}: {v} ({v*100//total}%)" for k, v in method_counts.items() if v > 0
+        )
+        checks.append(("verification methods", PASS, f"{total} records: {method_summary}"))
+
 
 # ── Phase Specifications ────────────────────────────────────
 
@@ -315,7 +330,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             ),
         ],
         reviews=[
-            ReviewCheck(prefix="code_review_v", nested=True),
+            ReviewCheck(prefix="code_review_v"),
         ],
     ),
     4: PhaseSpec(
@@ -389,27 +404,21 @@ def run_phase_checks(topic_dir: str, spec: PhaseSpec) -> list:
             else:
                 review_name = os.path.basename(review_path).replace(".md", "")
 
-                if rc.nested:
-                    verdict, must_fix = _flatten_review_fields(data)
-                    # Check verdict
-                    if verdict is None:
-                        checks.append((f"{review_name} verdict", FAIL, "'verdict' field missing (checked top-level and review.verdict)"))
-                    elif not isinstance(verdict, str) or verdict != "pass":
-                        checks.append((f"{review_name} verdict", FAIL, f"'verdict'={repr(verdict)}, expected 'pass'"))
-                    else:
-                        checks.append((f"{review_name} verdict", PASS, f"'verdict'={repr(verdict)}"))
-                    # Check must_fix
-                    if must_fix is None:
-                        checks.append((f"{review_name} must_fix", FAIL, "'must_fix' field missing (checked top-level and statistics.must_fix)"))
-                    elif not isinstance(must_fix, int) or must_fix != 0:
-                        checks.append((f"{review_name} must_fix", FAIL, f"'must_fix'={must_fix}, expected 0"))
-                    else:
-                        checks.append((f"{review_name} must_fix", PASS, f"'must_fix'={must_fix}"))
+                verdict, must_fix = _flatten_review_fields(data)
+                # Check verdict
+                if verdict is None:
+                    checks.append((f"{review_name} verdict", FAIL, "'verdict' field missing (checked top-level and review.verdict)"))
+                elif not isinstance(verdict, str) or verdict != "pass":
+                    checks.append((f"{review_name} verdict", FAIL, f"'verdict'={repr(verdict)}, expected 'pass'"))
                 else:
-                    ok1, msg1 = check_field_str(data, "verdict", "pass")
-                    ok2, msg2 = check_field_int(data, "must_fix", 0)
-                    checks.append((f"{review_name} verdict", PASS if ok1 else FAIL, msg1))
-                    checks.append((f"{review_name} must_fix", PASS if ok2 else FAIL, msg2))
+                    checks.append((f"{review_name} verdict", PASS, f"'verdict'={repr(verdict)}"))
+                # Check must_fix
+                if must_fix is None:
+                    checks.append((f"{review_name} must_fix", FAIL, "'must_fix' field missing (checked top-level and statistics.must_fix)"))
+                elif not isinstance(must_fix, int) or must_fix != 0:
+                    checks.append((f"{review_name} must_fix", FAIL, f"'must_fix'={must_fix}, expected 0"))
+                else:
+                    checks.append((f"{review_name} must_fix", PASS, f"'must_fix'={must_fix}"))
 
     return checks
 

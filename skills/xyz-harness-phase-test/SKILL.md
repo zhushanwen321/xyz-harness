@@ -172,3 +172,17 @@ Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 ### 7. Tell user
 
 When done: "Phase 4 complete. All tests pass. Please run gate check in a separate session. When gate passes, come back and I'll run the retrospective. Then say 'start Phase 5' to continue."
+
+## Self-Check Checklist
+
+### FR→TC 覆盖矩阵
+- [ ] 每条 FR 至少有一个 TC 覆盖？
+- [ ] TC 标题是否明确关联了对应的 FR/AC？
+
+### 验证方式标注
+- [ ] 每个 TC 是否标注了 `verification_method`？（automated/code_review/manual）
+- [ ] 代码审查替代的测试是否被如实标注为 `code_review`？
+
+### 指标传递
+- [ ] test_cases_template.json 中每个 TC 是否有 `planTaskId`（关联 plan task）？
+- [ ] test_cases_template.json 中每个 TC 是否有 `ac_ref`（关联 spec AC）？

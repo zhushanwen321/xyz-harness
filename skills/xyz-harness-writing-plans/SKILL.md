@@ -160,6 +160,26 @@ File structure 表格必须包含 Group 列，标注每个文件属于哪个 Exe
 
 > **Harness 模式下的注意：** 在 V5 Phase 3 (dev) 中，Task 内部不需要细化到上述 5 步。TDD coder subagent 和 executor subagent 会自动执行"写失败测试→实现"的 TDD 流程。Plan 中的 Task 粒度应与 subagent 调度粒度对齐——每个 Task 对应一次 TDD coder → executor → reviewer 的完整 subagent 链。不要把一个 subagent 的工作拆成多个 Task。
 
+## Spec Metrics Traceability (强制章节)
+
+每个 plan 必须包含以下章节，显式追踪 spec 指标的采纳状态：
+
+```markdown
+## Spec Metrics Traceability
+
+| Spec 指标 | 采纳状态 | 对应 Task |
+|-----------|---------|----------|
+| AC-1 xxx | adopted | Task 1 |
+| AC-2 xxx | postponed | — (reason) |
+```
+
+采纳状态：
+- `adopted` — 纳入本次 plan，有对应 Task
+- `rejected` — 不需要，说明原因
+- `postponed` — 后续迭代处理，说明原因
+
+此章节确保 spec→plan→test 的指标传递链不断裂。缺少此章节的 plan 不应通过 gate。
+
 ## Plan Document Header
 
 **Every plan MUST start with this header:**
@@ -554,3 +574,22 @@ After saving the plan, offer execution choice:
 
 **文档精简：** 单次写入超过 1000 字时优先拆分子文档，主文档保留概述和索引。使用 agent 并行编写各模块文档（并发度 ≤ 2），最后合成精简主文档。
 <!-- LOCAL-OVERRIDE:END -->
+
+## Self-Check Checklist
+
+### Scope 覆盖声明
+- [ ] spec 中每个量化指标/AC 是否在 plan 中标注了采纳状态（adopted/rejected/postponed）？
+- [ ] 是否存在 spec 指标在 plan 中被静默忽略（无声明）？
+- [ ] scope 缩减是否在 plan 中正式声明（不能静默缩小）？
+
+### Task 粒度
+- [ ] 单个 Task 是否超过 10 步？超过则考虑拆分
+- [ ] 每个 Task 是否对应一次 subagent 调度（而非 TDD 内部的微步骤）？
+
+### 禁止实现代码
+- [ ] plan 中是否包含函数体、完整类定义或其他实现代码？
+- [ ] 如包含：删除，只保留接口签名和调用关系
+
+### 伪代码数据来源
+- [ ] 涉及 DB JSON 字段的伪代码，是否标注了数据来源和实际序列化格式？
+- [ ] 是否有未验证的假设（如"parsed.stages 是对象包裹数组"）？

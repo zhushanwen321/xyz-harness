@@ -18,16 +18,29 @@ description: >-
 | 下游（完成后进入） | 无（最终 phase） |
 | 回退目标 | CI 失败 → 修复 → 重新推送 |
 
+## Phase Loop 机制
+
+Gate FAIL 后回到循环起点继续：
+
+- **CI 失败**：回到 Step 1（Push Code），修复 CI 报错，重新 push，等待 CI 通过后更新 ci_results.md
+- **Gate FAIL（pr_evidence 或 ci_results 格式问题）**：就地修复 YAML/evidence，不需要重新推送
+- **Self-Check 不通过**：就地修复，不需要回退
+
+**注意：** Merge 是不可逆操作，必须在 gate check 确认通过后才执行。如果 gate 失败，绝对不能 merge。
+
+**Auto Mode：** coding-workflow 扩展自动管理 loop 和回退，skill 中无需处理。
+
 ### Agent/Skill 关联
 
 | 步骤 | 执行者 | Agent | Skill | 方式 |
 |------|--------|-------|-------|------|
-| Push + PR + CI + Merge | 主 agent | — | 无（直接操作） | bash + gh CLI |
+| Push + PR + CI | 主 agent | — | 无（直接操作） | bash + gh CLI |
+| Gate Check + Merge | 主 agent | — | 无（直接操作） | gate 验证后 merge |
 | Retrospect (整体) | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
 ## Purpose
 
-Push code changes, verify CI, create a Pull Request, and complete the merge.
+Push code changes, verify CI, create a Pull Request, pass gate check, then complete the merge.
 
 ## Prerequisites
 
@@ -106,38 +119,7 @@ All CI checks passed.
 - ruff lint: passed ✅
 ```
 
-### 4. Merge
-
-- Merge the PR using `git merge --no-ff`（merge commit），**禁止 squash 和 rebase**
-- Delete the remote branch if no longer needed
-- Verify merge appears in target branch
-
-### 4a. Retrospect (复盘)
-
-**触发时机：** 当用户告知 gate check 通过后，立即执行整体复盘（Phase 5 是最后一个 phase，复盘覆盖全部 5 个 phase）。
-
-1. Dispatch subagent：
-   - **Agent**: general-purpose
-   - **Model**: router-openai/ds-flash
-   - **Task prompt**:
-     ```
-     你是复盘分析师。按以下步骤执行整体复盘（覆盖全部 5 个 phase）：
-
-     1. 回顾 system prompt 中已包含的复盘方法论
-     2. read 之前 4 个 phase 的复盘记录（如果存在）：
-        - `{topic_dir}/changes/reviews/spec_retrospect.md`（Phase 1）
-        - `{topic_dir}/changes/reviews/plan_retrospect.md`（Phase 2）
-        - `{topic_dir}/changes/reviews/dev_retrospect.md`（Phase 3）
-        - `{topic_dir}/changes/reviews/test_retrospect.md`（Phase 4）
-     3. read Phase 5 交付物：
-        - `{topic_dir}/changes/evidence/pr_evidence.md`
-        - `{topic_dir}/changes/evidence/ci_results.md`
-     4. 回顾全部 5 个 phase，按方法论覆盖两个维度（整体 Phase 执行 + Harness 体验），将结果写入：
-        `{topic_dir}/changes/reviews/overall_retrospect.md`
-     5. YAML frontmatter: `phase: pr`, `verdict: pass`
-     ```
-
-### 5. Self-Check
+### 4. Self-Check
 
 **铁律：禁止在未实际运行验证命令的情况下声称完成。**
 
@@ -151,9 +133,8 @@ All CI checks passed.
   python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 5
   ```
 - [ ] 读取输出，确认所有检查项 PASS
-- [ ] PR merged
 
-### 6. Gate Handoff
+### 5. Gate Handoff
 
 When opening a separate gate check conversation, submit these files:
 
@@ -165,6 +146,41 @@ When opening a separate gate check conversation, submit these files:
 Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 > "Check Phase 5 gate for topic `{topic}`"
 
-### 7. Tell user
+### 6. Merge
 
-When done: "Phase 5 complete. Feature merged. Please run gate check in a separate session. When gate passes, come back and I'll run the overall retrospective covering all 5 phases. Then we're done!"
+**前置条件：gate check 已通过。** 如果 gate 尚未通过，禁止 merge。
+
+- Merge the PR using `git merge --no-ff`（merge commit），**禁止 squash 和 rebase**
+- Delete the remote branch if no longer needed
+- Verify merge appears in target branch
+
+### 7. Retrospect (复盘)
+
+**触发时机：** 当 merge 完成后，立即执行整体复盘（Phase 5 是最后一个 phase，复盘覆盖全部 5 个 phase）。
+
+**Auto Mode：** coding-workflow 扩展自动 dispatch retrospect subagent。
+**Manual Mode：** 手动 dispatch 以下 subagent：
+
+1. Dispatch subagent：
+   - **Agent**: general-purpose
+   - **Task prompt**:
+     ```
+     你是复盘分析师。按以下步骤执行整体复盘（覆盖全部 5 个 phase）：
+
+     1. read {retrospect_agent_path} 获取复盘方法论
+     2. read 之前 4 个 phase 的复盘记录（如果存在）：
+        - `{topic_dir}/changes/reviews/spec_retrospect.md`（Phase 1）
+        - `{topic_dir}/changes/reviews/plan_retrospect.md`（Phase 2）
+        - `{topic_dir}/changes/reviews/dev_retrospect.md`（Phase 3）
+        - `{topic_dir}/changes/reviews/test_retrospect.md`（Phase 4）
+     3. read Phase 5 交付物：
+        - `{topic_dir}/changes/evidence/pr_evidence.md`
+        - `{topic_dir}/changes/evidence/ci_results.md`
+     4. 回顾全部 5 个 phase，按方法论覆盖两个维度（整体 Phase 执行 + Harness 体验），将结果写入：
+        `{topic_dir}/changes/reviews/overall_retrospect.md`
+     5. YAML frontmatter: `phase: pr`, `verdict: pass`
+     ```
+
+### 8. Tell user
+
+When done: "Phase 5 complete. Feature merged. All retrospectives done."

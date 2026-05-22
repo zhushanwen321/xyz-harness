@@ -203,20 +203,20 @@ for each Wave:
 
 ## Model Selection
 
-使用能满足任务要求的最经济模型以节省成本和提升速度。在 pi 环境中使用 `provider/model` 格式指定模型。
+使用能满足任务要求的最经济模型以节省成本和提升速度。通过 `taskComplexity` 参数让运行时自动选择模型，不硬编码 `provider/model`。
 
-**按 Group 选择模型：** 每个 Execution Group 有自己的模型配置（写在 plan.md 中）。主 agent 按 Group 配置派遣，无需自行选择。以下规则适用于 plan.md 编写时的模型建议。
+**按 Group 选择模型：** 每个 Execution Group 有自己的模型配置（写在 plan.md 中）。主 agent 按 Group 配置派遣，无需自行选择。以下规则适用于 plan.md 编写时的 taskComplexity 建议。
 
-**机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`router-openai/ds-flash`。plan 足够清晰时大部分任务都属于此类。
+**机械性实现任务**（独立函数、清晰 spec、1-2 个文件）：`taskComplexity: "low"`。plan 足够清晰时大部分任务都属于此类。
 
-**集成和判断型任务**（跨文件协调、模式匹配、调试）：`router-openai/glm-5.1`。
+**集成和判断型任务**（跨文件协调、模式匹配、调试）：`taskComplexity: "medium"`。
 
-**架构、设计和评审任务**：`router-openai/glm-5.1`。
+**架构、设计和评审任务**：`taskComplexity: "high"`。
 
 **任务复杂度信号：**
-- 涉及 1-2 个文件，spec 完整 → `router-openai/ds-flash`
-- 涉及多个文件，有集成关注点 → `router-openai/glm-5.1`
-- 需要设计判断或广泛的代码库理解 → `router-openai/glm-5.1`
+- 涉及 1-2 个文件，spec 完整 → `taskComplexity: "low"`
+- 涉及多个文件，有集成关注点 → `taskComplexity: "medium"`
+- 需要设计判断或广泛的代码库理解 → `taskComplexity: "high"`
 
 ## Handling TDD Coder Status
 
@@ -249,7 +249,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 
 **BLOCKED:** The implementer cannot complete the task. Assess the blocker:
 1. If it's a context problem, provide more context and re-dispatch with the same model
-2. If the task requires more reasoning, re-dispatch with `router-openai/glm-5.1`
+2. If the task requires more reasoning, re-dispatch with `taskComplexity: "high"`
 3. If the task is too large, break it into smaller pieces
 4. If the plan itself is wrong, escalate to the human
 
@@ -283,7 +283,7 @@ Implementer subagents report one of four statuses. Handle each appropriately:
 前端 task:
   跳过 TDD coder
   agent: general-purpose (task prompt 指定 read xyz-harness-frontend-dev skill)
-  model: 按项目配置（默认 kimi-coding-plan/kimi-for-coding）
+  model: 按 taskComplexity 自动选择（前端默认: medium）
   完成后: spec 合规检查 → todolist complete_task
 
 后端 task:

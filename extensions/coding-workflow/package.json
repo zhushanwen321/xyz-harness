@@ -1,0 +1,9 @@
+{
+  "name": "pi-extension-coding-workflow",
+  "version": "0.1.0",
+  "description": "5-phase coding workflow orchestration for xyz-harness",
+  "private": true,
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}

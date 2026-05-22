@@ -1,8 +1,8 @@
 // Subagent spawn logic extracted from xyz-pi-extensions/subagent.
 // Only single foreground mode needed (no parallel/chain/background).
 
-import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { ProcessManager } from "./process-manager.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -146,9 +146,6 @@ function getPiInvocation(args: string[]): { command: string; args: string[] } {
 
 // ─── Single agent spawn ──────────────────────────────────
 
-const SUBAGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 min global timeout
-const SUBAGENT_ACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 min no-activity timeout
-
 export async function runSingleAgent(params: {
 	task: string;
 	systemPrompt: string;
@@ -220,139 +217,64 @@ export async function runSingleAgent(params: {
 
 		args.push(`Task: ${task}`);
 
-		let wasAborted = false;
-		const exitCode = await new Promise<number>((resolve) => {
-			let settled = false;
-			const settle = (code: number) => {
-				if (settled) return;
-				settled = true;
-				clearTimeout(activityTimer);
-				clearTimeout(globalTimer);
-				resolve(code);
-			};
-
-			const invocation = getPiInvocation(args);
-			const proc = spawn(invocation.command, invocation.args, {
-				cwd,
-				shell: false,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-
-			// Register process for external lifecycle management (abort)
-			if (processRegistry) {
-				processRegistry.push(proc);
-				proc.on("close", () => {
-					const idx = processRegistry.indexOf(proc);
-					if (idx !== -1) processRegistry.splice(idx, 1);
-				});
-			}
-
-			let buffer = "";
-
-			// Activity timer: reset on each message/tool_result
-			let activityTimer: ReturnType<typeof setTimeout>;
-			const resetActivityTimer = () => {
-				clearTimeout(activityTimer);
-				activityTimer = setTimeout(() => {
-					if (!settled) {
-						result.stderr += "\nSubagent timed out: no activity for 5 minutes";
-						proc.kill("SIGTERM");
-						setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); settle(1); }, 5000);
-					}
-				}, SUBAGENT_ACTIVITY_TIMEOUT_MS);
-			};
-			resetActivityTimer();
-
-			// Global timer: hard cap regardless of activity
-			const globalTimer = setTimeout(() => {
-				if (!settled) {
-					result.stderr += "\nSubagent timed out: 10 minute global limit exceeded";
-					proc.kill("SIGKILL");
-					settle(1);
-				}
-			}, SUBAGENT_TIMEOUT_MS);
-
-			const processLine = (line: string) => {
-				if (!line.trim()) return;
-				let event: Record<string, unknown>;
-				try {
-					event = JSON.parse(line) as Record<string, unknown>;
-				} catch {
-					return;
-				}
-
-				if (event.type === "message_end" && event.message) {
-					const msg = event.message as Message;
-					result.messages.push(msg);
-
-					if (msg.role === "assistant") {
-						result.usage.turns++;
-						const usage = msg.usage;
-						if (usage) {
-							result.usage.input += usage.input || 0;
-							result.usage.output += usage.output || 0;
-							result.usage.cacheRead += usage.cacheRead || 0;
-							result.usage.cacheWrite += usage.cacheWrite || 0;
-							result.usage.cost += usage.cost?.total || 0;
-							// contextTokens: keep max (peak context window size)
-							const ctx = usage.totalTokens || 0;
-							if (ctx > result.usage.contextTokens) result.usage.contextTokens = ctx;
-						}
-						if (msg.model) result.model = msg.model;
-						if (msg.stopReason) result.stopReason = msg.stopReason;
-						if (msg.errorMessage) result.errorMessage = msg.errorMessage;
-					}
-					emitUpdate();
-					result.lastActivityTime = Date.now();
-					resetActivityTimer();
-				}
-
-				if (event.type === "tool_result_end" && event.message) {
-					result.messages.push(event.message as Message);
-					emitUpdate();
-					result.lastActivityTime = Date.now();
-					resetActivityTimer();
-				}
-			};
-
-			proc.stdout.on("data", (data) => {
-				buffer += data.toString();
-				const lines = buffer.split("\n");
-				buffer = lines.pop() || "";
-				for (const line of lines) processLine(line);
-			});
-
-			proc.stderr.on("data", (data) => {
-				result.stderr += data.toString();
-			});
-
-			proc.on("close", (code) => {
-				if (buffer.trim()) processLine(buffer);
-				settle(code ?? 0);
-			});
-
-			proc.on("error", (err) => {
-				result.stderr += `Spawn error: ${err.message}`;
-				settle(1);
-			});
-
-			if (signal) {
-				const killProc = () => {
-					wasAborted = true;
-					proc.kill("SIGTERM");
-					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
-					}, 5000);
-				};
-				if (signal.aborted) killProc();
-				else signal.addEventListener("abort", killProc, { once: true });
-			}
+		const invocation = getPiInvocation(args);
+		const pm = new ProcessManager();
+		const procResult = await pm.spawn(invocation.command, invocation.args, {
+			cwd,
+			signal,
+			processRegistry,
 		});
 
-		result.exitCode = exitCode;
+		// Parse JSON lines from accumulated stdout
+		const processLine = (line: string) => {
+			if (!line.trim()) return;
+			let event: Record<string, unknown>;
+			try {
+				event = JSON.parse(line) as Record<string, unknown>;
+			} catch {
+				return;
+			}
+
+			if (event.type === "message_end" && event.message) {
+				const msg = event.message as Message;
+				result.messages.push(msg);
+
+				if (msg.role === "assistant") {
+					result.usage.turns++;
+					const usage = msg.usage;
+					if (usage) {
+						result.usage.input += usage.input || 0;
+						result.usage.output += usage.output || 0;
+						result.usage.cacheRead += usage.cacheRead || 0;
+						result.usage.cacheWrite += usage.cacheWrite || 0;
+						result.usage.cost += usage.cost?.total || 0;
+						// contextTokens: keep max (peak context window size)
+						const ctx = usage.totalTokens || 0;
+						if (ctx > result.usage.contextTokens) result.usage.contextTokens = ctx;
+					}
+					if (msg.model) result.model = msg.model;
+					if (msg.stopReason) result.stopReason = msg.stopReason;
+					if (msg.errorMessage) result.errorMessage = msg.errorMessage;
+				}
+				emitUpdate();
+				result.lastActivityTime = Date.now();
+			}
+
+			if (event.type === "tool_result_end" && event.message) {
+				result.messages.push(event.message as Message);
+				emitUpdate();
+				result.lastActivityTime = Date.now();
+			}
+		};
+
+		const lines = procResult.stdout.split("\n");
+		for (const line of lines) processLine(line);
+
+		result.exitCode = procResult.exitCode;
+		result.stderr = procResult.stderr;
 		result.endTime = Date.now();
 		result.durationMs = result.endTime - result.startTime;
-		if (wasAborted) throw new Error("Subagent was aborted");
+		if (procResult.wasAborted) throw new Error("Subagent was aborted");
 		return result;
 	} finally {
 		if (tmpPromptPath) {

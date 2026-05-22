@@ -18,6 +18,18 @@ description: >-
 | 下游（完成后进入） | Phase 4 (test) — 加载 phase-test skill |
 | 回退目标 | 审查不通过 → 修复代码 → 重新审查 |
 
+## Phase Loop 机制
+
+Gate FAIL 后不是从头开始，而是回到循环起点继续：
+
+- **Gate FAIL（must_fix > 0）**：回到 Step 4（Code Review），根据 review 反馈修复代码，重新 dispatch review subagent
+- **测试失败**：回到 Step 1（TDD），修复失败的测试用例，重新走 TDD 流程
+- **Self-Check 不通过**：就地修复，不需要回退
+
+**不可回退的步骤**（仅首次执行）：Step 2 的 Codebase Scan
+
+**Auto Mode：** coding-workflow 扩展自动管理 loop 和回退，skill 中无需处理。
+
 ### Agent/Skill 关联
 
 **简单路径（1-4 tasks）：**
@@ -53,9 +65,19 @@ Implement the feature according to plan.md, following TDD methodology, then get 
 
 ## Steps
 
-### 1. TDD (Test-Driven Development)
+### 1. TDD / 编码
 
-Load xyz-harness-test-driven-development skill. For each task: write failing tests → verify fail → implement minimal code → verify pass → refactor.
+根据 task 类型选择开发流程：
+
+**后端 task — 严格 TDD：**
+- 加载 xyz-harness-test-driven-development skill
+- 每个 task 必须走完整 TDD 循环：写失败测试 → 验证失败 → 写最小实现 → 验证通过 → 重构
+- 无例外，不可跳过
+
+**前端 task — 三阶段开发：**
+- 加载 xyz-harness-frontend-dev skill
+- 走骨架→功能→美化三阶段，不走 TDD
+- 前端组件测试在功能阶段完成后补充（非 TDD 的先写测试）
 
 ### 2. Code Implementation
 
@@ -66,10 +88,9 @@ Load xyz-harness-test-driven-development skill. For each task: write failing tes
 - **5 tasks 以上，或跨前后端，或有 Execution Groups 定义**→ 复杂路径
 
 **简单路径：** 主 agent 直接编码（不加载 subagent-driven-development）
-- 加载 xyz-harness-test-driven-development skill 到主 agent 上下文
-- 后端 task: 加载 xyz-harness-backend-dev skill
-- 前端 task: 加载 xyz-harness-frontend-dev skill
-- 按 TDD 流程逐 task 执行：写失败测试 → 实现 → 验证通过
+- 后端 task: 加载 xyz-harness-test-driven-development + xyz-harness-backend-dev skill
+- 前端 task: 加载 xyz-harness-frontend-dev skill（走三阶段开发，不走 TDD）
+- 按 task 类型分别执行对应流程
 
 **复杂路径：** 参考 xyz-harness-subagent-driven-development skill
 - 主 agent 只做调度，**不写任何实现代码**（禁码铁律）
@@ -96,7 +117,7 @@ Dispatch 独立审查 subagent：
 
 2. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/glm-5.1
+   - **Model**: 由 coding-workflow 扩展按 taskComplexity 自动选择（review: medium）
    - **Task prompt**:
      ```
      你是独立审查专家。按以下步骤执行编码评审：
@@ -129,11 +150,15 @@ Dispatch 独立审查 subagent：
 
 ### 4a. Retrospect (复盘)
 
-**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 4。
+**触发时机：**
+- **Auto Mode：** coding-workflow 扩展在 gate PASS 后自动 dispatch retrospect subagent
+- **Manual Mode：** 当用户告知 gate check 通过后，手动 dispatch retrospect subagent
+
+然后进入 Phase 4。
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/ds-flash
+   - **Model**: 由 coding-workflow 扩展按 taskComplexity 自动选择（retrospect: low）
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：

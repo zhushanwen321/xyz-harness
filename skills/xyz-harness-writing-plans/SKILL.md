@@ -17,6 +17,14 @@ description: >-
 | 下游（完成后进入） | Phase 3 (dev) — 加载 phase-dev skill |
 | 回退目标 | 如评审不通过 → 回退到 Phase 2 修改 plan |
 
+## Phase Loop 机制
+
+- **Gate FAIL（plan 不完整）**：回到 plan.md 编写，根据 gate 反馈补充缺失内容
+- **Review FAIL（must_fix > 0）**：根据 review 反馈修改 plan，重新 dispatch review subagent
+- **Self-Review 发现问题**：直接修复，不需要回退
+
+**Auto Mode：** coding-workflow 扩展自动管理 loop，skill 中无需处理。
+
 ### Agent/Skill 关联
 
 | 步骤 | 执行者 | Agent | Skill | 方式 |
@@ -261,7 +269,7 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 | 配置项 | 值 |
 |--------|---|
 | Agent | general-purpose → general-purpose → general-purpose |
-| Model | `router-openai/glm-5.1`（executor）、`router-openai/ds-flash`（tdd-coder） |
+| Model | 按 taskComplexity 自动选择（executor: high、tdd-coder: medium） |
 | 注入上下文 | {列出具体内容：哪些 task 描述、spec 章节、编码规范} |
 | 读取文件 | {列出需要读取的已有文件路径} |
 | 修改/创建文件 | {列出将要创建或修改的文件路径} |
@@ -293,7 +301,7 @@ Plan 必须将 Task 按前后端类型分组，形成 Execution Groups。每个 
 | 配置项 | 值 |
 |--------|---|
 | Agent | general-purpose → general-purpose |
-| Model | `kimi-coding-plan/kimi-for-coding` |
+| Model | 按 taskComplexity 自动选择（前端: medium） |
 | 注入上下文 | {task 描述 + spec UI 规格 + 前端规范 + 设计稿路径} |
 | 读取文件 | {参考组件、路由文件等} |
 | 修改/创建文件 | {见 Task Files 列表} |
@@ -424,7 +432,7 @@ verdict: pass
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/glm-5.1
+   - **Model**: 由 coding-workflow 扩展按 taskComplexity 自动选择（review: medium）
    - **Task prompt**:
      ```
      你是独立审查专家。按以下步骤执行审查：
@@ -456,11 +464,15 @@ verdict: pass
 
 ## Retrospect (复盘)
 
-**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 3。
+**触发时机：**
+- **Auto Mode：** coding-workflow 扩展在 gate PASS 后自动 dispatch retrospect subagent
+- **Manual Mode：** 当用户告知 gate check 通过后，手动 dispatch retrospect subagent
+
+然后进入 Phase 3。
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/ds-flash
+   - **Model**: 由 coding-workflow 扩展按 taskComplexity 自动选择（retrospect: low）
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：

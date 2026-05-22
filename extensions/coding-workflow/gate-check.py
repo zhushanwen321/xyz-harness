@@ -3,10 +3,11 @@
 Harness Gate Check — Standalone executable validation script.
 
 Usage:
-    python3 check_gate.py <topic_dir> <phase_number>
+    python3 check_gate.py <topic_dir> <phase_number> [--json]
 
 Example:
     python3 check_gate.py .xyz-harness/2026-05-17-system-setting 2
+    python3 check_gate.py .xyz-harness/2026-05-17-system-setting 2 --json
 
 Exit code:
     0 = all checks passed
@@ -18,10 +19,14 @@ import os
 import sys
 import yaml
 import glob
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 PASS = "✅ PASS"
 FAIL = "❌ FAIL"
 
+
+# ── Utility Functions ───────────────────────────────────────
 
 def parse_yaml_frontmatter(filepath):
     """Parse YAML frontmatter from a markdown file.
@@ -35,12 +40,10 @@ def parse_yaml_frontmatter(filepath):
     except Exception as e:
         return None, f"cannot read: {e}"
 
-    # Find first ---
     first = content.find("---")
     if first == -1:
         return None, "no YAML frontmatter (no opening ---)"
 
-    # Find second --- after first
     second = content.find("---", first + 3)
     if second == -1:
         return None, "no YAML frontmatter (no closing ---)"
@@ -103,103 +106,6 @@ def find_latest_review(topic_dir, prefix):
     return files[-1]
 
 
-# ── Phase 1: Spec ──────────────────────────────────────────
-
-def check_phase_1(topic_dir):
-    checks = []
-
-    # 1.1 spec.md exists
-    spec_path = os.path.join(topic_dir, "spec.md")
-    data, err = parse_yaml_frontmatter(spec_path)
-    if err:
-        checks.append(("spec.md", FAIL, err))
-    else:
-        ok, msg = check_field_str(data, "verdict")
-        checks.append(("spec.md", PASS if ok else FAIL, msg))
-
-    # 1.2 spec_review exists
-    review_path = find_latest_review(topic_dir, "spec_review_v")
-    if not review_path:
-        checks.append(("spec_review", FAIL, "no spec_review_v*.md found"))
-    else:
-        data, err = parse_yaml_frontmatter(review_path)
-        if err:
-            checks.append(("spec_review", FAIL, err))
-        else:
-            ok1, msg1 = check_field_str(data, "verdict", "pass")
-            ok2, msg2 = check_field_int(data, "must_fix", 0)
-            verdict_status = PASS if ok1 else FAIL
-            mf_status = PASS if ok2 else FAIL
-            checks.append(("spec_review verdict", verdict_status, msg1))
-            checks.append(("spec_review must_fix", mf_status, msg2))
-
-    return checks
-
-
-# ── Phase 2: Plan ──────────────────────────────────────────
-
-def check_phase_2(topic_dir):
-    checks = []
-
-    # 2.1 plan.md
-    plan_path = os.path.join(topic_dir, "plan.md")
-    data, err = parse_yaml_frontmatter(plan_path)
-    if err:
-        checks.append(("plan.md", FAIL, err))
-    else:
-        ok, msg = check_field_str(data, "verdict", "pass")
-        checks.append(("plan.md", PASS if ok else FAIL, msg))
-
-    # 2.2 e2e-test-plan.md
-    e2e_path = os.path.join(topic_dir, "e2e-test-plan.md")
-    data, err = parse_yaml_frontmatter(e2e_path)
-    if err:
-        checks.append(("e2e-test-plan.md", FAIL, err))
-    else:
-        ok, msg = check_field_str(data, "verdict", "pass")
-        checks.append(("e2e-test-plan.md", PASS if ok else FAIL, msg))
-
-    # 2.3 test_cases_template.json
-    template_path = os.path.join(topic_dir, "test_cases_template.json")
-    if not os.path.exists(template_path):
-        checks.append(("test_cases_template.json", FAIL, "file not found"))
-    else:
-        try:
-            with open(template_path) as f:
-                template = json.load(f)
-        except json.JSONDecodeError as e:
-            checks.append(("test_cases_template.json", FAIL, f"invalid JSON: {e}"))
-        else:
-            cases = template.get("test_cases", [])
-            errors = []
-            for i, c in enumerate(cases):
-                for field in ("id", "type", "title"):
-                    if field not in c:
-                        errors.append(f"case[{i}] missing '{field}'")
-            if errors:
-                checks.append(("test_cases_template.json", FAIL, "; ".join(errors)))
-            else:
-                checks.append(("test_cases_template.json", PASS, f"{len(cases)} cases, all have id/type/title"))
-
-    # 2.4 plan_review
-    review_path = find_latest_review(topic_dir, "plan_review_v")
-    if not review_path:
-        checks.append(("plan_review", FAIL, "no plan_review_v*.md found"))
-    else:
-        data, err = parse_yaml_frontmatter(review_path)
-        if err:
-            checks.append(("plan_review", FAIL, err))
-        else:
-            ok1, msg1 = check_field_str(data, "verdict", "pass")
-            ok2, msg2 = check_field_int(data, "must_fix", 0)
-            checks.append(("plan_review verdict", PASS if ok1 else FAIL, msg1))
-            checks.append(("plan_review must_fix", PASS if ok2 else FAIL, msg2))
-
-    return checks
-
-
-# ── Phase 3: Dev ───────────────────────────────────────────
-
 def _resolve_nested(data, field_path):
     """Resolve a dot-separated field path from nested dict.
     E.g. 'review.verdict' looks in data['review']['verdict'].
@@ -211,7 +117,7 @@ def _resolve_nested(data, field_path):
         if isinstance(current, dict) and part in current:
             current = current[part]
         else:
-            return None, False  # not found
+            return None, False
     return current, True
 
 
@@ -219,17 +125,14 @@ def _flatten_review_fields(data):
     """Try to extract verdict and must_fix from possibly nested frontmatter.
     Returns (verdict, must_fix) as (str|None, int|None).
     """
-    # Try top-level first
     verdict = data.get("verdict") if isinstance(data, dict) else None
     must_fix = data.get("must_fix") if isinstance(data, dict) else None
 
-    # Try nested: review.verdict
     if verdict is None and isinstance(data, dict) and "review" in data:
         review = data["review"]
         if isinstance(review, dict):
             verdict = review.get("verdict")
 
-    # Try nested: statistics.must_fix
     if must_fix is None and isinstance(data, dict) and "statistics" in data:
         stats = data["statistics"]
         if isinstance(stats, dict):
@@ -238,60 +141,73 @@ def _flatten_review_fields(data):
     return verdict, must_fix
 
 
-def check_phase_3(topic_dir):
-    checks = []
+# ── Dataclass Definitions ───────────────────────────────────
 
-    # 3.1 test_results.md
-    results_path = os.path.join(topic_dir, "changes", "evidence", "test_results.md")
-    data, err = parse_yaml_frontmatter(results_path)
-    if err:
-        checks.append(("test_results.md", FAIL, err))
-    else:
-        ok1, msg1 = check_field_str(data, "verdict", "pass")
-        ok2, msg2 = check_field_bool(data, "all_passing", True)
-        checks.append(("test_results.md verdict", PASS if ok1 else FAIL, msg1))
-        checks.append(("test_results.md all_passing", PASS if ok2 else FAIL, msg2))
-
-    # 3.2 code_review
-    review_path = find_latest_review(topic_dir, "code_review_v")
-    if not review_path:
-        checks.append(("code_review", FAIL, "no code_review_v*.md found"))
-    else:
-        data, err = parse_yaml_frontmatter(review_path)
-        if err:
-            checks.append(("code_review", FAIL, err))
-        else:
-            verdict, must_fix = _flatten_review_fields(data)
-            # Check verdict
-            if verdict is None:
-                checks.append(("code_review verdict", FAIL, "'verdict' field missing (checked top-level and review.verdict)"))
-            elif not isinstance(verdict, str):
-                checks.append(("code_review verdict", FAIL, f"'verdict' type={type(verdict).__name__}, expected str"))
-            elif verdict != "pass":
-                checks.append(("code_review verdict", FAIL, f"'verdict'={repr(verdict)}, expected 'pass'"))
-            else:
-                checks.append(("code_review verdict", PASS, f"'verdict'={repr(verdict)}"))
-
-            # Check must_fix
-            if must_fix is None:
-                checks.append(("code_review must_fix", FAIL, "'must_fix' field missing (checked top-level and statistics.must_fix)"))
-            elif not isinstance(must_fix, int):
-                checks.append(("code_review must_fix", FAIL, f"'must_fix' type={type(must_fix).__name__}, expected int"))
-            elif must_fix != 0:
-                checks.append(("code_review must_fix", FAIL, f"'must_fix'={must_fix}, expected 0"))
-            else:
-                checks.append(("code_review must_fix", PASS, f"'must_fix'={must_fix}"))
-
-    return checks
+@dataclass
+class FieldCheck:
+    name: str
+    type: str  # "str" | "int" | "bool"
+    expected: Any = None
 
 
-# ── Phase 4: Test ──────────────────────────────────────────
+@dataclass
+class FileCheck:
+    path: str  # relative to topic_dir
+    fields: list[FieldCheck] = field(default_factory=list)
+    validator: Callable[[str, list], None] | None = None
+    # validator 接收 (topic_dir, checks_list) 并向 checks_list append (name, PASS/FAIL, detail)
 
-def check_phase_4(topic_dir):
-    checks = []
 
-    # 4.1 test_cases_template.json 存在（用于跨引用）
+@dataclass
+class ReviewCheck:
+    prefix: str  # e.g. "spec_review_v"
+    nested: bool = False  # True 时用 _flatten_review_fields
+
+
+@dataclass
+class PhaseSpec:
+    name: str
+    deliverables: list[FileCheck] = field(default_factory=list)
+    reviews: list[ReviewCheck] = field(default_factory=list)
+    pre_checks: list[Callable[[str, list], None]] = field(default_factory=list)
+
+
+# ── Validator Functions ─────────────────────────────────────
+
+def validate_test_cases_template(topic_dir, checks):
+    """Validate test_cases_template.json structure: each case needs id/type/title."""
     template_path = os.path.join(topic_dir, "test_cases_template.json")
+    if not os.path.exists(template_path):
+        checks.append(("test_cases_template.json", FAIL, "file not found"))
+        return
+    try:
+        with open(template_path) as f:
+            template = json.load(f)
+    except json.JSONDecodeError as e:
+        checks.append(("test_cases_template.json", FAIL, f"invalid JSON: {e}"))
+        return
+
+    cases = template.get("test_cases", [])
+    errors = []
+    for i, c in enumerate(cases):
+        for req_field in ("id", "type", "title"):
+            if req_field not in c:
+                errors.append(f"case[{i}] missing '{req_field}'")
+    if errors:
+        checks.append(("test_cases_template.json", FAIL, "; ".join(errors)))
+    else:
+        checks.append(("test_cases_template.json", PASS, f"{len(cases)} cases, all have id/type/title"))
+
+
+def validate_test_execution(topic_dir, checks):
+    """Validate test_execution.json: format, template cross-ref, final round all passed.
+
+    Internally reads test_cases_template.json for case ID cross-reference,
+    then validates execution records cover all template IDs and final round passes.
+    """
+    # 1. Load template for cross-ref
+    template_path = os.path.join(topic_dir, "test_cases_template.json")
+    template_ids = set()
     if not os.path.exists(template_path):
         checks.append(("test_cases_template.json", FAIL, "not found (needed for case ID cross-reference)"))
     else:
@@ -301,29 +217,28 @@ def check_phase_4(topic_dir):
             template_ids = set(c["id"] for c in template.get("test_cases", []))
             checks.append(("test_cases_template.json", PASS, f"{len(template_ids)} cases loaded for cross-ref"))
         except (json.JSONDecodeError, KeyError) as e:
-            template_ids = set()
             checks.append(("test_cases_template.json", FAIL, f"invalid: {e}"))
 
-    # 4.2 test_execution.json
+    # 2. Load execution
     exec_path = os.path.join(topic_dir, "changes", "evidence", "test_execution.json")
     if not os.path.exists(exec_path):
         checks.append(("test_execution.json", FAIL, "file not found"))
-        return checks
+        return
 
     try:
         with open(exec_path) as f:
             execution = json.load(f)
     except json.JSONDecodeError as e:
         checks.append(("test_execution.json", FAIL, f"invalid JSON: {e}"))
-        return checks
+        return
 
-    # Extract execution records
+    # 3. Extract records
     records = execution.get("test_execution", execution.get("execution", []))
     if not records:
         checks.append(("test_execution.json", FAIL, "no test_execution or execution array"))
-        return checks
+        return
 
-    # Check all records have required fields
+    # 4. Check record format
     record_errors = []
     for i, rec in enumerate(records):
         if "caseId" not in rec:
@@ -341,7 +256,7 @@ def check_phase_4(topic_dir):
     else:
         checks.append(("test_execution.json format", PASS, f"{len(records)} records OK"))
 
-    # Check all template case IDs are covered
+    # 5. Cross-ref: all template case IDs covered
     executed_ids = set(rec["caseId"] for rec in records if "caseId" in rec)
     missing_ids = template_ids - executed_ids if template_ids else set()
     if missing_ids:
@@ -349,7 +264,7 @@ def check_phase_4(topic_dir):
     else:
         checks.append(("case ID coverage", PASS, f"all {len(template_ids)} template cases covered"))
 
-    # Check final round all passed
+    # 6. Final round all passed
     rounds = {}
     for rec in records:
         r = rec.get("round", 1)
@@ -362,45 +277,172 @@ def check_phase_4(topic_dir):
     else:
         checks.append(("final round passed", PASS, f"round {last_round}: all passed"))
 
-    return checks
+
+# ── Phase Specifications ────────────────────────────────────
+
+PHASE_SPECS: dict[int, PhaseSpec] = {
+    1: PhaseSpec(
+        name="Spec",
+        deliverables=[
+            FileCheck(path="spec.md", fields=[FieldCheck("verdict", "str")]),
+        ],
+        reviews=[
+            ReviewCheck(prefix="spec_review_v"),
+        ],
+    ),
+    2: PhaseSpec(
+        name="Plan",
+        deliverables=[
+            FileCheck(path="plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
+            FileCheck(path="e2e-test-plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
+            FileCheck(path="test_cases_template.json", validator=validate_test_cases_template),
+        ],
+        reviews=[
+            ReviewCheck(prefix="plan_review_v"),
+        ],
+    ),
+    3: PhaseSpec(
+        name="Dev",
+        deliverables=[
+            FileCheck(
+                path="changes/evidence/test_results.md",
+                fields=[FieldCheck("verdict", "str", "pass"), FieldCheck("all_passing", "bool", True)],
+            ),
+        ],
+        reviews=[
+            ReviewCheck(prefix="code_review_v", nested=True),
+        ],
+    ),
+    4: PhaseSpec(
+        name="Test",
+        deliverables=[
+            FileCheck(path="changes/evidence/test_execution.json", validator=validate_test_execution),
+        ],
+        reviews=[],
+    ),
+    5: PhaseSpec(
+        name="PR",
+        deliverables=[
+            FileCheck(path="changes/evidence/pr_evidence.md", fields=[FieldCheck("pr_created", "bool", True)]),
+            FileCheck(path="changes/evidence/ci_results.md", fields=[FieldCheck("ci_passed", "bool", True)]),
+        ],
+        reviews=[],
+    ),
+}
 
 
-# ── Phase 5: PR ────────────────────────────────────────────
+# ── Generic Phase Check Engine ──────────────────────────────
 
-def check_phase_5(topic_dir):
+def run_phase_checks(topic_dir: str, spec: PhaseSpec) -> list:
+    """Run all checks for a phase based on its declarative spec."""
     checks = []
 
-    # 5.1 pr_evidence.md
-    pr_path = os.path.join(topic_dir, "changes", "evidence", "pr_evidence.md")
-    data, err = parse_yaml_frontmatter(pr_path)
-    if err:
-        checks.append(("pr_evidence.md", FAIL, err))
-    else:
-        ok, msg = check_field_bool(data, "pr_created", True)
-        checks.append(("pr_evidence.md", PASS if ok else FAIL, msg))
+    # Run pre_checks first
+    for pre_check in spec.pre_checks:
+        pre_check(topic_dir, checks)
 
-    # 5.2 ci_results.md
-    ci_path = os.path.join(topic_dir, "changes", "evidence", "ci_results.md")
-    data, err = parse_yaml_frontmatter(ci_path)
-    if err:
-        checks.append(("ci_results.md", FAIL, err))
-    else:
-        ok, msg = check_field_bool(data, "ci_passed", True)
-        checks.append(("ci_results.md", PASS if ok else FAIL, msg))
+    # Check deliverables
+    for fc in spec.deliverables:
+        if fc.validator:
+            fc.validator(topic_dir, checks)
+        else:
+            abs_path = os.path.join(topic_dir, fc.path)
+            data, err = parse_yaml_frontmatter(abs_path)
+            if err:
+                checks.append((fc.path, FAIL, err))
+            else:
+                for f in fc.fields:
+                    if f.type == "str":
+                        ok, msg = check_field_str(data, f.name, f.expected)
+                    elif f.type == "int":
+                        ok, msg = check_field_int(data, f.name, f.expected)
+                    elif f.type == "bool":
+                        ok, msg = check_field_bool(data, f.name, f.expected or True)
+                    else:
+                        ok, msg = False, f"unknown field type '{f.type}'"
+                    checks.append((f"{fc.path} {f.name}", PASS if ok else FAIL, msg))
+
+    # Check reviews
+    for rc in spec.reviews:
+        review_path = find_latest_review(topic_dir, rc.prefix)
+        if not review_path:
+            checks.append((f"{rc.prefix}*", FAIL, f"no {rc.prefix}*.md found"))
+        else:
+            data, err = parse_yaml_frontmatter(review_path)
+            if err:
+                checks.append((rc.prefix, FAIL, err))
+            else:
+                review_name = os.path.basename(review_path).replace(".md", "")
+
+                if rc.nested:
+                    verdict, must_fix = _flatten_review_fields(data)
+                    # Check verdict
+                    if verdict is None:
+                        checks.append((f"{review_name} verdict", FAIL, "'verdict' field missing (checked top-level and review.verdict)"))
+                    elif not isinstance(verdict, str) or verdict != "pass":
+                        checks.append((f"{review_name} verdict", FAIL, f"'verdict'={repr(verdict)}, expected 'pass'"))
+                    else:
+                        checks.append((f"{review_name} verdict", PASS, f"'verdict'={repr(verdict)}"))
+                    # Check must_fix
+                    if must_fix is None:
+                        checks.append((f"{review_name} must_fix", FAIL, "'must_fix' field missing (checked top-level and statistics.must_fix)"))
+                    elif not isinstance(must_fix, int) or must_fix != 0:
+                        checks.append((f"{review_name} must_fix", FAIL, f"'must_fix'={must_fix}, expected 0"))
+                    else:
+                        checks.append((f"{review_name} must_fix", PASS, f"'must_fix'={must_fix}"))
+                else:
+                    ok1, msg1 = check_field_str(data, "verdict", "pass")
+                    ok2, msg2 = check_field_int(data, "must_fix", 0)
+                    checks.append((f"{review_name} verdict", PASS if ok1 else FAIL, msg1))
+                    checks.append((f"{review_name} must_fix", PASS if ok2 else FAIL, msg2))
 
     return checks
+
+
+# ── Output Formatters ───────────────────────────────────────
+
+def output_human(phase, phase_name, topic_dir, checks):
+    """Print human-readable gate check results."""
+    print(f"Gate Check — Phase {phase}: {phase_name}")
+    print(f"Topic: {topic_dir}")
+    print()
+
+    failures = 0
+    for name, status, detail in checks:
+        icon = "✅" if status == PASS else "❌"
+        print(f"  {icon}  {name}: {detail}")
+        if status == FAIL:
+            failures += 1
+
+    print()
+    if failures == 0:
+        print(f"✅ Phase {phase} gate: PASS — all {len(checks)} checks passed")
+    else:
+        print(f"❌ Phase {phase} gate: FAIL — {failures}/{len(checks)} checks failed")
+
+    return failures
+
+
+def output_json(phase, phase_name, topic_dir, checks):
+    """Print JSON gate check results."""
+    failures = sum(1 for _, status, _ in checks if status == FAIL)
+    result = {
+        "passed": failures == 0,
+        "phase": phase,
+        "phase_name": phase_name,
+        "topic_dir": topic_dir,
+        "checks": [
+            {"name": name, "passed": status == PASS, "detail": detail}
+            for name, status, detail in checks
+        ],
+        "total_checks": len(checks),
+        "failures": failures,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return failures
 
 
 # ── Main ────────────────────────────────────────────────────
-
-PHASE_CHECKERS = {
-    1: ("Spec", check_phase_1),
-    2: ("Plan", check_phase_2),
-    3: ("Dev", check_phase_3),
-    4: ("Test", check_phase_4),
-    5: ("PR", check_phase_5),
-}
-
 
 def main():
     if len(sys.argv) < 3:
@@ -414,7 +456,9 @@ def main():
         print(f"ERROR: phase must be a number (1-5), got {sys.argv[2]}")
         sys.exit(1)
 
-    if phase not in PHASE_CHECKERS:
+    use_json = "--json" in sys.argv[3:]
+
+    if phase not in PHASE_SPECS:
         print(f"ERROR: phase must be 1-5, got {phase}")
         sys.exit(1)
 
@@ -422,27 +466,15 @@ def main():
         print(f"ERROR: topic directory not found: {topic_dir}")
         sys.exit(1)
 
-    phase_name, checker = PHASE_CHECKERS[phase]
-    print(f"Gate Check — Phase {phase}: {phase_name}")
-    print(f"Topic: {topic_dir}")
-    print()
+    spec = PHASE_SPECS[phase]
+    checks = run_phase_checks(topic_dir, spec)
 
-    checks = checker(topic_dir)
-    failures = 0
-
-    for name, status, detail in checks:
-        icon = "✅" if status == PASS else "❌"
-        print(f"  {icon}  {name}: {detail}")
-        if status == FAIL:
-            failures += 1
-
-    print()
-    if failures == 0:
-        print(f"✅ Phase {phase} gate: PASS — all {len(checks)} checks passed")
-        sys.exit(0)
+    if use_json:
+        failures = output_json(phase, spec.name, topic_dir, checks)
     else:
-        print(f"❌ Phase {phase} gate: FAIL — {failures}/{len(checks)} checks failed")
-        sys.exit(1)
+        failures = output_human(phase, spec.name, topic_dir, checks)
+
+    sys.exit(0 if failures == 0 else 1)
 
 
 if __name__ == "__main__":

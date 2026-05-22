@@ -39,6 +39,16 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 Thinking "skip TDD just this once"? Stop. That's rationalization.
 
+### 多轮 Loop 中的秒过机制
+
+在 Phase 3 的多轮 loop 中（gate fail 后回退），如果当前轮次只需要修复 bug 而不需要修改测试，TDD stage 可以秒过：
+
+- **本轮需要修改测试代码**：正常走 TDD 流程（红→绿→重构）
+- **本轮只修改实现代码（测试已覆盖）**：直接修改实现 → 运行已有测试验证通过 → TDD 秒过
+- **判断标准**：如果 bug 修复不改变外部行为（测试已覆盖的行为），只改实现；如果修复改变了外部行为，必须先更新测试
+
+**仅限后端 task。** 前端 task 不走 TDD 流程，不存在秒过问题。
+
 ## The Iron Law
 
 ```

@@ -78,6 +78,11 @@ python3 ~/.pi/agent/skills/xyz-harness-gate/scripts/check_gate.py .xyz-harness/2
 | 2.6 | test_cases_template.json 有 `test_cases` 数组，每项有 `id`/`type`/`title` | 结构完整 |
 | 2.7 | `{topic}/changes/reviews/plan_review_v*.md` 存在 | 至少有一个 review 文件 |
 | 2.8 | 最新 plan_review 的 `verdict` == "pass" 且 `must_fix` == 0 | 字符串 `"pass"`, 数字 `0` |
+| 2.9 | **L2 复杂度：** plan.md 的 `complexity` == "L2" 时，`plan-backend.md` 存在 | 文件存在 |
+| 2.10 | **L2 复杂度：** plan.md 的 `complexity` == "L2" 时，`plan-frontend.md` 存在 | 文件存在 |
+| 2.11 | **L2 复杂度：** plan.md 的 `complexity` == "L2" 时，`plan-api-contract.md` 存在 | 文件存在 |
+
+> **L2 检查为条件性：** 仅当 plan.md 的 YAML frontmatter 中 `complexity: L2` 时执行 2.9-2.11。L1 时跳过。
 
 ### Phase 3 — Dev
 

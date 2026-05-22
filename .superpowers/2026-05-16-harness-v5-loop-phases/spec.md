@@ -186,10 +186,11 @@ AI 自主判断 TDD 是增量还是全量。如果本轮不需要修改测试，
 | test_execution.json | `{topicDir}/changes/evidence/test_execution.json` |
 
 **L1 检查：**
-1. test_execution.json 的 case ID 集合 === test_cases_template.json 的 case ID 集合
-2. 每个 case 的 `executions` 数组至少有 1 条记录
-3. 每个 case 最后一条 `executed=true` 的记录中 `passed === true`
-4. 所有 `passed=true` 的记录中 `execute_steps` 非空
+1. test_execution.json 存在且是有效 JSON
+2. 所有记录包含 `caseId`/`round`/`passed` 字段
+3. 所有 `caseId` 与 test_cases_template.json 中的 `id` 一一对应
+4. `execute_steps` 为非空 string 数组
+5. 最终轮次（最大 round）的所有记录 `passed === true`
 
 **L2 检查：**
 - execute_steps 命令/请求真实可复现
@@ -300,51 +301,50 @@ Gate 预期交付物随复杂度级别变化。
 
 ```json
 {
-  "metadata": {
-    "plan_ref": ".xyz-harness/{topic}/plan.md",
-    "total_cases": 0
-  },
-  "cases": [
+  "test_cases": [
     {
-      "id": "TC-1",
-      "name": "用例名称",
-      "category": "integration | functional | contract | regression",
-      "priority": "P0 | P1 | P2",
-      "steps": ["步骤1", "步骤2"],
-      "expected": "预期结果描述",
-      "executions": []
+      "id": "TC-1-01",
+      "type": "api",
+      "title": "用例标题",
+      "description": "可选：详细描述",
+      "steps": ["步骤1", "步骤2"]
     }
   ]
 }
 ```
 
-### 执行记录（Test Phase 每轮追加）
+**必填字段：** `id`（string）、`type`（string）、`title`（string）。
+**可选字段：** `description`、`steps`。
 
-Test Phase 复制模板为 `test_execution.json`，每轮 loop 向每个 case 的 `executions` 数组追加：
+### 执行记录（Test Phase 产出）
+
+`test_execution.json` 采用扁平结构，每条记录对应一个 case 的一轮执行：
 
 ```json
 {
-  "executions": [
+  "test_execution": [
     {
+      "caseId": "TC-1-01",
       "round": 1,
-      "timestamp": "2026-05-16T10:30:00Z",
-      "executed": true,
       "passed": false,
-      "error": "失败原因（passed=false 时必填）",
-      "execute_steps": "实际执行过程描述（executed=true 时必填）"
+      "execute_steps": ["call GET /api/config", "verify 200 response"],
+      "evidence": "失败原因描述"
+    },
+    {
+      "caseId": "TC-1-01",
+      "round": 2,
+      "passed": true,
+      "execute_steps": ["call GET /api/config", "verify 200 response"],
+      "evidence": "修复后通过"
     }
   ]
 }
 ```
 
-### 字段填写规则
+**必填字段：** `caseId`（string，必须匹配 template 的 id）、`round`（正整数）、`passed`（boolean）、`execute_steps`（string 数组，至少一个元素）。
+**可选字段：** `evidence`。
 
-| 字段 | 规则 |
-|------|------|
-| `executed` | AI 决定本轮是否执行。true=执行，false=跳过 |
-| `passed` | 仅 executed=true 时有效 |
-| `error` | passed=false 时必填，填写实际错误信息 |
-| `execute_steps` | executed=true 时必填，包含具体命令/请求/验证方式。executed=false 可为空 |
+**Gate 检查规则：** gate 只检查最终轮次（最大 round）的所有记录是否 `passed=true`。同一 caseId 可有多条记录（不同 round），表示修复后重跑。
 
 ### L2 防伪造检查要点
 

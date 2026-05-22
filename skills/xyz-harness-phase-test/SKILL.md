@@ -3,7 +3,8 @@ name: xyz-harness-phase-test
 description: >-
   Phase 4 (test) of the manual xyz-harness workflow. Use when the user says
   "start Phase 4", "test phase", "run tests", "execute test cases", or after
-  dev is done to run E2E/integration tests.
+  dev is done to execute integration/functional tests (verifying module
+  collaboration and API contracts, not UI-level E2E).
 ---
 
 # Phase 4: Test
@@ -18,6 +19,16 @@ description: >-
 | 下游（完成后进入） | Phase 5 (pr) — 加载 phase-pr skill |
 | 回退目标 | 测试失败 → 修复 → 重新执行 |
 
+## Phase Loop 机制
+
+Gate FAIL 后回到循环起点继续：
+
+- **Gate FAIL（test 有未通过）**：回到 Step 3（Execute），修复失败的 case，更新 test_execution.json 追加新 round 记录
+- **test_execution.json 格式错误**：就地修复 JSON 格式，不需要重跑测试
+- **Self-Check 不通过**：就地修复，不需要回退
+
+**Auto Mode：** coding-workflow 扩展自动管理 loop 和回退，skill 中无需处理。
+
 ### Agent/Skill 关联
 
 | 步骤 | 执行者 | Agent | Skill | 方式 |
@@ -28,7 +39,9 @@ description: >-
 
 ## Purpose
 
-Execute test cases from test_cases_template.json, record results in test_execution.json, and fix any failures.
+Execute integration/functional test cases from test_cases_template.json, record results in test_execution.json, and fix any failures.
+
+**测试类型限定：** 本阶段执行集成/功能测试（验证模块间协作、API 契约），不执行 UI 级 E2E 测试。test_cases_template.json 中的 `type` 字段应为 `api`、`integration` 或 `manual`，而非 `ui`。
 
 ## Prerequisites
 
@@ -107,11 +120,15 @@ If any test fails: diagnose → fix → re-run → update execution json.
 
 ### 4a. Retrospect (复盘)
 
-**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 5。
+**触发时机：**
+- **Auto Mode：** coding-workflow 扩展在 gate PASS 后自动 dispatch retrospect subagent
+- **Manual Mode：** 当用户告知 gate check 通过后，手动 dispatch retrospect subagent
+
+然后进入 Phase 5。
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/ds-flash
+   - **Model**: 按 taskComplexity 自动选择（retrospect: low）
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：

@@ -17,6 +17,14 @@ description: >-
 | 下游（完成后进入） | Phase 2 (plan) — 加载 writing-plans skill |
 | 回退目标 | 无前置阶段。如设计需修改，在本阶段内直接迭代 |
 
+## Phase Loop 机制
+
+- **Gate FAIL（spec 不完整）**：回到 Step 5（Write spec），根据 gate 反馈补充缺失内容
+- **Review FAIL（must_fix > 0）**：根据 review 反馈修改 spec，重新 dispatch review subagent
+- **用户要求修改**：直接修改 spec，不需要回退到特定步骤
+
+**Auto Mode：** coding-workflow 扩展自动管理 loop，skill 中无需处理。
+
 ### Agent/Skill 关联
 
 | 步骤 | 执行者 | Agent | Skill | 方式 |
@@ -114,7 +122,7 @@ Keep it concise — this is a reference, not documentation.
 | Item | Value |
 |------|-------|
 | Agent | general-purpose (read-only mode) |
-| Model | router-openai/ds-flash (mechanical scan, no complex reasoning) |
+| Model | 按 taskComplexity 自动选择（scan: low） |
 | Tools | read, bash (no write) |
 
 **After scan completes:** Read `infrastructure-scan.md` and use it to:
@@ -266,22 +274,43 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 **Only proceed to user review when all `[AMBIGUOUS]` markers are resolved.**
 
-## Terminology Step (嵌入 Step 2)
+## Terminology Step (嵌入 Step 2-4)
 
 **MUST + Nullable：** 必须执行，但产出可为空。
 
-在与用户讨论需求的过程中，主动识别 spec 中的模糊术语。具体做法：
+在与用户讨论需求的过程中（Step 2 提问、Step 3 方案探索、Step 4 设计展示），持续执行以下四项实践：
 
-1. **标记模糊术语：** 当用户或你自己使用了一个可能有多种理解的词时，立即指出并提议精确定义
-   - 例："你说的'工作区'是指 bare repo + worktree 的物理结构，还是用户看到的逻辑概念？"
-   - 例："'账户'——你指的是 Customer 还是 User？这是两个不同的概念"
+### 识别并锐化模糊术语
 
-2. **检查已有术语表：** 如果项目根目录存在 `CONTEXT.md`，read 它，检查用户使用的术语是否与已有定义冲突
-   - 冲突时立即指出："你的术语表定义 'cancellation' 为 X，但你似乎在说 Y — 哪个是对的？"
+当用户或你自己使用了一个可能有多种理解的词时，立即指出并提议精确定义：
+- 例："你说的'工作区'是指 bare repo + worktree 的物理结构，还是用户看到的逻辑概念？"
+- 例："'账户'——你指的是 Customer 还是 User？这是两个不同的概念"
 
-3. **记录结果：** 将识别到的模糊术语及其定义记录下来（可用于后续 Step 7 的 CONTEXT.md 产出）
+### 挑战已有术语表
 
-**产出可为空：** 如果需求非常简单，讨论中未出现模糊术语，写"无需额外术语定义"即可。但必须过一遍这个检查。
+如果项目根目录存在 `CONTEXT.md`，read 它，检查用户使用的术语是否与已有定义冲突：
+- 冲突时立即指出："你的术语表定义 'cancellation' 为 X，但你似乎在说 Y — 哪个是对的？"
+
+### 发明边界场景
+
+当讨论领域关系时，主动提出具体场景来测试概念边界：
+- 例："你说'订单可以取消'——如果已经发货了呢？如果已经退款了呢？这些算取消还是另一个操作？"
+- 例："'工作区'可以包含多个'项目'——那一个'项目'可以属于多个'工作区'吗？"
+
+### 交叉引用代码
+
+当用户说某个东西怎么工作时，检查代码是否一致（利用 Step 1 的 Codebase Scan 结果）：
+- 例："你说这个系统不支持部分退款，但我看到代码里有 `partial_refund` 方法——哪个是对的？"
+
+### 即时写入 CONTEXT.md
+
+**当术语被解决时，立即写入/更新 `CONTEXT.md`，不要等到最后批量处理。** 每解决一个术语就更新一次。
+
+`CONTEXT.md` 只包含术语定义，不包含实现细节、不做 spec 用途、不做草稿板。它是术语表，仅此而已。
+
+格式要求：每个术语一句话定义 + 避免使用的同义词。遵循 grill-with-docs skill 的 CONTEXT-FORMAT.md。
+
+**产出可为空：** 如果需求非常简单，讨论中未出现模糊术语且代码无矛盾，跳过写入。但必须过一遍这个检查。
 
 ## Terminology & ADR Step (Step 7)
 
@@ -289,19 +318,14 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 spec.md 写完后、用户审核前，执行以下两个子步骤：
 
-### 7a. CONTEXT.md 产出
+### 7a. CONTEXT.md 最终检查
 
-1. **Read 已有 `CONTEXT.md`**（如果项目根目录存在）
-2. **从 spec.md 中提取核心领域术语**，包括但不限于：
-   - spec 中出现的业务实体名称
-   - 有多种可能理解的术语
-   - 与代码实现直接对应的概念（如 API 路径、数据模型名称）
-3. **Write 或更新 `CONTEXT.md`**：为每个术语提供一句话定义 + 避免使用的同义词
-   - 如果已有 `CONTEXT.md`，只追加新术语，不修改已有定义
-   - 格式遵循 grill-with-docs skill 的 CONTEXT-FORMAT.md
+1. **Read `CONTEXT.md`**（应该已经在 Step 2-4 中被 inline 更新过）
+2. **扫描 spec.md**，检查是否有在 Step 2-4 中遗漏的术语（spec 写作过程中可能引入新概念）
+3. **如有遗漏，追加更新** `CONTEXT.md`
 4. **检查 spec 与 CONTEXT.md 的一致性**：spec 中使用的术语是否与 CONTEXT.md 定义对齐
 
-**产出可为空：** 如果 spec 中无新增领域术语（如纯 bug 修复），跳过写入。但必须执行评估。
+**产出可为空：** 如果 Step 2-4 已经覆盖了所有术语，无需额外写入。但必须执行检查。
 
 ### 7b. ADR 评估
 
@@ -331,7 +355,7 @@ Fix any issues inline. No need to re-review — just fix and move on.
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/glm-5.1
+   - **Model**: 按 taskComplexity 自动选择（review: medium）
    - **Task prompt**:
      ```
      你是独立审查专家。按以下步骤执行审查：
@@ -381,11 +405,15 @@ must_fix: 0
 
 ## Retrospect (复盘)
 
-**触发时机：** 当用户告知 gate check 通过后，立即执行复盘。然后再进入 Phase 2。
+**触发时机：**
+- **Auto Mode：** coding-workflow 扩展在 gate PASS 后自动 dispatch retrospect subagent
+- **Manual Mode：** 当用户告知 gate check 通过后，手动 dispatch retrospect subagent
+
+然后进入 Phase 2。
 
 1. Dispatch subagent：
    - **Agent**: general-purpose
-   - **Model**: router-openai/ds-flash
+   - **Model**: 按 taskComplexity 自动选择（retrospect: low）
    - **Task prompt**:
      ```
      你是复盘分析师。按以下步骤执行：

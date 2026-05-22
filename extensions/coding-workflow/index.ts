@@ -12,27 +12,19 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import type { ChildProcess } from "node:child_process";
-import {
-	resolveModelByComplexity,
-	COMPLEXITY_DEFAULT_THINKING,
-	type ThinkingLevel,
-} from "./lib/model-resolve.js";
-import {
-	runSingleAgent,
-	getFinalOutput,
-	formatUsageStats,
-	cleanupOldTempFiles,
-	type SingleResult,
-} from "./lib/subagent.js";
+import { formatUsageStats } from "./lib/subagent.js";
+import { runGateScript, type GateResult } from "./lib/gate-runner.js";
+import { dispatchReviewSubagent, buildRetrospectFollowUp, type ReviewDispatchResult } from "./lib/review-dispatcher.js";
 
-// ─── Module-level skill cache (populated in before_agent_start) ───
+import * as yaml from "js-yaml";
+import { SkillResolver } from "./lib/skill-resolver.js";
 
-let cachedSkills: Array<{ name: string; filePath: string }> = [];
-const skillContentCache = new Map<string, string>();
+// ─── Module-level skill resolver ─────────────────────────
+
+const skillResolver = new SkillResolver();
 
 // ─── Phase definitions ───────────────────────────────────
 
@@ -81,10 +73,9 @@ const PHASES: PhaseConfig[] = [
 	},
 ];
 
-// Gate check script lives alongside this extension
-const GATE_SCRIPT_PATH = path.join(
-	os.homedir(), ".pi", "agent", "extensions", "coding-workflow", "gate-check.py",
-);
+// Gate check script lives alongside this extension (resolved from this file's location)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const GATE_SCRIPT_PATH = path.join(__dirname, "gate-check.py");
 
 // ─── State ───────────────────────────────────────────────
 
@@ -109,92 +100,7 @@ const activeSubprocesses: ChildProcess[] = [];
 
 // ─── Helpers ─────────────────────────────────────────────
 
-function getSkillContent(
-	skills: Array<{ name: string; filePath: string }>,
-	skillName: string,
-): string {
-	const skill = skills.find((s) => s.name === skillName);
-	if (!skill) {
-		throw new Error(
-			`Skill "${skillName}" not found in systemPromptOptions.skills. ` +
-			`Check that the skill is installed in ~/.pi/agent/skills/.`,
-		);
-	}
-	const cached = skillContentCache.get(skill.filePath);
-	if (cached !== undefined) return cached;
-	const content = fs.readFileSync(skill.filePath, "utf8");
-	skillContentCache.set(skill.filePath, content);
-	return content;
-}
 
-function getSkillContentFallback(skillName: string): string {
-	// Fallback: read directly from known global skill path
-	const skillDir = path.join(os.homedir(), ".pi", "agent", "skills", skillName);
-	const skillFile = path.join(skillDir, "SKILL.md");
-	if (fs.existsSync(skillFile)) {
-		return fs.readFileSync(skillFile, "utf8");
-	}
-	throw new Error(
-		`Skill "${skillName}" not found at ${skillFile}. Check skill installation.`,
-	);
-}
-
-const GATE_SCRIPT_TIMEOUT_MS = 30_000; // 30s timeout for gate-check.py
-
-async function runGateScript(
-	topicDir: string,
-	phase: number,
-): Promise<{ passed: boolean; output: string }> {
-	return new Promise((resolve) => {
-		let settled = false;
-		const settle = (result: { passed: boolean; output: string }) => {
-			if (settled) return;
-			settled = true;
-			resolve(result);
-		};
-
-		const proc = spawn("python3", [GATE_SCRIPT_PATH, topicDir, String(phase)], {
-			shell: false,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-		let stdout = "";
-		let stderr = "";
-
-		const timeout = setTimeout(() => {
-			proc.kill("SIGKILL");
-			settle({ passed: false, output: "Gate check script timed out after 30s" });
-		}, GATE_SCRIPT_TIMEOUT_MS);
-
-		proc.stdout.on("data", (d) => { stdout += d.toString(); });
-		proc.stderr.on("data", (d) => { stderr += d.toString(); });
-		proc.on("close", (code) => {
-			clearTimeout(timeout);
-			settle({
-				passed: code === 0,
-				output: stdout + (stderr ? `\n${stderr}` : ""),
-			});
-		});
-		proc.on("error", (err) => {
-			clearTimeout(timeout);
-			settle({ passed: false, output: `Gate script spawn error: ${err.message}` });
-		});
-	});
-}
-
-function getNextReviewVersion(topicDir: string, prefix: string): number {
-	const reviewsDir = path.join(topicDir, "changes", "reviews");
-	if (!fs.existsSync(reviewsDir)) return 1;
-	const files = fs.readdirSync(reviewsDir);
-	let maxVersion = 0;
-	for (const f of files) {
-		const match = f.match(new RegExp(`^${prefix}_v(\\d+)\\.md$`));
-		if (match) {
-			const v = parseInt(match[1]!, 10);
-			if (v > maxVersion) maxVersion = v;
-		}
-	}
-	return maxVersion + 1;
-}
 
 function parseReviewVerdict(reviewPath: string): {
 	verdict: string;
@@ -210,152 +116,42 @@ function parseReviewVerdict(reviewPath: string): {
 		return { verdict: "fail", mustFix: -1 };
 	}
 	const yamlText = content.slice(first + 3, second).trim();
-	// Minimal YAML parsing for verdict and must_fix (top-level and nested)
-	const lines = yamlText.split("\n");
-	let verdict = "fail";
-	let mustFix = -1;
-	for (const line of lines) {
-		const vMatch = line.match(/^verdict:\s*["']?(\w+)["']?/);
-		if (vMatch) verdict = vMatch[1]!;
-		// Nested fallback: indented verdict under review:
-		const vNested = line.match(/^\s+verdict:\s*["']?(\w+)["']?/);
-		if (vNested && verdict === "fail") verdict = vNested[1]!;
-		const mMatch = line.match(/^must_fix:\s*(\d+)/);
-		if (mMatch) mustFix = parseInt(mMatch[1]!, 10);
-		// Nested fallback: indented must_fix under statistics:
-		const mNested = line.match(/^\s+must_fix:\s*(\d+)/);
-		if (mNested && mustFix === -1) mustFix = parseInt(mNested[1]!, 10);
-	}
-	return { verdict, mustFix };
-}
-
-function getExpertReviewerContent(): string {
 	try {
-		return getSkillContent(cachedSkills, "xyz-harness-expert-reviewer");
+		const data = yaml.load(yamlText) as Record<string, unknown>;
+		if (!data || typeof data !== "object") {
+			return { verdict: "fail", mustFix: -1 };
+		}
+
+		// Extract verdict: check top-level, then review.verdict
+		let verdict: string | undefined;
+		if (typeof data.verdict === "string") {
+			verdict = data.verdict;
+		} else if (
+			typeof data.review === "object" && data.review !== null &&
+			typeof (data.review as Record<string, unknown>).verdict === "string"
+		) {
+			verdict = (data.review as Record<string, unknown>).verdict as string;
+		}
+
+		// Extract must_fix: check top-level, then statistics.must_fix
+		let mustFix: number | undefined;
+		if (typeof data.must_fix === "number") {
+			mustFix = data.must_fix;
+		} else if (
+			typeof data.statistics === "object" && data.statistics !== null &&
+			typeof (data.statistics as Record<string, unknown>).must_fix === "number"
+		) {
+			mustFix = (data.statistics as Record<string, unknown>).must_fix as number;
+		}
+
+		return {
+			verdict: verdict ?? "fail",
+			mustFix: mustFix ?? -1,
+		};
 	} catch {
-		return getSkillContentFallback("xyz-harness-expert-reviewer");
+		return { verdict: "fail", mustFix: -1 };
 	}
 }
-
-// Retrospect skill path — used to build followUp message for main agent
-const RETROSPECT_SKILL_PATH = path.join(
-	os.homedir(), ".pi", "agent", "skills", "harness-retrospect", "SKILL.md",
-);
-
-function buildReviewTaskPrompt(
-	phaseConfig: PhaseConfig,
-	topicDir: string,
-	nextVersion: number,
-): string {
-	const reviewPath = path.join(
-		topicDir, "changes", "reviews",
-		`${phaseConfig.reviewPrefix}_v${nextVersion}.md`,
-	);
-	const deliverableList = phaseConfig.deliverables
-		.map((d) => `   - ${path.join(topicDir, d)}`)
-		.join("\n");
-
-	return [
-		`你是独立审查专家。按以下步骤执行审查：`,
-		``,
-		`1. read \`skills/xyz-harness-expert-reviewer/SKILL.md\`，找到「${phaseConfig.reviewMode}」章节`,
-		`2. read 以下待审查文件：`,
-		deliverableList,
-		`3. 按方法论逐项审查，将结果写入：`,
-		`   ${reviewPath}`,
-		`4. YAML frontmatter 必须包含（在顶层，不能嵌套）:`,
-		`   - verdict: "pass" 或 "fail"`,
-		`   - must_fix: 数字（open MUST_FIX 问题数量）`,
-	].join("\n");
-}
-
-function buildRetrospectFollowUp(
-	phaseConfig: PhaseConfig,
-	topicDir: string,
-): string {
-	const retrospectPath = path.join(
-		topicDir, "changes", "reviews",
-		`${phaseConfig.retrospectPrefix}.md`,
-	);
-	const isOverall = phaseConfig.phase === 5;
-
-	const parts = [
-		`现在执行 Phase ${phaseConfig.phase}（${phaseConfig.name}）的${isOverall ? "整体" : ""}复盘。`,
-		``,
-		`步骤：`,
-		`1. read ${RETROSPECT_SKILL_PATH} 获取复盘方法论`,
-		`2. 基于你在本 phase 中的完整工作经历，按方法论覆盖两个维度（Phase 执行质量 + Harness 体验）`,
-];
-
-	if (isOverall) {
-		const prevRetrospects = PHASES
-			.filter(p => p.phase < 5)
-			.map(p => `   - ${path.join(topicDir, "changes", "reviews", `${p.retrospectPrefix}.md`)}`)
-			.join("\n");
-		parts.push(
-			`3. read 之前 phase 的复盘记录（如果存在）：`,
-			prevRetrospects,
-		);
-	}
-
-	parts.push(
-		`4. 将复盘结果写入：${retrospectPath}`,
-		"5. YAML frontmatter: `phase: " + phaseConfig.name.toLowerCase() + "`, `verdict: pass`",
-		``,
-		`完成后调用 coding-workflow-phase-start() 进入下一阶段。`,
-	);
-
-	return parts.join("\n");
-}
-
-// ─── Subagent dispatch helpers ───────────────────────────
-
-async function dispatchReviewSubagent(
-	phaseConfig: PhaseConfig,
-	topicDir: string,
-	signal: AbortSignal | undefined,
-	onUpdate: ((partial: any) => void) | undefined,
-): Promise<{
-	success: boolean;
-	reviewPath: string;
-	result?: SingleResult;
-	error?: string;
-}> {
-	const modelResult = await resolveModelByComplexity("medium");
-	if (!modelResult.ok) {
-		return { success: false, reviewPath: "", error: modelResult.error };
-	}
-
-	const systemPrompt = getExpertReviewerContent();
-	const nextVersion = getNextReviewVersion(topicDir, phaseConfig.reviewPrefix);
-	const reviewPath = path.join(
-		topicDir, "changes", "reviews",
-		`${phaseConfig.reviewPrefix}_v${nextVersion}.md`,
-	);
-	const taskPrompt = buildReviewTaskPrompt(phaseConfig, topicDir, nextVersion);
-
-	cleanupOldTempFiles();
-	const result = await runSingleAgent({
-		task: taskPrompt,
-		systemPrompt,
-		resolvedModel: modelResult.ref,
-		thinkingLevel: COMPLEXITY_DEFAULT_THINKING.medium,
-		cwd: topicDir,
-		signal,
-		onUpdate,
-		processRegistry: activeSubprocesses,
-	});
-
-	if (result.exitCode !== 0) {
-		const errMsg = result.stderr || getFinalOutput(result.messages) || "Unknown error";
-		return { success: false, reviewPath, error: `Review subagent failed: ${errMsg}` };
-	}
-
-	return { success: true, reviewPath, result };
-}
-
-// Retrospect is now executed in the main agent's context (not as a subagent).
-// This gives the AI full conversation history for higher-quality retrospectives.
 
 // ─── Widget ──────────────────────────────────────────────
 
@@ -484,7 +280,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			const phaseConfig = PHASES[params.phase - 1];
 
 			// 1. Run gate script
-			const gateResult = await runGateScript(state.topicDir, params.phase);
+			const gateResult = await runGateScript(GATE_SCRIPT_PATH, state.topicDir, params.phase);
 			if (!gateResult.passed) {
 				return {
 					content: [{
@@ -500,7 +296,8 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 			try {
 				reviewResult = await dispatchReviewSubagent(
 					phaseConfig, state.topicDir,
-					signal, onUpdate,
+					skillResolver, signal, onUpdate,
+					activeSubprocesses,
 				);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -561,7 +358,7 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 			// Send followUp instructing main agent to write retrospect
 			// (main agent has full conversation history for higher-quality retrospective)
-			const retrospectFollowUp = buildRetrospectFollowUp(phaseConfig, state.topicDir);
+			const retrospectFollowUp = buildRetrospectFollowUp(phaseConfig, state.topicDir, skillResolver, PHASES);
 
 			if (params.phase >= 5) {
 				pi.sendUserMessage(
@@ -842,15 +639,17 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 		const phaseConfig = PHASES[state.currentPhase - 1];
 		if (!phaseConfig) return;
 
-		// Cache skills for use by gate tool's dispatchReviewSubagent
-		cachedSkills = (event.systemPromptOptions?.skills ?? []) as Array<{
-			name: string;
-			filePath: string;
-		}>;
+		// Ingest skills for use by gate tool's dispatchReviewSubagent
+		skillResolver.setSkills(
+			(event.systemPromptOptions?.skills ?? []) as Array<{
+				name: string;
+				filePath: string;
+			}>,
+		);
 
 		let skillContent: string;
 		try {
-			skillContent = getSkillContent(cachedSkills, phaseConfig.skillName);
+			skillContent = skillResolver.resolve(phaseConfig.skillName);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			return {

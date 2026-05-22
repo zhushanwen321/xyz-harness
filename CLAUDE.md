@@ -11,7 +11,7 @@ xyz-harness V5 — AI 编码工作流引擎。两套运行模式：
 - `extensions/todolist/` — Pi 扩展：任务追踪
 - `extensions/claude-rules-loader/` — Pi 扩展：跨项目规则加载
 - `skills/` — SKILL.md 技能定义（11 个）
-- `agents/` — Agent 定义（harness-retrospect 复盘 agent）
+- `agents/` — （已删除，所有 subagent 用 general-purpose + skill 内容注入）
 
 技术栈：TypeScript (Pi Extension API)、Python (gate-check.py)、Markdown (skill/agent 定义)。
 
@@ -148,7 +148,7 @@ gate check pass
   task prompt: "read {skill_path} 获取方法论，然后 read {待处理文件}，按方法论执行，输出到 {output_path}"
 ```
 
-不创建专用 agent（harness-retrospect 除外），避免维护成本。
+不创建专用 agent，避免维护成本。所有 subagent（包括 review 和 retrospect）使用 `general-purpose` agent，通过 task prompt 注入方法论（让 subagent read 对应的 skill 文件）。
 
 ## 文档索引
 
@@ -165,7 +165,7 @@ gate check pass
 | Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | 前端编码规范（编码时参考） |
 | TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | TDD 方法论（编码时参考） |
 | Subagent-Driven Dev | `skills/xyz-harness-subagent-driven-development/SKILL.md` | subagent 调度模式参考 |
-| Retrospect | `skills/harness-retrospect/SKILL.md`（全局）或 `agents/harness-retrospect/agent.md`（项目） | 复盘方法论（subagent system prompt） |
+| Retrospect | `skills/harness-retrospect/SKILL.md` | 复盘方法论（主 agent 通过 followUp read 获取） |
 
 ## Extension
 
@@ -217,16 +217,16 @@ gate check pass
 | Python 3 + PyYAML | gate-check.py 需要 |
 | `~/.pi/agent/subagent-models.json` | 模型配置（review/retrospect subagent 用） |
 | harness skills 已安装 | `~/.pi/agent/skills/xyz-harness-*` |
-| harness-retrospect 可发现 | 全局 agents 或 skills 目录中 |
+| harness-retrospect skill 已安装 | `~/.pi/agent/skills/` 或项目 skills/ 中 |
 
-### Retrospect Agent 发现路径
+### Skill 发现机制
 
-扩展按以下顺序搜索 retrospect agent：
-1. `~/.pi/agent/agents/harness-retrospect/agent.md`（标准安装位置）
-2. `~/.pi/agent/skills/harness-retrospect/agent.md`（skill 注册位置）
-3. `~/Code/xyz-harness-engineering-workspace/xyz-harness-engineering/agents/harness-retrospect/agent.md`（开发时 fallback）
+扩展使用 `SkillResolver` 统一管理所有 skill 的发现和内容获取（ADR-0003）：
+- `SkillResolver` 在 `before_agent_start` 时被注入 Pi 的 `systemPromptOptions.skills` 列表
+- 通过 `resolve(name)` 获取内容，`resolvePath(name)` 获取文件路径
+- 无 fallback：如果 skill 不在注入列表中，直接 throw（硬失败）
 
-搜索逻辑在 `index.ts` 的 `RETROSPECT_AGENT_SEARCH_PATHS` 常量和 `getRetrospectAgentContent()` 函数中。
+实现：`lib/skill-resolver.ts`。
 
 ### Subagent 模型选择
 

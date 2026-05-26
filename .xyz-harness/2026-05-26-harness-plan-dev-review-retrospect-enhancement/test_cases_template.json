@@ -1,0 +1,125 @@
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "integration",
+      "title": "Phase 2 L1 gate passes with use-cases.md and non-functional-design.md",
+      "description": "Verify gate-check.py Phase 2 checks new deliverables (use-cases.md, non-functional-design.md) and passes for L1 plan",
+      "steps": [
+        "Create test topic dir with plan.md (complexity: L1), use-cases.md, non-functional-design.md, plan_review_v1.md",
+        "Run gate-check.py <topic> 2",
+        "Verify all checks PASS, plan_bl_review not checked"
+      ]
+    },
+    {
+      "id": "TC-1-02",
+      "type": "integration",
+      "title": "Phase 2 L2 gate checks plan_bl_review",
+      "description": "Verify gate-check.py checks plan_bl_review for L2 plan",
+      "steps": [
+        "Create test topic dir with plan.md (complexity: L2), plan_bl_review_v1.md (verdict: pass, must_fix: 0)",
+        "Run gate-check.py <topic> 2",
+        "Verify plan_bl_review check exists and passes"
+      ]
+    },
+    {
+      "id": "TC-1-03",
+      "type": "integration",
+      "title": "Phase 3 gate checks 5 specialized reviews",
+      "description": "Verify gate-check.py Phase 3 checks 5 review files instead of code_review_v",
+      "steps": [
+        "Create test topic dir with 5 review files (business_logic/integration/standards/taste/robustness)",
+        "Run gate-check.py <topic> 3",
+        "Verify all 5 reviews checked, code_review_v not checked"
+      ]
+    },
+    {
+      "id": "TC-2-01",
+      "type": "integration",
+      "title": "collect.py scans unabsorbed retrospects by default",
+      "description": "Verify default scan lists only unabsorbed files, treats missing absorbed field as false",
+      "steps": [
+        "Create test dir with 3 retrospect files: 1 absorbed, 1 unabsorbed, 1 without absorbed field",
+        "Run collect.py --root <test_dir>",
+        "Verify 2 files listed (unabsorbed + no-field), absorbed file excluded"
+      ]
+    },
+    {
+      "id": "TC-2-02",
+      "type": "integration",
+      "title": "collect.py absorb updates YAML frontmatter",
+      "description": "Verify --absorb sets absorbed=true, absorbed_date, absorption_summary",
+      "steps": [
+        "Create test retrospect file with absorbed: false",
+        "Run collect.py --absorb <file> --summary 'test'",
+        "Read file and verify YAML: absorbed=true, absorbed_date=today, absorption_summary='test'"
+      ]
+    },
+    {
+      "id": "TC-2-03",
+      "type": "integration",
+      "title": "collect.py aggregate deduplicates and sorts by frequency",
+      "description": "Verify --aggregate outputs deduplicated issues sorted by frequency",
+      "steps": [
+        "Create test dir with 3 retrospect files sharing some harness_issues",
+        "Run collect.py --aggregate --root <test_dir>",
+        "Verify output shows deduplicated issues with correct frequency counts, sorted descending"
+      ]
+    },
+    {
+      "id": "TC-3-01",
+      "type": "manual",
+      "title": "Brainstorming skill includes business use case section",
+      "description": "Verify updated brainstorming skill requires business use cases in spec.md",
+      "steps": [
+        "Read updated xyz-harness-brainstorming SKILL.md",
+        "Verify spec template contains business use case section",
+        "Verify Six-Element Completeness table has Business use cases row"
+      ]
+    },
+    {
+      "id": "TC-3-02",
+      "type": "manual",
+      "title": "Writing-plans skill includes use-cases.md and non-functional-design.md deliverables",
+      "description": "Verify updated writing-plans skill documents new Phase 2 deliverables",
+      "steps": [
+        "Read updated xyz-harness-writing-plans SKILL.md",
+        "Verify use-cases.md format and requirements documented",
+        "Verify non-functional-design.md format and requirements documented"
+      ]
+    },
+    {
+      "id": "TC-3-03",
+      "type": "manual",
+      "title": "Phase-dev skill includes 5-step review orchestration",
+      "description": "Verify updated phase-dev skill replaces code_review with 5 specialized reviews",
+      "steps": [
+        "Read updated xyz-harness-phase-dev SKILL.md",
+        "Verify Step 4 contains Batch 1 (4 parallel) + Batch 2 (1 sequential)",
+        "Verify old code_review dispatch logic removed"
+      ]
+    },
+    {
+      "id": "TC-4-01",
+      "type": "integration",
+      "title": "Standards reviewer handles no-lint project gracefully",
+      "description": "Verify standards_review omits linter_passed when project has no lint config",
+      "steps": [
+        "Dispatch standards_review subagent on project without lint config",
+        "Read output review file",
+        "Verify no linter_passed field in YAML, report notes 'project has no lint config'"
+      ]
+    },
+    {
+      "id": "TC-4-02",
+      "type": "integration",
+      "title": "Retrospect YAML contains absorption tracking fields",
+      "description": "Verify harness-retrospect skill outputs new YAML fields",
+      "steps": [
+        "Dispatch retrospect subagent",
+        "Read output file",
+        "Verify YAML contains: absorbed (bool), topic (string), harness_issues (array)"
+      ]
+    }
+  ]
+}

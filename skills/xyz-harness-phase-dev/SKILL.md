@@ -278,3 +278,21 @@ Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 ### 8. Tell user
 
 When done: "Phase 3 complete. Code implemented and reviewed. Please run gate check in a separate session. When gate passes, come back and I'll run the retrospective. Then say 'start Phase 4' to continue."
+
+## Self-Check Checklist
+
+### MUST FIX 修复后
+- [ ] 修复 MUST FIX 时，是否检查了同路径/同文件中其他相关调用点？
+- [ ] 修复是否可能引入回归？（特别是缩进修复、条件分支修改）
+- [ ] 缩进修复应使用 whitespace-fixer skill，不手动编辑
+
+### 迁移类工作
+- [ ] 迁移前是否列出了所有被迁移的调用点/引用？
+- [ ] 每个调用点是否逐个标注了覆盖状态？
+- [ ] 是否存在"改了 A 忘了 B"的对称性遗漏？
+
+### Task 验收标准
+- [ ] 每个 subagent task prompt 是否包含量化验收标准？
+  - 输出文件路径
+  - 约束条件（如"函数不超过 N 行"）
+  - 成功指标（如"测试通过"）

@@ -112,6 +112,27 @@ find_pr_for_branch() {
     echo "${pr_num:-}"
 }
 
+# 同步子项目 package.json 版本号到与根一致
+# 典型场景：Electron 项目的 src-electron/package.json 是独立 npm project，
+# electron-builder 和 CI 从它读版本号，必须与根 package.json 保持同步
+sync_sub_package_versions() {
+    local base_dir="$1"
+    local version="$2"
+
+    local sub_projects=("src-electron")
+    for sub in "${sub_projects[@]}"; do
+        local sub_pkg="$base_dir/$sub/package.json"
+        if [[ -f "$sub_pkg" ]]; then
+            local sub_ver
+            sub_ver=$(node -p "require('$sub_pkg').version")
+            if [[ "$sub_ver" != "$version" ]]; then
+                npm version --prefix "$base_dir/$sub" "$version" --no-git-tag-version 2>&1
+                echo "  同步 $sub/package.json: $sub_ver → $version"
+            fi
+        fi
+    done
+}
+
 run_hook() {
     local hook_name="$1"
     shift
@@ -393,26 +414,33 @@ for search_dir in "$MAIN_WT" "$WORKTREE_DIR"; do
 done
 
 if [[ -n "$PUBLISH_SH" ]]; then
-    if grep -q 'gh workflow run' "$PUBLISH_SH"; then
-        echo "  检测到 GitHub Actions 发布脚本"
-        (
-            cd "$(dirname "$PUBLISH_SH")/.."
-            bash "$PUBLISH_SH" "$VERSION_TYPE"
-        ) || {
-            echo -e "${RED}Error: 发布脚本失败${NC}"
-            exit 1
-        }
+    # 幂等检查：当前版本 release 已存在则跳过（防止超时重跑触发空版本）
+    _CUR_VER=$(node -p "require('$MAIN_WT/package.json').version")
+    if gh release view "v$_CUR_VER" $GH_FLAG --json tagName >/dev/null 2>&1; then
+        echo -e "  ${GREEN}⏭️  Release v$_CUR_VER 已存在，跳过发布脚本${NC}"
+        NEW_VERSION="$_CUR_VER"
     else
-        (
-            cd "$MAIN_WT"
-            bash "$PUBLISH_SH" "$VERSION_TYPE"
-        ) || {
-            echo -e "${RED}Error: 发布脚本失败${NC}"
-            exit 1
-        }
+        if grep -q 'gh workflow run' "$PUBLISH_SH"; then
+            echo "  检测到 GitHub Actions 发布脚本"
+            (
+                cd "$(dirname "$PUBLISH_SH")/.."
+                bash "$PUBLISH_SH" "$VERSION_TYPE"
+            ) || {
+                echo -e "${RED}Error: 发布脚本失败${NC}"
+                exit 1
+            }
+        else
+            (
+                cd "$MAIN_WT"
+                bash "$PUBLISH_SH" "$VERSION_TYPE"
+            ) || {
+                echo -e "${RED}Error: 发布脚本失败${NC}"
+                exit 1
+            }
+        fi
+        # 发布脚本自行处理版本 bump 和 tag，读取版本号
+        NEW_VERSION=$(node -p "require('$MAIN_WT/package.json').version")
     fi
-    # 发布脚本自行处理版本 bump 和 tag，读取版本号
-    NEW_VERSION=$(node -p "require('$MAIN_WT/package.json').version")
 else
     # 4b. 没有项目发布脚本 → 自行 bump 版本 + tag + push
     TAG=""
@@ -423,32 +451,40 @@ else
     if [[ -n "$OP_DIR" ]] && [[ -f "$OP_DIR/package.json" ]]; then
         CURRENT_VERSION=$(node -p "require('$OP_DIR/package.json').version")
 
-        EXISTING_TAG="v$CURRENT_VERSION"
-        if git -C "$OP_DIR" rev-parse "$EXISTING_TAG" >/dev/null 2>&1; then
-            echo -e "  ${GREEN}⏭️  Tag $EXISTING_TAG 已存在，跳过版本 bump${NC}"
-            NEW_VERSION="$CURRENT_VERSION"
-            TAG="$EXISTING_TAG"
-        else
-            (
-                cd "$OP_DIR"
-                git fetch "$GH_REMOTE" main 2>&1 | tail -1
-                git merge --ff-only FETCH_HEAD 2>&1 | tail -1 || { echo "  ${RED}Error: 无法 fast-forward main${NC}"; exit 1; }
-                npm version "$VERSION_TYPE" --no-git-tag-version 2>&1
-                NEW_VERSION=$(node -p "require('./package.json').version")
-                TAG="v$NEW_VERSION"
+        # 始终执行 bump：合并了新代码后需要新版本号，
+        # 旧 tag 存在不代表不需要新版本，而是当前版本已发布过需要 bump
+        (
+            cd "$OP_DIR"
+            git fetch "$GH_REMOTE" main 2>&1 | tail -1
+            git merge --ff-only FETCH_HEAD 2>&1 | tail -1 || { echo "  ${RED}Error: 无法 fast-forward main${NC}"; exit 1; }
+        )
+        # 在主进程中执行 bump，以便 NEW_VERSION 传入 hook
+        npm version --prefix "$OP_DIR" "$VERSION_TYPE" --no-git-tag-version 2>&1
+        NEW_VERSION=$(node -p "require('$OP_DIR/package.json').version")
+        TAG="v$NEW_VERSION"
+        echo "  版本: $CURRENT_VERSION → $NEW_VERSION"
 
-                echo "  版本: $CURRENT_VERSION → $NEW_VERSION"
+        # 自动同步子项目 package.json 版本（如 src-electron/package.json）
+        # electron-builder 和 CI 从 src-electron/package.json 读版本号，必须和根保持一致
+        sync_sub_package_versions "$OP_DIR" "$NEW_VERSION"
 
-                git add package.json package-lock.json 2>/dev/null || true
-                git commit -m "chore: bump version to $NEW_VERSION" 2>/dev/null || echo "  无变更需提交"
-                git tag "$TAG" 2>/dev/null || echo "  Tag 已存在"
-                git push "$GH_REMOTE" HEAD:refs/heads/main --tags 2>&1 | tail -1
-            )
-            # 从 OP_DIR 重新读取版本号（子 shell 中的变量不传回）
-            NEW_VERSION=$(node -p "require('$OP_DIR/package.json').version")
-            TAG="v$NEW_VERSION"
-            echo -e "  ${GREEN}✅ 版本 bump + tag + push 完成${NC}"
-        fi
+        # 项目级 hook：bump 后、commit 前执行（可同步子 package.json 等）
+        run_hook "post-bump.sh" "$OP_DIR" || {
+            echo -e "  ${RED}Error: post-bump 钩子失败${NC}"
+            exit 1
+        }
+
+        (
+            cd "$OP_DIR"
+            git add package.json package-lock.json 2>/dev/null || true
+            # add 任何 hook 可能修改的文件（子 package.json 等）
+            git add -A -- '*.json' 2>/dev/null || true
+            git commit -m "chore: bump version to $NEW_VERSION" 2>/dev/null || echo "  无变更需提交"
+            git tag "$TAG" 2>/dev/null || echo "  Tag 已存在"
+            git push "$GH_REMOTE" HEAD:refs/heads/main --tags 2>&1 | tail -1
+        )
+        TAG="v$NEW_VERSION"
+        echo -e "  ${GREEN}✅ 版本 bump + tag + push 完成${NC}"
     else
         # 非 npm 项目：手动 tag
         NEW_VERSION="${VERSION_TYPE}-$(date +%Y%m%d%H%M%S)"
@@ -467,7 +503,7 @@ else
         TAG_SHA=$(git -C "${OP_DIR}" rev-parse "$TAG" 2>/dev/null || echo "")
 
         if [[ -n "$TAG_SHA" ]]; then
-            bash "$SCRIPT_DIR/wait-for-ci.sh" "$TAG_SHA" --timeout 900 --workflow "Release" 2>&1 || {
+            bash "$SCRIPT_DIR/wait-for-ci.sh" "$TAG_SHA" --timeout 900 --workflow "Release" --verify-release "$TAG" $GH_FLAG 2>&1 || {
                 WAIT_EXIT=$?
                 if [[ $WAIT_EXIT -eq 1 ]]; then
                     echo -e "  ${RED}❌ Release CI 构建失败！查看日志: gh run view --log-failed${NC}"
@@ -533,10 +569,15 @@ else
 fi
 
 # 5c. 创建或更新 Release
-EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id --jq '.' 2>/dev/null || echo "")
+EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body --jq '.' 2>/dev/null || echo "")
 
 if [[ -n "$EXISTING_RELEASE" ]]; then
-    echo "  更新已有 Release: $TAG"
+    EXISTING_BODY=$(echo "$EXISTING_RELEASE" | jq -r '.body // ""' 2>/dev/null || echo "")
+    if [[ -z "$EXISTING_BODY" ]] || [[ ${#EXISTING_BODY} -lt 20 ]]; then
+        echo "  ⚠️  Release $TAG 已存在但 notes 为空，回填中..."
+    else
+        echo "  更新已有 Release: $TAG"
+    fi
     gh release edit "$TAG" $GH_FLAG --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
     RELEASE_URL="${REPO_URL}/releases/tag/$TAG"
 

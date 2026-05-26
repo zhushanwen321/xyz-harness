@@ -408,3 +408,19 @@ No exceptions without your human partner's permission.
 
 **文档精简：** 单次写入超过 1000 字时优先拆分子文档，主文档保留概述和索引。使用 agent 并行编写各模块文档（并发度 ≤ 2），最后合成精简主文档。
 <!-- LOCAL-OVERRIDE:END -->
+
+## Task Prompt 上下文传递规则
+
+TDD subagent 的 task prompt 必须包含：
+1. **spec 的关键数据模型定义**（接口、类型、枚举值）——不能只传"为 X 写测试"
+2. **被测函数的签名和预期行为**——不能让 subagent 猜测接口
+3. **测试文件路径**——明确输出位置
+
+违反示例（不要这样做）：
+> "为 TransportExecutor 写 TDD 测试"
+
+正确示例：
+> "为 `src/transport/executor.ts` 的 `TransportExecutor` 类写 TDD 测试。
+> 该类接收 `config: TransportConfig`（字段：retryCount: number, timeout: number），
+> 暴露 `execute(request: TransportRequest): Promise<TransportResponse>` 方法。
+> 测试文件：`tests/transport/executor.test.ts`"

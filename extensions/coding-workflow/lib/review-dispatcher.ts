@@ -1,8 +1,8 @@
 /**
- * ReviewDispatcher — dispatches review subagent and builds retrospect followUp.
+ * ReviewDispatcher — dispatches gate anti-fraud review subagent and builds retrospect steer.
  *
- * Handles: model resolution, system prompt from SkillResolver, subagent spawn,
- * and followUp message construction for the main agent to write retrospects.
+ * Gate review verifies deliverables are genuine (not fabricated by AI).
+ * Content quality review is done by expert-reviewer during phase execution.
  */
 
 import * as fs from "node:fs";
@@ -41,45 +41,34 @@ export interface ReviewDispatchResult {
 
 // ─── Helpers ──────────────────────────────────────────────
 
-function getNextReviewVersion(topicDir: string, prefix: string): number {
-	const reviewsDir = path.join(topicDir, "changes", "reviews");
-	if (!fs.existsSync(reviewsDir)) return 1;
-	const files = fs.readdirSync(reviewsDir);
-	let maxVersion = 0;
-	for (const f of files) {
-		const match = f.match(new RegExp(`^${prefix}_v(\\d+)\\.md$`));
-		if (match) {
-			const v = parseInt(match[1]!, 10);
-			if (v > maxVersion) maxVersion = v;
-		}
-	}
-	return maxVersion + 1;
-}
+// gate review uses fixed filename (gate_review_{phase}.md), no version tracking needed
 
-function buildReviewTaskPrompt(
+function buildGateReviewTaskPrompt(
 	phaseConfig: PhaseConfigForReview,
 	topicDir: string,
-	nextVersion: number,
+	skillPath: string,
 ): string {
 	const reviewPath = path.join(
 		topicDir, "changes", "reviews",
-		`${phaseConfig.reviewPrefix}_v${nextVersion}.md`,
+		`gate_review_${phaseConfig.phase}.md`,
 	);
 	const deliverableList = phaseConfig.deliverables
 		.map((d) => `   - ${path.join(topicDir, d)}`)
 		.join("\n");
 
 	return [
-		`你是独立审查专家。按以下步骤执行审查：`,
+		`你是 Gate 防伪造审查员。你的职责是验证 deliverable 是否真实可信，而非审查内容质量。`,
 		``,
-		`1. read \`skills/xyz-harness-expert-reviewer/SKILL.md\`，找到「${phaseConfig.reviewMode}」章节`,
-		`2. read 以下待审查文件：`,
+		`1. read \`${skillPath}\`，找到「Phase ${phaseConfig.phase} — ${phaseConfig.name}」章节`,
+		`2. read 以下 deliverable 文件：`,
 		deliverableList,
-		`3. 按方法论逐项审查，将结果写入：`,
+		`3. 按方法论中的伪造信号检查每项 deliverable`,
+		`4. 可使用 bash 工具验证文件存在性、git log 等`,
+		`5. 将审查结果写入：`,
 		`   ${reviewPath}`,
-		`4. YAML frontmatter 必须包含（在顶层，不能嵌套）:`,
+		`6. YAML frontmatter 必须包含（在顶层，不能嵌套）:`,
 		`   - verdict: "pass" 或 "fail"`,
-		`   - must_fix: 数字（open MUST_FIX 问题数量）`,
+		`   - must_fix: 数字（确认为伪造或严重缺失的问题数量）`,
 	].join("\n");
 }
 
@@ -142,13 +131,13 @@ export async function dispatchReviewSubagent(
 		return { success: false, reviewPath: "", error: modelResult.error };
 	}
 
-	const systemPrompt = skillResolver.resolve("xyz-harness-expert-reviewer");
-	const nextVersion = getNextReviewVersion(topicDir, phaseConfig.reviewPrefix);
+	const systemPrompt = skillResolver.resolve("xyz-harness-gate-reviewer");
+	const skillPath = skillResolver.resolvePath("xyz-harness-gate-reviewer");
 	const reviewPath = path.join(
 		topicDir, "changes", "reviews",
-		`${phaseConfig.reviewPrefix}_v${nextVersion}.md`,
+		`gate_review_${phaseConfig.phase}.md`,
 	);
-	const taskPrompt = buildReviewTaskPrompt(phaseConfig, topicDir, nextVersion);
+	const taskPrompt = buildGateReviewTaskPrompt(phaseConfig, topicDir, skillPath);
 
 	cleanupOldTempFiles();
 	const result = await runSingleAgent({

@@ -221,3 +221,18 @@ Open a new Pi session, load the xyz-harness-gate skill, and tell it:
 ### 8. Tell user
 
 When done: "Phase 5 complete. Feature merged. All retrospectives done."
+
+## Self-Check Checklist
+
+### 前置检查
+- [ ] Phase 3 (Dev) 的 code_review 文件是否存在且 verdict==pass？
+- [ ] Phase 4 (Test) 的测试执行记录是否存在且全部 passed？
+- [ ] 所有 review 的 MUST_FIX 是否已修复？
+
+### Lint 检查
+- [ ] lint 检查是否在 Dev Phase 已完成？（不应在 PR Phase 首次发现 lint 问题）
+- [ ] 如 PR Phase 发现新 lint 问题：回到 Dev Phase 修复
+
+### PR 安全
+- [ ] PR 描述是否引用了 spec 和 plan？
+- [ ] 是否只 merge 代码，不执行其他不可逆操作？

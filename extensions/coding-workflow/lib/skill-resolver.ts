@@ -1,12 +1,16 @@
 /**
  * SkillResolver — unified skill discovery and caching for the coding-workflow extension.
  *
- * - Injected with the Pi skills list (name + filePath) during before_agent_start.
- * - Resolves skill content by name with file-read caching.
- * - No fallback paths per ADR-0003: missing skills throw immediately.
+ * Primary source: Pi skills list injected via before_agent_start.
+ * Fallback: conventional paths (~/.pi/agent/skills/{name}/SKILL.md and project .pi/skills/).
+ *
+ * The fallback ensures the extension works even when the session was started
+ * before a skill was installed (Pi caches skills at session start).
  */
 
 import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 
 export class SkillResolver {
 	#skills: Array<{ name: string; filePath: string }> = [];
@@ -21,37 +25,73 @@ export class SkillResolver {
 	}
 
 	/**
+	 * Try to find skill file path via conventional paths when not in injected list.
+	 * Checks: user-level (~/.pi/agent/skills/) and project-level (.pi/skills/).
+	 */
+	#findFallbackPath(name: string): string | undefined {
+		const candidates = [
+			path.join(os.homedir(), ".pi", "agent", "skills", name, "SKILL.md"),
+			path.join(process.cwd(), ".pi", "skills", name, "SKILL.md"),
+		];
+		for (const candidate of candidates) {
+			if (fs.existsSync(candidate)) {
+				return candidate;
+			}
+		}
+		return undefined;
+	}
+
+	/**
 	 * Resolve skill content by name. Reads from disk on first access, caches by filePath.
-	 * Throws if the skill is not in the injected list.
+	 * Falls back to conventional paths if not in injected list.
 	 */
 	resolve(name: string): string {
 		const skill = this.#skills.find((s) => s.name === name);
-		if (!skill) {
-			throw new Error(
-				`Skill "${name}" not found in resolver's skill list. ` +
-					`Ensure the skill is registered and installed.`,
+		let filePath: string;
+
+		if (skill) {
+			filePath = skill.filePath;
+		} else {
+			// Fallback: try conventional paths
+			const fallbackPath = this.#findFallbackPath(name);
+			if (!fallbackPath) {
+				throw new Error(
+					`Skill "${name}" not found in resolver's skill list or conventional paths. ` +
+						`Ensure the skill is installed in ~/.pi/agent/skills/${name}/SKILL.md.`,
+				);
+			}
+			console.warn(
+				`[coding-workflow] Skill "${name}" not in injected list, using fallback: ${fallbackPath}`,
 			);
+			filePath = fallbackPath;
 		}
-		const cached = this.#cache.get(skill.filePath);
+
+		const cached = this.#cache.get(filePath);
 		if (cached !== undefined) return cached;
-		const content = fs.readFileSync(skill.filePath, "utf8");
-		this.#cache.set(skill.filePath, content);
+		const content = fs.readFileSync(filePath, "utf8");
+		this.#cache.set(filePath, content);
 		return content;
 	}
 
 	/**
 	 * Resolve skill file path by name. Does not read file content.
-	 * Throws if the skill is not in the injected list.
+	 * Falls back to conventional paths if not in injected list.
 	 */
 	resolvePath(name: string): string {
 		const skill = this.#skills.find((s) => s.name === name);
-		if (!skill) {
+		if (skill) {
+			return skill.filePath;
+		}
+
+		// Fallback: try conventional paths
+		const fallbackPath = this.#findFallbackPath(name);
+		if (!fallbackPath) {
 			throw new Error(
-				`Skill "${name}" not found in resolver's skill list. ` +
-					`Ensure the skill is registered and installed.`,
+				`Skill "${name}" not found in resolver's skill list or conventional paths. ` +
+					`Ensure the skill is installed in ~/.pi/agent/skills/${name}/SKILL.md.`,
 			);
 		}
-		return skill.filePath;
+		return fallbackPath;
 	}
 
 	/**

@@ -97,14 +97,15 @@ gate check pass
 
 ```
 用户: /coding-workflow <topic>
-  → 创建 topic 目录
-  → state.currentPhase = 1
+  → 存 pendingRequirement，AI 生成 slug
+  → AI 调用 coding-workflow-init(slug) 创建目录、初始化状态
   → before_agent_start 注入 Phase 1 skill
   → AI 按 skill 工作，产出 deliverables
+  → AI 按 skill 指令 dispatch task review subagent（内容质量）
   → AI 调用 coding-workflow-gate(phase=1)
-    → gate-check.py 验证文件 → pass/fail
-    → dispatch review subagent → review_v*.md
-    → 返回 PASS + followUp 指示主 agent 写复盘
+    → gate-check.py 验证文件存在 + task review verdict=pass（GL1）
+    → dispatch gate review subagent → gate_review_1.md（GL2 防伪造）
+    → 返回 PASS + steer 指示主 agent 写复盘
   → AI 写 retrospect → retrospect.md
   → AI 调用 coding-workflow-phase-start()
     → 检查 retrospect 文件 frontmatter → BLOCKED/放行
@@ -160,7 +161,8 @@ gate check pass
 | Phase 4 Test | `skills/xyz-harness-phase-test/SKILL.md` | Phase 4 入口：测试执行 |
 | Phase 5 PR  | `skills/xyz-harness-phase-pr/SKILL.md` | Phase 5 入口：推送 + PR |
 | Gate Check | `skills/xyz-harness-gate/SKILL.md` | 独立 session 中加载，验证交付物 |
-| Expert Reviewer | `skills/xyz-harness-expert-reviewer/SKILL.md` | 审查方法论（subagent read 获取） |
+| Expert Reviewer | `skills/xyz-harness-expert-reviewer/SKILL.md` | 内容质量审查方法论（task review subagent read 获取） |
+| Gate Reviewer | `skills/xyz-harness-gate-reviewer/SKILL.md` | 防伪造验证方法论（gate review subagent read 获取） |
 | Backend Dev | `skills/xyz-harness-backend-dev/SKILL.md` | 后端编码规范（编码时参考） |
 | Frontend Dev | `skills/xyz-harness-frontend-dev/SKILL.md` | 前端编码规范（编码时参考） |
 | TDD | `skills/xyz-harness-test-driven-development/SKILL.md` | TDD 方法论（编码时参考） |
@@ -178,8 +180,8 @@ gate check pass
 ### Auto Mode
 
 - gate-check.py 自动运行，验证 deliverables 完整性
-- review subagent 自动 dispatch，验证 deliverables 质量
-- retrospect 由主 agent 在 followUp 中完成，产出复盘记录
+- gate review subagent 自动 dispatch（GL2 防伪造验证），产出 gate_review_{phase}.md
+- retrospect 由主 agent 在 steer 中完成，产出复盘记录
 - phase-start 检查 retrospect 文件存在，不存在则 BLOCKED
 
 ### Manual Mode

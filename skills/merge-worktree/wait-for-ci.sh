@@ -1,10 +1,11 @@
 #!/bin/bash
 # wait-for-ci.sh — 等待 GitHub Actions CI 完成
 #
-# 用法: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>]
+# 用法: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>] [--verify-release <tag> [--repo <owner/repo>]]
 #
 # 场景 1: gh pr merge 后，push 到 main 触发 ci.yml
 # 场景 2: 推送修复后等待 CI 重新运行
+# 场景 3: CI 通过后验证 Draft Release 产物（--verify-release v1.2.3）
 #
 # AI 行为约束：
 #   - 此脚本不可跳过
@@ -13,17 +14,21 @@
 
 set -euo pipefail
 
-REF="${1:?Usage: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>]}"
+REF="${1:?Usage: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>] [--verify-release <tag>]}"
 shift || true
 
-TIMEOUT=600   # 默认 10 分钟
-WORKFLOW=""   # 可选过滤特定 workflow
+TIMEOUT=600           # 默认 10 分钟
+WORKFLOW=""           # 可选过滤特定 workflow
+VERIFY_RELEASE_TAG="" # 可选：CI 通过后验证 Draft Release 产物
+GH_REPO=""            # 可选：gh --repo 参数
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --timeout)  TIMEOUT="$2"; shift 2 ;;
-        --workflow) WORKFLOW="$2"; shift 2 ;;
-        *)          echo "Unknown option: $1"; exit 1 ;;
+        --timeout)         TIMEOUT="$2"; shift 2 ;;
+        --workflow)        WORKFLOW="$2"; shift 2 ;;
+        --verify-release)  VERIFY_RELEASE_TAG="$2"; shift 2 ;;
+        --repo)            GH_REPO="$2"; shift 2 ;;
+        *)                 echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
@@ -32,6 +37,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
+
+GH_FLAG=""
+if [[ -n "$GH_REPO" ]]; then
+    GH_FLAG="--repo $GH_REPO"
+fi
 
 command -v gh >/dev/null 2>&1 || { echo "Error: gh CLI 未安装"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Error: gh CLI 未登录"; exit 1; }
@@ -51,9 +61,9 @@ FIRST_POLL=true
 while true; do
     # 获取该 commit 上的 workflow runs
     if [[ -n "$WORKFLOW" ]]; then
-        RUNS_JSON=$(gh run list --commit "$REF" --workflow "$WORKFLOW" --json databaseId,status,conclusion,name,workflowName 2>/dev/null || echo "[]")
+        RUNS_JSON=$(gh run list --commit "$REF" --workflow "$WORKFLOW" $GH_FLAG --json databaseId,status,conclusion,name,workflowName 2>/dev/null || echo "[]")
     else
-        RUNS_JSON=$(gh run list --commit "$REF" --json databaseId,status,conclusion,name,workflowName 2>/dev/null || echo "[]")
+        RUNS_JSON=$(gh run list --commit "$REF" $GH_FLAG --json databaseId,status,conclusion,name,workflowName 2>/dev/null || echo "[]")
     fi
 
     # 等待 CI 触发
@@ -115,7 +125,7 @@ while true; do
         else
             echo ""
             echo -e "${GREEN}${BOLD}✅ CI 全部通过！${NC} ($SUCCESSES/$TOTAL)"
-            exit 0
+            break
         fi
     fi
 
@@ -135,3 +145,69 @@ while true; do
     sleep "$POLL_INTERVAL"
     ELAPSED=$((ELAPSED + POLL_INTERVAL))
 done
+
+# ── 验证 Draft Release 产物 ──────────────────────────────────────
+# CI 通过后，可选检查 Draft Release 是否创建成功、产物数量是否正确
+# 用法: --verify-release v1.2.3
+if [[ -n "$VERIFY_RELEASE_TAG" ]]; then
+    echo ""
+    echo -e "${BOLD}验证 Release 产物...${NC}"
+    echo "  Tag: $VERIFY_RELEASE_TAG"
+
+    # 轮询等待 Draft Release 出现（CI 可能需要额外时间创建）
+    VERIFY_ELAPSED=0
+    VERIFY_TIMEOUT=120
+    RELEASE_JSON=""
+
+    while [[ $VERIFY_ELAPSED -lt $VERIFY_TIMEOUT ]]; do
+        RELEASE_JSON=$(gh release view "$VERIFY_RELEASE_TAG" $GH_FLAG --json tagName,isDraft,assets --jq '{tag: .tagName, draft: .isDraft, asset_count: (.assets | length), assets: [.assets[].name]}' 2>/dev/null || echo "")
+        if [[ -n "$RELEASE_JSON" ]]; then
+            break
+        fi
+        echo "  ⏳ Release 尚未创建，等待中... (${VERIFY_ELAPSED}s/${VERIFY_TIMEOUT}s)"
+        sleep 10
+        VERIFY_ELAPSED=$((VERIFY_ELAPSED + 10))
+    done
+
+    if [[ -z "$RELEASE_JSON" ]]; then
+        echo -e "  ${RED}❌ Release $VERIFY_RELEASE_TAG 在 ${VERIFY_TIMEOUT}s 后仍未出现${NC}"
+        echo "  可能原因："
+        echo "    1. CI 的 release job 创建了错误 tag 的 release（版本号不一致）"
+        echo "    2. release job 被跳过或失败"
+        echo "    3. tag 未正确推送"
+        echo ""
+        echo "  排查命令:"
+        echo "    gh api repos/$GH_REPO/releases --jq '.[] | \"\\(.tag_name) draft=\\(.draft) assets=\\(.assets | length)\"' | head -5"
+        exit 1
+    fi
+
+    RELEASE_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag')
+    IS_DRAFT=$(echo "$RELEASE_JSON" | jq -r '.draft')
+    ASSET_COUNT=$(echo "$RELEASE_JSON" | jq -r '.asset_count')
+    ASSET_NAMES=$(echo "$RELEASE_JSON" | jq -r '.assets | join(", ")')
+
+    echo "  Tag: $RELEASE_TAG"
+    echo "  Draft: $IS_DRAFT"
+    echo "  产物数量: $ASSET_COUNT"
+    echo "  产物: $ASSET_NAMES"
+
+    # 检查 tag 是否匹配
+    if [[ "$RELEASE_TAG" != "$VERIFY_RELEASE_TAG" ]]; then
+        echo -e "  ${RED}❌ Release tag 不匹配: 期望 $VERIFY_RELEASE_TAG, 实际 $RELEASE_TAG${NC}"
+        echo "  根因：CI 的 src-electron/package.json 版本号与根 package.json 不一致"
+        echo "  修复：同步版本号后重新触发 CI"
+        exit 1
+    fi
+
+    # 检查产物数量（至少应有 1 个非 source-code 产物）
+    if [[ "$ASSET_COUNT" -eq 0 ]]; then
+        echo -e "  ${YELLOW}⚠️  Release 无构建产物（只有 source code）${NC}"
+        echo "  可能原因：build job 失败或 artifact upload 被跳过"
+        echo "  排查：gh run list --workflow Release --limit 3"
+        exit 1
+    fi
+
+    echo -e "  ${GREEN}✅ Release 验证通过${NC}"
+fi
+
+exit 0

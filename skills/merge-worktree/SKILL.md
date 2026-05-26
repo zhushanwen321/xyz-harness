@@ -53,9 +53,9 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh <worktree-dir> patch
    ↓
 阶段 3: Post-merge CI 等待
    ↓
-阶段 4: 版本 bump + tag + push + 等 Release CI
+阶段 4: 版本 bump + 同步子项目 package.json + tag + push + 等 Release CI
    ↓
-阶段 5: Release Notes（自动生成或使用 --notes 指定文件） → 创建 Release
+阶段 5: 产物验证（wait-for-ci.sh --verify-release）+ Release Notes → 创建 Release
    ↓
 阶段 6: 清理 worktree + 同步其他 worktree
 ```
@@ -110,6 +110,7 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh <worktree-dir> patch
 <workspace-root>/.bare/custom-hooks/
   setup-worktree.sh            # 创建 worktree 后执行（由 git-cwt 调用）
   pre-merge.sh                 # merge 前执行（如项目特定的额外验证）
+  post-bump.sh                 # 版本 bump 后、git commit 前执行（如同步子 package.json）
   generate-release-notes.sh    # 生成 release notes 前的预处理（过滤 commit 清单）
   post-release.sh              # release 创建后执行（如通知、部署）
 ```
@@ -141,7 +142,86 @@ bash ~/.pi/agent/skills/merge-worktree/merge-and-publish.sh <worktree-dir> patch
 
 如果脚本意外中断（shell 断开等），重新运行同一条命令即可继续。
 
+### 已知陷阱：`git pull --rebase` 改变 upstream 指向
+
+`git pull --rebase origin main` 会将分支的 `@{upstream}` 从 `origin/$BRANCH` 改为 `origin/main`。如果重跑脚本前执行过 rebase，需修复：
+
+```bash
+git branch --set-upstream-to=origin/$BRANCH_NAME $BRANCH_NAME
+```
+
+pre-merge-check.sh 已使用 `origin/$BRANCH_NAME..HEAD` 替代 `@{upstream}..HEAD`，不受此影响。
+
+### 幂等边界
+
+每个阶段的幂等检测条件：
+
+| 阶段 | 幂等检测方式 | 跳过条件 |
+|------|------------|---------|
+| 阶段 1 | 断点文件 | `phase1-passed` checkpoint 存在 |
+| 阶段 2 | PR 状态 | PR state = MERGED |
+| 阶段 3 | 无（每次重新检查 CI） | CI 已通过则快速返回 |
+| 阶段 4 | 始终 bump 版本 + 同步子项目 | 每次 merge 后必须产生新版本号，自动同步 src-electron/package.json |
+| 阶段 5 | Release 存在性 | Release 已存在则更新 notes |
+| 阶段 6 | 无（每次执行清理） | — |
+
+**阶段 4 无幂等跳过**：每次合并后都必须 bump 新版本号并打 tag，即使旧 tag 仍存在。幂等保障交给阶段 5（`gh release view` 检查 release 是否已创建）。
+
+**版本同步机制**：Electron 等子项目独立 `package.json`（如 `src-electron/package.json`）的版本号必须与根 `package.json` 保持一致。bump 后脚本自动调用 `sync_sub_package_versions` 同步，确保 electron-builder 和 CI 读取到正确版本。
+
+**产物验证**：阶段 4 的 Release CI 通过后，`wait-for-ci.sh --verify-release <tag>` 会自动检查：
+1. Draft Release 的 tag 与预期一致（防止版本号不同步导致创建了错误 tag 的 release）
+2. 产物数量 > 0（防止只有 source code 没有构建产物）
+3. 验证失败时 exit 1 并给出排查指引
+
+### AI bash timeout 注意
+
+AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 1200 秒（Release CI 含 docker build 可能耗时 10 分钟以上）。如果 AI 的默认 bash timeout 只有 600s，脚本会被外部 kill 而非自身超时。
+
+`bash-timeout-override` Pi 扩展会在 `tool_call` 事件中自动 mutation bash 的 timeout 参数，无需 AI 记住。
+
+#### 默认行为（无需配置）
+
+扩展已内置全局规则（`~/.pi/agent/bash-timeout-rules.json`）：
+
+```json
+{
+  "rules": [
+    { "pattern": "merge-and-publish.sh", "timeout": 1200 },
+    { "pattern": "pre-merge-check.sh", "timeout": 600 },
+    { "pattern": "wait-for-ci.sh", "timeout": 1200 }
+  ]
+}
+```
+
+**大多数项目不需要额外配置**，全局规则已覆盖 merge-worktree 的所有脚本。
+
+#### 项目级覆盖
+
+如果项目有自己特有的长耗时命令（如部署脚本），在项目根目录创建 `.pi/bash-timeout.json`：
+
+```json
+{
+  "rules": [
+    { "pattern": "scripts/deploy.sh", "timeout": 1800 }
+  ]
+}
+```
+
+扩展查找顺序：项目级 `.pi/bash-timeout.json` → 全局 `~/.pi/agent/bash-timeout-rules.json`。
+项目级配置**完全替代**全局配置（非合并），所以项目级配置中需要包含 merge-and-publish.sh 的规则。
+
 ## 教训记录
+
+### 2026-05-24: src-electron/package.json 版本未同步导致产物版本错误
+
+**事件**：手动发版时只 bump 了根 `package.json`（0.2.4 → 0.2.6），但 `src-electron/package.json` 仍是 0.2.4。CI release workflow 从 `src-electron/package.json` 读版本号，创建了 v0.2.4 的 Draft Release 而非 v0.2.6。产物文件名也全是 0.2.4。
+
+**根因**：`src-electron` 是独立 npm project（不在根 workspaces 里），electron-builder 和 CI 的 `Read version` 步骤都从它读版本。merge-and-publish.sh 的 bump 逻辑只改了根 `package.json`。
+
+**修复**：
+1. merge-and-publish.sh 添加 `sync_sub_package_versions` 函数，bump 后自动同步 `src-electron/package.json` 版本
+2. wait-for-ci.sh 添加 `--verify-release` 参数，CI 通过后验证 Draft Release 的 tag 和产物数量
 
 ### 2026-05-21: exit 3 / resume 模式导致无脑 AI 反复出错
 

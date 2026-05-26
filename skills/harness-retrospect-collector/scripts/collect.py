@@ -27,11 +27,20 @@ import json
 import os
 import re
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+# ---------------------------------------------------------------------------
+# 自定义异常
+# ---------------------------------------------------------------------------
+
+class AbsorbError(Exception):
+    """吸收操作失败时抛出。"""
 
 
 # ---------------------------------------------------------------------------
@@ -58,10 +67,21 @@ def parse_frontmatter(text: str) -> tuple[dict[str, Any], str, str]:
 
 
 def write_frontmatter(path: Path, meta: dict[str, Any], body: str) -> None:
-    """将 meta + body 写回文件，保留可读的 YAML frontmatter。"""
+    """将 meta + body 原子写回文件，保留可读的 YAML frontmatter。"""
     header = yaml.dump(meta, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    content = f"---\n{header}---\n{body}"
-    path.write_text(content, encoding="utf-8")
+    new_content = f"---\n{header}---\n{body}"
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=path.parent, suffix=".md.tmp")
+    try:
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        os.replace(tmp_path, path)
+    except Exception:
+        # 清理残留临时文件
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -121,17 +141,17 @@ def scan_one(path: Path, root: Path) -> dict[str, Any]:
 # absorb
 # ---------------------------------------------------------------------------
 
-def absorb_file(path: Path, summary: str) -> None:
-    """标记单个文件为已吸收。"""
+def absorb_file(path: Path, summary: str, today: date | None = None) -> None:
+    """标记单个文件为已吸收。失败时抛出 AbsorbError。"""
     if not path.exists():
-        print(f"ERROR: file not found: {path}", file=sys.stderr)
-        sys.exit(1)
+        raise AbsorbError(f"file not found: {path}")
 
+    today = today or date.today()
     text = path.read_text(encoding="utf-8")
     meta, raw, body = parse_frontmatter(text)
 
     meta["absorbed"] = True
-    meta["absorbed_date"] = date.today().isoformat()
+    meta["absorbed_date"] = today.isoformat()
     meta["absorption_summary"] = summary
 
     write_frontmatter(path, meta, body)
@@ -143,8 +163,10 @@ def absorb_file(path: Path, summary: str) -> None:
 # ---------------------------------------------------------------------------
 
 def normalize_issue(issue: str) -> str:
-    """归一化 issue 文本用于去重比较。"""
-    return re.sub(r"[^\w]", "", issue.lower())
+    """归一化 issue 文本用于去重比较。保留空格分隔，只去标点。"""
+    if not isinstance(issue, str):
+        issue = str(issue)
+    return re.sub(r"[^\w\s]", "", issue.lower()).strip()
 
 
 def aggregate_issues(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -250,7 +272,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         dest="json_output",
-        help="JSON 输出",
+        help="JSON 格式输出",
     )
     parser.add_argument(
         "--aggregate",
@@ -275,17 +297,21 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.root)
-    if not root.exists():
-        print(f"ERROR: root directory not found: {root}", file=sys.stderr)
+    if not root.is_dir():
+        print(f"ERROR: root is not a directory: {root}", file=sys.stderr)
         sys.exit(1)
 
     # --- absorb 模式 ---
     if args.absorb:
         if not args.summary:
-            print("ERROR: --absorb requires --summary", file=sys.stderr)
+            print("ERROR: --absorb 需要配合 --summary 使用", file=sys.stderr)
             sys.exit(1)
         for fpath in args.absorb:
-            absorb_file(Path(fpath), args.summary)
+            try:
+                absorb_file(Path(fpath), args.summary)
+            except AbsorbError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                sys.exit(1)
         return
 
     # --- 扫描 ---
@@ -298,25 +324,30 @@ def main() -> None:
         except Exception as exc:
             print(f"WARN: skipping {f}: {exc}", file=sys.stderr)
 
-    # 过滤已吸收（除非 --all）
-    if not args.all:
-        records = [r for r in records if not r["absorbed"]]
-
     # --- aggregate 模式 ---
     if args.aggregate:
-        # aggregate 需要所有文件（含已吸收）的 issues，但只统计未吸收
-        all_records = []
-        for f in files:
-            try:
-                all_records.append(scan_one(f, root))
-            except Exception:
-                pass
+        # aggregate 需要全部 records（含已吸收），但 aggregate_issues 内部跳过已吸收
+        # 复用已扫描的 records；若用了 --all，records 已含全部，否则补充已吸收的
+        if args.all:
+            all_records = records
+        else:
+            # records 已过滤掉已吸收，需要重新扫描包含已吸收的
+            all_records = []
+            for f in files:
+                try:
+                    all_records.append(scan_one(f, root))
+                except Exception as exc:
+                    print(f"WARN: skip {f}: {exc}", file=sys.stderr)
         agg = aggregate_issues(all_records)
         if args.json_output:
             print(json.dumps(agg, ensure_ascii=False, indent=2))
         else:
             print_aggregate(agg)
         return
+
+    # 过滤已吸收（除非 --all）
+    if not args.all:
+        records = [r for r in records if not r["absorbed"]]
 
     # --- scan 模式 ---
     if args.json_output:

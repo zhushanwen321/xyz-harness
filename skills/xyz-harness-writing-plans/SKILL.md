@@ -149,6 +149,92 @@ File structure 表格必须包含 Group 列，标注每个文件属于哪个 Exe
 | `src/views/UserPage.vue` | create | FG1 | 用户管理页面 |
 | `tests/test_user.py` | create | BG1 | 用户模型测试 |
 
+## Interface Contracts
+
+接口契约填补 plan 和 code 之间的设计空白。传统 plan 只定义 Task 粒度（如"创建 UserService"），接口契约进一步明确每个 Task 产出的方法签名、数据流链和 AC 覆盖关系。这能在 plan 阶段就检测 AC 遗漏和逻辑断裂，而非等到 dev 或 test 阶段才发现。
+
+接口契约包含三类信息：
+- **方法签名表**：按模块分组的公有方法签名（方法名、参数类型、返回类型、边界条件）
+- **数据流链**：方法间的调用关系和类型传递链（A.method → B.method → C.method）
+- **AC 覆盖矩阵**：spec AC → interface method → data flow → task 的完整追踪
+
+### L1/L2 分级规则
+
+接口契约的强制程度根据 plan 复杂度分级（与 spec FR-3 对齐）：
+
+| 维度 | L1（简化版） | L2（完整版） |
+|------|-------------|-------------|
+| interface_chain.json | 可选 | 强制 |
+| methods 表 | 强制（plan.md markdown） | 强制（plan.md + JSON） |
+| data_flows | 可选 | 强制 |
+| AC 覆盖矩阵 | 强制 | 强制 |
+
+plan.md 的 YAML frontmatter 新增 `complexity` 字段（`"L1"` 或 `"L2"`），供 gate-check.py 做条件判断。L2 plan 缺失 interface_chain.json 时 gate FAIL；L1 plan 不产出此文件也能过 gate。
+
+### 方法签名表模板
+
+plan.md 中 Interface Contracts 章节按模块分组，格式如下：
+
+```markdown
+## Interface Contracts
+
+### Module: {module-name}
+
+#### Class: {ClassName}
+
+| Method | Signature | Returns | Edge Cases | Spec Ref |
+|--------|-----------|---------|------------|----------|
+| methodName | (param: Type) -> ReturnType | ReturnType | boundary condition | AC-N |
+
+#### Data: {CustomTypeName}
+
+| Field | Type | Description |
+|-------|------|-------------|
+| fieldName | FieldType | description |
+```
+
+### AC 覆盖矩阵模板（强制章节）
+
+plan.md 必须包含 Spec Coverage Matrix 章节，追踪 spec AC 的完整覆盖：
+
+```markdown
+## Spec Coverage Matrix
+
+| Spec AC | Interface Method | Data Flow | Task |
+|---------|-----------------|-----------|------|
+| AC-N | Class.method | flow-id | Task N |
+| AC-M | [GAP] | [GAP] | [GAP] |
+```
+
+矩阵中任何 `[GAP]` 条目表示 plan 遗漏，必须在完成 plan 前解决或显式声明为 `[POSTPONED]`（附原因）。postponed 的 AC 不算 GAP。
+
+> **注意：** 此矩阵与 "Spec Metrics Traceability" 章节互补——Traceability 追踪采纳状态，Coverage Matrix 追踪接口级覆盖。两者都不可省略。
+
+### interface_chain.json 产出指引（仅 L2）
+
+L2 plan 额外产出 `interface_chain.json`，与 plan.md 同目录。JSON schema 参见 spec.md FR-1 定义。
+
+产出流程：
+1. 完成 plan.md 的 Interface Contracts 章节后，根据签名表和 data_flows 生成 JSON
+2. 确保 JSON 中每个 method 的 name、class、params、returns 与 plan.md markdown 表一致
+3. 确保 data_flows[].chain 中的方法名全部存在于 methods[] 表中
+4. 独立验证：`python3 -c "import json; json.load(open('interface_chain.json'))"`
+
+### 粒度边界
+
+**纳入接口契约：**
+- 公开接口类的公有方法
+- 数据类 / DTO / Model 的字段定义
+
+**不纳入接口契约：**
+- 私有方法 / 内部 helper 方法
+- 工具类（除非被多个模块共享，作为共享契约）
+- 框架 / 平台生成的代码（prisma、ORM 生成的方法等）
+
+### "禁止实现代码"豁免说明
+
+接口签名是设计契约（方法名 + 参数类型 + 返回类型），不是实现代码。plan 中的接口签名表不受 Self-Check Checklist 中"禁止实现代码"规则的限制。签名表中可以包含参数类型和返回类型的名称，但不允许包含方法体、算法逻辑或完整的类定义。
+
 ## Bite-Sized Task Granularity
 
 **Each step is one action (2-5 minutes):**

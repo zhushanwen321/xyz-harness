@@ -117,6 +117,23 @@ fi
 
 ### 2. Code Implementation
 
+#### 接口签名传递规则
+
+当 plan.md 包含 Interface Contracts 章节时，主 agent 在构造 TDD coder / executor subagent task prompt 时，必须传入当前 Task 涉及的方法签名。
+
+**L2 plan（有 interface_chain.json）：**
+- 从 interface_chain.json 中提取当前 Task 涉及的 methods（按 class 名或 spec_refs 过滤）
+- 将 (name, params, returns, edge_cases) 整理为结构化文本，注入 task prompt
+
+**L1 plan（无 interface_chain.json）：**
+- read plan.md 的 Interface Contracts 章节
+- 解析当前 Task 涉及的模块对应的 markdown 签名表格
+- 提取方法名、参数、返回值
+
+**最低传递标准（L1/L2 统一）：** task prompt 至少包含方法名、参数类型列表、返回类型。edge_cases 为可选附加信息。
+
+**偏差记录：** 实现中如偏离接口契约，需在代码注释或 commit message 中记录 interface_deviation 及原因。
+
 根据 plan.md 的复杂度和 task 数量选择执行路径：
 
 **路径判断：**

@@ -136,6 +136,83 @@ def check_phase_1(topic_dir):
     return checks
 
 
+def check_interface_chain_schema(topic_dir):
+    """Validate interface_chain.json schema (only required for L2 complexity).
+    Returns list of (name, status, detail) tuples.
+    """
+    checks = []
+    ic_path = os.path.join(topic_dir, "interface_chain.json")
+
+    if not os.path.exists(ic_path):
+        checks.append(("interface_chain.json", FAIL, "file not found (required for L2)"))
+        return checks
+
+    try:
+        with open(ic_path, encoding='utf-8') as f:
+            ic_data = json.load(f)
+    except json.JSONDecodeError as e:
+        checks.append(("interface_chain.json", FAIL, f"invalid JSON: {e}"))
+        return checks
+
+    # version field (string)
+    if "version" not in ic_data:
+        checks.append(("interface_chain version", FAIL, "'version' field missing"))
+    elif not isinstance(ic_data["version"], str):
+        checks.append(("interface_chain version", FAIL, f"'version' type={type(ic_data['version']).__name__}, expected str"))
+    else:
+        checks.append(("interface_chain version", PASS, f"'version'={repr(ic_data['version'])}"))
+
+    # methods array (exists and non-empty)
+    methods = ic_data.get("methods")
+    if methods is None:
+        checks.append(("interface_chain methods", FAIL, "'methods' field missing"))
+    elif not isinstance(methods, list):
+        checks.append(("interface_chain methods", FAIL, f"'methods' type={type(methods).__name__}, expected array"))
+    elif len(methods) == 0:
+        checks.append(("interface_chain methods", FAIL, "'methods' array is empty"))
+    else:
+        method_errors = []
+        required_method_fields = ("name", "class", "params", "returns")
+        for i, m in enumerate(methods):
+            if not isinstance(m, dict):
+                method_errors.append(f"methods[{i}] type={type(m).__name__}, expected object")
+                continue
+            for field in required_method_fields:
+                if field not in m:
+                    method_errors.append(f"methods[{i}] missing '{field}'")
+        if method_errors:
+            checks.append(("interface_chain methods", FAIL, "; ".join(method_errors)))
+        else:
+            checks.append(("interface_chain methods", PASS, f"{len(methods)} methods, all have name/class/params/returns"))
+
+    # data_flows array (exists and non-empty)
+    flows = ic_data.get("data_flows")
+    if flows is None:
+        checks.append(("interface_chain data_flows", FAIL, "'data_flows' field missing"))
+    elif not isinstance(flows, list):
+        checks.append(("interface_chain data_flows", FAIL, f"'data_flows' type={type(flows).__name__}, expected array"))
+    elif len(flows) == 0:
+        checks.append(("interface_chain data_flows", FAIL, "'data_flows' array is empty"))
+    else:
+        flow_errors = []
+        for i, df in enumerate(flows):
+            if not isinstance(df, dict):
+                flow_errors.append(f"data_flows[{i}] type={type(df).__name__}, expected object")
+                continue
+            if "id" not in df:
+                flow_errors.append(f"data_flows[{i}] missing 'id'")
+            if "chain" not in df:
+                flow_errors.append(f"data_flows[{i}] missing 'chain'")
+            elif not df["chain"]:
+                flow_errors.append(f"data_flows[{i}] 'chain' is empty")
+        if flow_errors:
+            checks.append(("interface_chain data_flows", FAIL, "; ".join(flow_errors)))
+        else:
+            checks.append(("interface_chain data_flows", PASS, f"{len(flows)} data_flows, all have id/non-empty chain"))
+
+    return checks
+
+
 # ── Phase 2: Plan ──────────────────────────────────────────
 
 def check_phase_2(topic_dir):
@@ -146,9 +223,24 @@ def check_phase_2(topic_dir):
     data, err = parse_yaml_frontmatter(plan_path)
     if err:
         checks.append(("plan.md", FAIL, err))
+        plan_data = None
     else:
         ok, msg = check_field_str(data, "verdict", "pass")
         checks.append(("plan.md", PASS if ok else FAIL, msg))
+        plan_data = data
+
+    # 2.1b plan.md complexity field
+    if plan_data is None:
+        # plan.md itself failed to parse, skip complexity check
+        pass
+    elif "complexity" not in plan_data:
+        checks.append(("plan.md complexity", PASS, "no complexity field (backward compat)"))
+    elif plan_data["complexity"] not in ("L1", "L2"):
+        checks.append(("plan.md complexity", FAIL, f"'complexity'={repr(plan_data['complexity'])}, expected 'L1' or 'L2'"))
+    else:
+        checks.append(("plan.md complexity", PASS, f"'complexity'={repr(plan_data['complexity'])}"))
+        if plan_data["complexity"] == "L2":
+            checks.extend(check_interface_chain_schema(topic_dir))
 
     # 2.2 e2e-test-plan.md
     e2e_path = os.path.join(topic_dir, "e2e-test-plan.md")

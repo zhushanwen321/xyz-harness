@@ -246,8 +246,8 @@ def validate_plan_bl_review(topic_dir, checks):
         if verdict is None or verdict != "pass":
             checks.append(("plan_bl_review", FAIL, f"verdict={repr(verdict)}, expected 'pass'"))
             return
-        if must_fix is not None and must_fix != 0:
-            checks.append(("plan_bl_review must_fix", FAIL, f"must_fix={must_fix}, expected 0"))
+        if must_fix is None or must_fix != 0:
+            checks.append(("plan_bl_review must_fix", FAIL, f"must_fix={repr(must_fix)}, expected 0"))
             return
         checks.append(("plan_bl_review", PASS, "found, verdict=pass, must_fix=0"))
     else:

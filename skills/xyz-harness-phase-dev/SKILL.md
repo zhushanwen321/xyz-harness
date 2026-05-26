@@ -235,7 +235,6 @@ Python 项目无专用 taste-check skill 时：
 - read `~/Code/coding_config/.codetaste/essence.md` 获取通用品味原则
 - 如果文件不存在: 跳过 taste review，在 standards_review 中注明 "Python 项目，无专用 taste skill，已跳过"
 - 如果文件存在: 将内容注入 taste review subagent 的 task prompt 作为参考，产出 `taste_review_v1.md`
-- 如果文件存在: 将内容注入 taste review subagent 的 task prompt 作为参考
 
 #### 各步 review 输出格式
 

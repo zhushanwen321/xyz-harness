@@ -56,6 +56,8 @@ Harness 的全部设计目标就是防止这些行为。
 | 伪造测试结果 | gate-check.py 检查 YAML frontmatter 中的 verdict 字段 |
 | 不读 skill 指令直接凭感觉干活 | before_agent_start 强制注入 skill 内容 |
 | Phase 5 合并 PR（不可逆操作） | skill 注入中明确 "MUST NOT merge the PR" |
+| 伪造 interface_chain.json（L2） | GL1 schema 校验（字段类型 + 数组上限）+ GL2 cross-reference（plan.md ↔ JSON 一致性） |
+| 接口偏差未被记录 | phase-dev 强制要求 commit message 记录 interface_deviation |
 
 ### 信息隔离规则
 
@@ -134,7 +136,7 @@ gate check pass
 | Phase | Skill | 产出 | Retrospect |
 |-------|-------|------|-----------|
 | 1 spec | xyz-harness-brainstorming | spec.md | spec_retrospect.md |
-| 2 plan | xyz-harness-writing-plans | plan.md, e2e-test-plan.md, test_cases_template.json | plan_retrospect.md |
+| 2 plan | xyz-harness-writing-plans | plan.md (`complexity` frontmatter), e2e-test-plan.md, test_cases_template.json, interface_chain.json (L2 only) | plan_retrospect.md |
 | 3 dev | xyz-harness-phase-dev | 源代码 + test_results.md | dev_retrospect.md |
 | 4 test | xyz-harness-phase-test | test_execution.json | test_retrospect.md |
 | 5 pr | xyz-harness-phase-pr | pr_evidence.md + ci_results.md | overall_retrospect.md |
@@ -194,7 +196,7 @@ gate check pass
 | Phase | 检查内容 |
 |-------|---------|
 | 1 | spec.md 存在 + verdict:pass + spec_review 存在 + verdict:pass + must_fix:0 |
-| 2 | plan.md + e2e-test-plan.md + test_cases_template.json + plan_review |
+| 2 | plan.md + verdict:pass + complexity(L1/L2) + e2e-test-plan.md + test_cases_template.json + plan_review + interface_chain.json schema (L2 only) |
 | 3 | test_results.md + code_review |
 | 4 | test_execution.json（所有 case passed） |
 | 5 | pr_evidence.md (pr_created:true) + ci_results.md (ci_passed:true) |

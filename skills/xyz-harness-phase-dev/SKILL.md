@@ -130,9 +130,9 @@ fi
 - 解析当前 Task 涉及的模块对应的 markdown 签名表格
 - 提取方法名、参数、返回值
 
-**最低传递标准（L1/L2 统一）：** task prompt 至少包含方法名、参数类型列表、返回类型。edge_cases 为可选附加信息。
+**最低传递标准（L1/L2 统一）：** task prompt 至少包含方法名、参数类型列表、返回类型、spec_refs（关联的 spec AC 编号）。edge_cases 为可选附加信息。
 
-**偏差记录：** 实现中如偏离接口契约，需在代码注释或 commit message 中记录 interface_deviation 及原因。
+**偏差记录：** 实现中如偏离接口契约，必须在 commit message 中记录 `interface_deviation` 标记及原因。
 
 根据 plan.md 的复杂度和 task 数量选择执行路径：
 

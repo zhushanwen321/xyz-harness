@@ -147,6 +147,13 @@ def check_interface_chain_schema(topic_dir):
         checks.append(("interface_chain.json", FAIL, "file not found (required for L2)"))
         return checks
 
+    # File size limit (prevent OOM on huge files)
+    MAX_IC_SIZE = 2 * 1024 * 1024  # 2 MB
+    file_size = os.path.getsize(ic_path)
+    if file_size > MAX_IC_SIZE:
+        checks.append(("interface_chain.json", FAIL, f"file too large ({file_size} bytes, max {MAX_IC_SIZE})"))
+        return checks
+
     try:
         with open(ic_path, encoding='utf-8') as f:
             ic_data = json.load(f)
@@ -170,9 +177,12 @@ def check_interface_chain_schema(topic_dir):
         checks.append(("interface_chain methods", FAIL, f"'methods' type={type(methods).__name__}, expected array"))
     elif len(methods) == 0:
         checks.append(("interface_chain methods", FAIL, "'methods' array is empty"))
+    elif len(methods) > 500:
+        checks.append(("interface_chain methods", FAIL, f"'methods' array too large ({len(methods)} items, max 500)"))
     else:
         method_errors = []
         required_method_fields = ("name", "class", "params", "returns")
+        string_fields = ("name", "class", "returns")
         for i, m in enumerate(methods):
             if not isinstance(m, dict):
                 method_errors.append(f"methods[{i}] type={type(m).__name__}, expected object")
@@ -180,6 +190,8 @@ def check_interface_chain_schema(topic_dir):
             for field in required_method_fields:
                 if field not in m:
                     method_errors.append(f"methods[{i}] missing '{field}'")
+                elif field in string_fields and not isinstance(m[field], str):
+                    method_errors.append(f"methods[{i}].{field} type={type(m[field]).__name__}, expected str")
         if method_errors:
             checks.append(("interface_chain methods", FAIL, "; ".join(method_errors)))
         else:
@@ -193,6 +205,8 @@ def check_interface_chain_schema(topic_dir):
         checks.append(("interface_chain data_flows", FAIL, f"'data_flows' type={type(flows).__name__}, expected array"))
     elif len(flows) == 0:
         checks.append(("interface_chain data_flows", FAIL, "'data_flows' array is empty"))
+    elif len(flows) > 200:
+        checks.append(("interface_chain data_flows", FAIL, f"'data_flows' array too large ({len(flows)} items, max 200)"))
     else:
         flow_errors = []
         for i, df in enumerate(flows):

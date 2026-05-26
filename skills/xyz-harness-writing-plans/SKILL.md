@@ -175,6 +175,7 @@ plan.md 的 YAML frontmatter 新增 `complexity` 字段（`"L1"` 或 `"L2"`）�
 
 plan.md 中 Interface Contracts 章节按模块分组，格式如下：
 
+<!-- TEMPLATE-START: do not grep this code block as real section headings -->
 ```markdown
 ## Interface Contracts
 
@@ -192,6 +193,7 @@ plan.md 中 Interface Contracts 章节按模块分组，格式如下：
 |-------|------|-------------|
 | fieldName | FieldType | description |
 ```
+<!-- TEMPLATE-END -->
 
 ### AC 覆盖矩阵模板（强制章节）
 

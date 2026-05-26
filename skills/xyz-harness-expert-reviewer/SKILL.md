@@ -78,8 +78,8 @@ description: >
 
 - **plan.md ↔ interface_chain.json 一致性**（仅 L2）：方法名、参数类型、返回值在两处是否一致。如不一致，标记 MUST_FIX。
 - **data_flows cross-reference**（仅 L2）：data_flows[].chain 中的每个方法名是否存在于 methods[] 表中。如有悬空引用，标记 MUST_FIX。
-- **AC 覆盖矩阵完整性**：spec 中所有 adopted AC 是否在矩阵中有对应行。遗漏的 AC 标记 MUST_FIX。postponed AC 须注明原因。
-- **类型传递一致性**（建议检查）：data_flows chain 中相邻方法的输出/输入类型是否兼容。
+- **AC 覆盖矩阵完整性**（L1/L2 均强制）：spec 中所有 adopted AC 是否在矩阵中有对应行。遗漏的 AC 标记 MUST_FIX。postponed AC 须注明原因。
+- **类型传递一致性**（仅 L2，建议检查）：data_flows chain 中相邻方法的输出/输入类型是否兼容。
 
 **L1 后端检查清单（plan.md 中涉及后端的 task）：**
 

@@ -153,6 +153,15 @@ AI 可能采取的规避 Harness 约束的行为模式。包括跳过检查、�
 
 ## 标记的歧义
 
+**Interface Contract（接口契约）**:
+plan 阶段产出的接口设计契约，填补 plan（task 粒度）和 code（method 粒度）之间的设计空白。包含三类信息：方法签名表（按模块分组的公有方法签名）、数据流链（方法间调用关系和类型传递）、AC 覆盖矩阵（spec AC → interface method → task 的追踪）。根据 plan 复杂度分 L1/L2 两级。
+
+**interface_chain.json**:
+L2 plan 的结构化接口契约文件。包含 methods[]（方法签名数组，每项有 name/class/params/returns/spec_refs）和 data_flows[]（数据流数组，每项有 id/description/chain/spec_refs）。L1 plan 不产出此文件。Phase 2 gate GL1 做 schema 校验，GL2 做 cross-reference 验证。
+
+**Complexity L1/L2（plan 复杂度分级）**:
+plan.md 的 YAML frontmatter 中 `complexity` 字段取值。L1（简化版）：markdown 方法签名表 + AC 覆盖矩阵，无 interface_chain.json。L2（完整版）：markdown + interface_chain.json + data_flows。评估维度为架构分拆复杂度（是否需要前后端并行设计），而非影响范围（文件数）。
+
 **Phase vs Stage**（已解决）:
 Phase 是顶层执行单元（共 5 个），Stage 是 Phase 内部的逻辑步骤。V4 中曾用 Stage 统称两者（16-Stage 方案），V5 统一为 Phase + Stage 的二级结构。Stage 当前为 Skill 文档中的描述性概念，计划升级为运行时追踪。
 

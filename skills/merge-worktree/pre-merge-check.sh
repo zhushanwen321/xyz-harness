@@ -343,8 +343,13 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         pass "Git 工作区干净"
     fi
 
-    # 未推送 commits
-    UNPUSHED=$(git log --oneline '@{upstream}..HEAD' 2>/dev/null || echo "")
+    # 未推送 commits（用 origin/$BRANCH 而非 @{upstream}，因为 git pull --rebase 会改变 upstream 指向）
+    _BRANCH=$(git branch --show-current 2>/dev/null || echo "")
+    if [[ -n "$_BRANCH" ]]; then
+        UNPUSHED=$(git log --oneline "origin/$_BRANCH..HEAD" 2>/dev/null || echo "")
+    else
+        UNPUSHED=$(git log --oneline '@{upstream}..HEAD' 2>/dev/null || echo "")
+    fi
     if [[ -n "$UNPUSHED" ]]; then
         fail "有未推送的 commits — 必须先 git push 后才能合并"
         echo "  未推送:"

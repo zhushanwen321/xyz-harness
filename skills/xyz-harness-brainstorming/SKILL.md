@@ -29,8 +29,9 @@ description: >-
 
 | 步骤 | 执行者 | Agent | Skill | 方式 |
 |------|--------|-------|-------|------|
-| Step 1: Codebase Scan | subagent | general-purpose | 无 | 纯扫描，无需 skill |
-| Step 2-4: Brainstorming + Terminology | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
+| Step 1: Quick Overview | 主 agent | — | 无 | 几个文件，无 subagent |
+| Step 2-4: Brainstorming + Terminology + On-demand Scan | 主 agent | — | brainstorming (本 skill) | 按需 dispatch subagent 深入扫描 |
+| On-demand Deep Scan | subagent | general-purpose | 无 | 按需触发，精准范围 |
 | Step 5: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
 | Step 7: Terminology & ADR | 主 agent | — | 无 | MUST + Nullable |
 | Step 9: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
@@ -55,8 +56,8 @@ Every project goes through this process. A todo list, a single-function utility,
 
 You MUST create a task for each of these items and complete them in order:
 
-1. **Scan codebase** — dispatch read-only subagent to explore project structure, existing APIs, types, and patterns. Output: `infrastructure-scan.md` (see below)
-2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. Use scan results to ask higher-quality questions. **Terminology Step (MUST + Nullable):** 在提问过程中，主动识别 spec 中的模糊术语并提议精确定义（见 Terminology Step 章节）
+1. **Quick overview** — 主 agent 快速浏览项目结构、依赖、README（几个文件，无 subagent）。建立基本上下文，不产出文档
+2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. **On-demand scan:** 当用户回答涉及具体模块或技术细节时，按需 dispatch subagent 深入扫描相关代码。**Terminology Step (MUST + Nullable):** 在提问过程中，主动识别 spec 中的模糊术语并提议精确定义（见 Terminology Step 章节）
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
 5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
@@ -69,8 +70,8 @@ You MUST create a task for each of these items and complete them in order:
 
 ```dot
 digraph brainstorming {
-    "Codebase scan\n(subagent)" [shape=box];
-    "Ask clarifying questions" [shape=box];
+    "Quick overview\n(ls + deps + README)" [shape=box];
+    "Ask clarifying questions\n(+ on-demand scan)" [shape=box];
     "Propose 2-3 approaches" [shape=box];
     "Present design sections" [shape=box];
     "User approves design?" [shape=diamond];
@@ -80,8 +81,8 @@ digraph brainstorming {
     "User reviews spec?" [shape=diamond];
     "Invoke writing-plans skill" [shape=doublecircle];
 
-    "Codebase scan\n(subagent)" -> "Ask clarifying questions";
-    "Ask clarifying questions" -> "Propose 2-3 approaches";
+    "Quick overview\n(ls + deps + README)" -> "Ask clarifying questions\n(+ on-demand scan)";
+    "Ask clarifying questions\n(+ on-demand scan)" -> "Propose 2-3 approaches";
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";
     "User approves design?" -> "Present design sections" [label="no, revise"];
@@ -99,40 +100,50 @@ digraph brainstorming {
 
 ## The Process
 
-### Step 1: Codebase Scan (Read-Only Subagent)
+### Step 1: Quick Overview
 
-**Before asking any questions, dispatch a read-only subagent to scan the codebase.** This produces `infrastructure-scan.md` which makes your subsequent questions higher quality — you won't ask "what framework does this project use" because the scan already tells you.
+**在提问前，主 agent 快速浏览项目基本信息。** 不 dispatch subagent，不产出文档。目的是建立最基本的上下文，避免问出已经能直接看到答案的问题。
 
-**Subagent task:**
+**主 agent 直接执行（不启动 subagent）：**
+1. `ls` 项目根目录，了解目录结构
+2. 读 `package.json`（或等效的依赖文件），了解技术栈和关键依赖
+3. 读 `README.md`（如果存在），了解项目定位
+4. 如果有 `CONTEXT.md`，快速浏览术语表
+
+**这一步应该 < 30 秒完成。** 目的是知道"这是什么项目、用什么技术栈"，不是全面扫描。
+
+### On-demand Deep Scan（按需触发，贯穿 Step 2-4）
+
+**当用户回答涉及具体模块、技术细节或需要验证代码行为时**，dispatch 只读 subagent 做针对性扫描。这不是一个独立的 Step，而是贯穿提问过程的工具。
+
+**触发条件（满足任一即触发）：**
+- 用户提到"和 XX 模块交互"→ 扫描该模块
+- 用户提到"复用现有的 YY 机制"→ 扫描相关代码
+- 需要验证代码中是否存在某个功能/约束 → 精准 grep + read
+- 需要了解某个 API 的实际签名和行为 → 读对应文件
+
+**Subagent task 模板：**
 ```
-Scan the codebase to produce an infrastructure summary. Focus on:
-1. Project structure: directory layout, key entry points
-2. Existing APIs: exported functions/methods in files related to the user's request
-3. Type definitions: interfaces, types, models relevant to the domain
-4. Patterns in use: state management, routing, component structure, error handling
-5. Dependencies: key libraries and their versions
-6. Recent changes: last 5-10 commits to understand active development areas
+扫描 {具体模块/目录/文件}，聚焦于：
+1. 导出的函数/接口/类型
+2. 与 {用户提到的功能} 相关的数据流和调用链
+3. 使用的模式和约定
 
-Output to: .xyz-harness/{topic}/changes/infrastructure-scan.md
-Format: Markdown tables and bullet lists, organized by the 6 areas above.
-Keep it concise — this is a reference, not documentation.
+不要扫描无关代码。范围限定在：{具体路径}
 ```
 
 **Subagent config:**
 | Item | Value |
 |------|-------|
 | Agent | general-purpose (read-only mode) |
-| Model | 按 taskComplexity 自动选择（scan: low） |
+| Model | taskComplexity: low |
 | Tools | read, bash (no write) |
 
-**After scan completes:** Read `infrastructure-scan.md` and use it to:
-- Skip basic questions you already know the answer to
-- Ask more targeted questions about domain-specific gaps
-- Pre-fill the spec's "已有基础设施" chapter with scanned data
+**Scan 结果直接用于后续提问，不产出独立文档。** 如果信息量较大需要保留，可写入 `.xyz-harness/{topic}/changes/scan-{module}.md`，但这不是必需的
 
 ### Step 2: Progressive Questioning (Clarifying Questions)
 
-**This is the core of brainstorming.** The codebase scan gave you context; now use it to ask targeted, high-quality questions. Ask **one question at a time**, building understanding progressively.
+**This is the core of brainstorming.** Ask **one question at a time**, building understanding progressively. 当用户回答涉及具体代码细节时，按需 dispatch on-demand scan（见 Step 1 的 On-demand Deep Scan 章节），用扫描结果提升后续提问质量。
 
 #### Question Hierarchy (ask in this order)
 
@@ -145,8 +156,8 @@ Questions follow a deliberate order — each layer builds on the previous one. D
 
 **Layer 2: Core Behavior (3-5 questions)**
 - Walk me through the main user flow. What happens first, then what?
-- What should happen when [edge case]? (propose specific scenarios based on scan results)
-- What existing functionality does this interact with? (reference specific files/APIs from scan)
+- What should happen when [edge case]? (propose specific scenarios based on user's answers)
+- What existing functionality does this interact with? (if unclear, dispatch on-demand scan to check)
 - Are there any hard constraints I should know about? (time, performance, compatibility)
 
 **Layer 3: Boundaries & Non-obvious (2-3 questions)**
@@ -158,9 +169,9 @@ Questions follow a deliberate order — each layer builds on the previous one. D
 
 #### Question Quality Guidelines
 
-- **Prefer multiple choice** when the options are discoverable (e.g., from scan results: "I see the project uses Pinia for state management. Should this feature use the same pattern, or does it need a different approach?")
-- **Use scan results to skip basics** — don't ask "what framework" if the scan already shows Vue 3 + Pinia
-- **Use scan results to ask deeper questions** — "I see `useApi()` handles all API calls with auto-retry. Should this feature use it, or do you need different error handling?"
+- **Prefer multiple choice** when the options are discoverable (e.g., from quick overview or on-demand scan: "I see the project uses Pinia for state management. Should this feature use the same pattern, or does it need a different approach?")
+- **Use quick overview to skip basics** — don't ask "what framework" if you already read package.json
+- **Use on-demand scan results to ask deeper questions** — "I scanned the API layer and see `useApi()` handles all API calls with auto-retry. Should this feature use it, or do you need different error handling?"
 - **One question per message** — if a topic needs more exploration, break it into multiple questions
 - **Avoid abstract questions** — instead of "what are the requirements?", ask "when the user clicks X, should Y happen immediately or after confirmation?"
 
@@ -246,8 +257,8 @@ Verify the spec answers all six questions. For each missing element, add a `[MIS
 |---------|--------------|------------|
 | **Outcomes** | Is there a concrete description of the end state (not just "build X")? | Add outcome statement, mark `[AMBIGUOUS]` if unsure |
 | **Scope boundaries** | Are both in-scope AND out-of-scope items listed? | Add out-of-scope list; agent expands scope if you don't close the door |
-| **Constraints** | Are tech stack, API limits, performance requirements stated? | Add from scan results or mark `[AMBIGUOUS]` |
-| **Decisions made** | Are already-decided technical choices documented? | Add from scan results or ask user |
+| **Constraints** | Are tech stack, API limits, performance requirements stated? | Add from quick overview / on-demand scan or mark `[AMBIGUOUS]` |
+| **Decisions made** | Are already-decided technical choices documented? | Add from quick overview / on-demand scan or ask user |
 | **Task breakdown** | Is the work decomposed into independently verifiable units? | Not needed at spec stage (plan handles this) |
 | **Verification** | Are there concrete acceptance criteria, not just "does it work"? | Add criteria or mark `[AMBIGUOUS]` |
 
@@ -299,7 +310,7 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 ### 交叉引用代码
 
-当用户说某个东西怎么工作时，检查代码是否一致（利用 Step 1 的 Codebase Scan 结果）：
+当用户说某个东西怎么工作时，检查代码是否一致（利用 on-demand scan 结果，或按需 dispatch scan）：
 - 例："你说这个系统不支持部分退款，但我看到代码里有 `partial_refund` 方法——哪个是对的？"
 
 ### 即时写入 CONTEXT.md

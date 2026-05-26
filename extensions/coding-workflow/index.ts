@@ -897,14 +897,30 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 
 			ctx.ui.notify("Coding workflow: requirement captured, waiting for slug generation.", "info");
 
-			const source = trimmed ? "你输入的需求" : "之前对话中讨论的需求";
+			// Build requirement context for AI
+			// NOTE: command handler intercepts the original user input (input event is skipped),
+			// so the AI never sees the raw requirement text in conversation history.
+			// We must include it explicitly in the injected message.
+			let requirementContext: string;
+			if (trimmed) {
+				requirementContext =
+					`用户的需求如下：\n\n---\n${trimmed}\n---\n\n` +
+					`请根据以上需求，生成一个简短的英文 slug（小写、连字符分隔，不超过 60 字符），\n` +
+					`然后调用 coding-workflow-init(slug="你的slug") 完成初始化。`;
+			} else {
+				const messages = extractRecentUserMessages(ctx);
+				const recentContext = messages.length > 0
+					? `\n\n---\n以下是最近的用户消息摘要：\n${messages.map((m, i) => `[${i + 1}] ${m.slice(0, 500)}`).join("\n")}\n---\n`
+					: "";
+				requirementContext =
+					`请根据之前对话中讨论的需求，生成一个简短的英文 slug。${recentContext}`;
+			}
 
 			// command handler runs while agent is idle — no deliverAs needed
 			pi.sendUserMessage(
 				`[CODING WORKFLOW] 需求已记录。\n\n` +
-				`请根据${source}，生成一个简短的英文 slug（小写、连字符分隔，不超过 60 字符），\n` +
-				`然后调用 coding-workflow-init(slug="你的slug") 完成初始化。\n\n` +
-				`slug 要求：\n` +
+				requirementContext +
+				`\n\nslug 要求：\n` +
 				`- 简洁准确地概括需求核心\n` +
 				`- 纯英文、小写、连字符分隔\n` +
 				`- 例如：user-auth、cart-coupon、api-rate-limit\n` +
@@ -1042,12 +1058,11 @@ function checkProjectProtection(projectRoot: string): string[] {
 		if (!phaseConfig) return;
 
 		// Ingest skills for use by gate tool's dispatchReviewSubagent
-		skillResolver.setSkills(
-			(event.systemPromptOptions?.skills ?? []) as Array<{
-				name: string;
-				filePath: string;
-			}>,
-		);
+		const loadedSkills = (event.systemPromptOptions?.skills ?? []) as Array<{
+			name: string;
+			filePath: string;
+		}>;
+		skillResolver.setSkills(loadedSkills);
 
 		// HARD BLOCK: check ALL prior phases' retrospects before allowing current phase
 		const missingRetrospects: string[] = [];

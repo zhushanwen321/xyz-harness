@@ -246,22 +246,27 @@ def validate_plan_bl_review(topic_dir, checks):
         if verdict is None or verdict != "pass":
             checks.append(("plan_bl_review", FAIL, f"verdict={repr(verdict)}, expected 'pass'"))
             return
-        checks.append(("plan_bl_review", PASS, "found and verdict=pass"))
+        if must_fix is not None and must_fix != 0:
+            checks.append(("plan_bl_review must_fix", FAIL, f"must_fix={must_fix}, expected 0"))
+            return
+        checks.append(("plan_bl_review", PASS, "found, verdict=pass, must_fix=0"))
     else:
         checks.append(("plan_bl_review", PASS, "found"))
 
 
 def validate_taste_review_exists(topic_dir, checks):
-    """Ensure at least one taste review exists (ts_taste_review or rust_taste_review).
+    """Ensure at least one taste review exists (ts_taste_review, rust_taste_review, or generic taste_review).
 
-    Both ReviewChecks are optional, but at least one must be present.
+    All taste ReviewChecks are optional, but at least one must be present.
     """
     ts_path = find_latest_review(topic_dir, "ts_taste_review")
     rust_path = find_latest_review(topic_dir, "rust_taste_review")
-    if not ts_path and not rust_path:
-        checks.append(("taste_review", FAIL, "no taste review found (need at least one of: ts_taste_review, rust_taste_review)"))
+    generic_path = find_latest_review(topic_dir, "taste_review")
+    found = ts_path or rust_path or generic_path
+    if not found:
+        checks.append(("taste_review", FAIL, "no taste review found (need at least one of: ts_taste_review, rust_taste_review, taste_review)"))
     else:
-        name = os.path.basename(ts_path or rust_path).replace(".md", "")
+        name = os.path.basename(found).replace(".md", "")
         checks.append(("taste_review", PASS, f"{name} found"))
 
 
@@ -404,8 +409,8 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             FileCheck(path="plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
             FileCheck(path="e2e-test-plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
             FileCheck(path="test_cases_template.json", validator=validate_test_cases_template),
-            FileCheck(path="use-cases.md"),
-            FileCheck(path="non-functional-design.md"),
+            FileCheck(path="use-cases.md", fields=[FieldCheck("verdict", "str", "pass")]),
+            FileCheck(path="non-functional-design.md", fields=[FieldCheck("verdict", "str", "pass")]),
         ],
         reviews=[
             ReviewCheck(prefix="plan_review_v"),
@@ -430,6 +435,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             ReviewCheck(prefix="standards_review"),
             ReviewCheck(prefix="ts_taste_review", optional=True),
             ReviewCheck(prefix="rust_taste_review", optional=True),
+            ReviewCheck(prefix="taste_review", optional=True),
             ReviewCheck(prefix="robustness_review"),
         ],
         pre_checks=[validate_taste_review_exists, validate_standards_linter],

@@ -29,21 +29,13 @@ LOG_FILE=""
 LOG_DIR=""
 
 # Strip ANSI escape codes for log file
-_strip_ansi() { sed $'s/\x1b\[[0-9;]*m//g'; }
+_strip_ansi() { sed "s/$(printf '\033')\\[[0-9;]*m//g"; }
 
-# Pipe helper: reads stdin, writes to both stdout (with color) and log file (plain + timestamp)
-_log_pipe() {
-    local level="$1" context="$2"
-    while IFS= read -r line; do
-        echo "$line"
-        if [[ -n "$LOG_FILE" ]]; then
-            echo "[$(date +%H:%M:%S)] [$level] [$context] $(echo "$line" | _strip_ansi)" >> "$LOG_FILE"
-        fi
-    done
-}
+
 
 # Direct log functions (write to log file only, not stdout — use for metadata/decisions)
-log()       { [[ -n "$LOG_FILE" ]] && echo "[$(date +%H:%M:%S)] [$1] $2" >> "$LOG_FILE"; }
+_valid_log_level() { case "$1" in INFO|WARN|ERROR|PHASE|CMD|HOOK|CHECK|CI) return 0 ;; *) return 1 ;; esac; }
+log()       { [[ -n "$LOG_FILE" ]] && _valid_log_level "$1" && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [$1] $2" >> "$LOG_FILE"; }
 log_info()  { log "INFO" "$*"; }
 log_warn()  { log "WARN" "$*"; }
 log_error() { log "ERROR" "$*"; }
@@ -169,20 +161,21 @@ run_hook() {
         log_phase "执行钩子: $hook_name"
         # Capture hook output to temp file for both display and logging
         local hook_tmp="${CHECKPOINT_DIR:-/tmp}/hook-${hook_name}.tmp"
+        local hook_exit=0
         WS_ROOT="${WS_ROOT}" BRANCH_NAME="${BRANCH_NAME:-}" \
         PR_NUMBER="${PR_NUMBER:-}" VERSION="${NEW_VERSION:-}" \
         COMMIT_FILE="${COMMIT_FILE:-}" \
-        "$hook_script" "$@" > "$hook_tmp" 2>&1 || {
-            local hook_exit=$?
-            cat "$hook_tmp"
-            [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (FAILED exit=$hook_exit) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE"; echo "---" >> "$LOG_FILE"; }
+        "$hook_script" "$@" > "$hook_tmp" 2>&1 || hook_exit=$?
+        # 确保 tmp 文件最终被清理
+        cat "$hook_tmp" 2>/dev/null || true
+        if [[ $hook_exit -ne 0 ]]; then
+            [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (FAILED exit=$hook_exit) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE" 2>/dev/null; echo "---" >> "$LOG_FILE"; }
             rm -f "$hook_tmp"
             echo -e "  ${RED}❌ 钩子 $hook_name 失败（退出码 $hook_exit）${NC}"
             log_error "钩子 $hook_name 失败（退出码 $hook_exit）"
             return 1
-        }
-        cat "$hook_tmp"
-        [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (OK) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE"; echo "---" >> "$LOG_FILE"; }
+        fi
+        [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (OK) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE" 2>/dev/null; echo "---" >> "$LOG_FILE"; }
         rm -f "$hook_tmp"
         echo -e "  ${GREEN}✅ 钩子 $hook_name 完成${NC}"
         log_info "钩子 $hook_name 完成"
@@ -303,6 +296,11 @@ LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d)_${BRANCH_SAFE}.log"
 } > "$LOG_FILE"
 export MERGE_LOG_FILE="$LOG_FILE"
 log_info "日志初始化完成: $LOG_FILE"
+# 验证日志文件可写
+if ! echo "test" >> "$LOG_FILE" 2>/dev/null; then
+    echo -e "${RED}Error: 无法写入日志文件 $LOG_FILE${NC}"
+    LOG_FILE=""
+fi
 
 # 断点文件
 CHECKPOINT_DIR="$WS_ROOT/.merge-checkpoints/${BRANCH_NAME//\//-}"
@@ -350,7 +348,7 @@ echo "════════════════════════�
 if is_checkpoint "phase1-passed"; then
     echo ""
     echo -e "${YELLOW}⏭️  跳过阶段 1（已完成）${NC}"
-    log_info "跳过阶段 1（已完成）"
+    log_info "跳过阶段 1（checkpoint: phase1-passed 存在）"
 else
     echo ""
     echo -e "${BOLD}═══ 阶段 1/6: 本地验证 ═══${NC}"
@@ -661,8 +659,8 @@ if ! $RELEASE_CREATED_BY_CI; then
     echo "  ⏳ 等待 Release CI 创建 Draft Release..."
     WAIT_ELAPSED=0
     while [[ $WAIT_ELAPSED -lt 120 ]]; do
-        sleep 10
-        WAIT_ELAPSED=$((WAIT_ELAPSED + 10))
+        sleep 5
+        WAIT_ELAPSED=$((WAIT_ELAPSED + 5))
         EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body,assets --jq '.' 2>/dev/null || echo "")
         if [[ -n "$EXISTING_RELEASE" ]]; then
             ASSET_COUNT=$(echo "$EXISTING_RELEASE" | jq -r '.assets | length')
@@ -704,29 +702,43 @@ else
         log_warn "CI 未创建 Draft Release，fallback 到手动创建（无构建产物）"
     fi
 
-    echo "  创建 Release: $TAG"
-    log_info "手动创建 Release: $TAG"
-    if $DRAFT_MODE; then
-        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
-            --title "v$NEW_VERSION" \
-            --notes-file "$FINAL_NOTES_FILE" \
-            --draft \
-            --target main 2>&1 | tail -1) || {
-            echo -e "  ${RED}❌ Release 创建失败${NC}"
-            log_error "Release 创建失败"
-            exit 1
-        }
-        echo -e "  ${GREEN}✅ Draft Release 已创建${NC}"
+    # 去重检查：CI 可能在等待循环中创建了但 API 延迟返回空
+    EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body,assets --jq '.' 2>/dev/null || echo "")
+    if [[ -n "$EXISTING_RELEASE" ]]; then
+        echo -e "  ${GREEN}⚠️  Release 已存在（可能由 CI 在上一轮创建），更新 release notes${NC}"
+        log_info "Release 已存在，更新 notes"
+        gh release edit "$TAG" $GH_FLAG --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
+        IS_DRAFT=$(echo "$EXISTING_RELEASE" | jq -r '.isDraft')
+        if [[ "$IS_DRAFT" == "true" ]] && ! $DRAFT_MODE; then
+            echo "  发布 Draft Release..."
+            gh release edit "$TAG" $GH_FLAG --draft=false 2>&1 || true
+        fi
+        RELEASE_URL="${REPO_URL}/releases/tag/$TAG"
     else
-        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
-            --title "v$NEW_VERSION" \
-            --notes-file "$FINAL_NOTES_FILE" \
-            --target main 2>&1 | tail -1) || {
-            echo -e "  ${RED}❌ Release 创建失败${NC}"
-            log_error "Release 创建失败"
-            exit 1
-        }
-        echo -e "  ${GREEN}✅ Release 已发布${NC}"
+        echo "  创建 Release: $TAG"
+        log_info "手动创建 Release: $TAG"
+        if $DRAFT_MODE; then
+            RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
+                --title "v$NEW_VERSION" \
+                --notes-file "$FINAL_NOTES_FILE" \
+                --draft \
+                --target main 2>&1 | tail -1) || {
+                echo -e "  ${RED}❌ Release 创建失败${NC}"
+                log_error "Release 创建失败"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ Draft Release 已创建${NC}"
+        else
+            RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
+                --title "v$NEW_VERSION" \
+                --notes-file "$FINAL_NOTES_FILE" \
+                --target main 2>&1 | tail -1) || {
+                echo -e "  ${RED}❌ Release 创建失败${NC}"
+                log_error "Release 创建失败"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ Release 已发布${NC}"
+        fi
     fi
 fi
 
@@ -795,6 +807,11 @@ done
 # 清理临时文件和断点
 rm -f "$WS_ROOT/.release-notes-auto.md" "$COMMIT_FILE"
 clear_checkpoints
+
+# 日志轮转：保留最近 30 个日志文件
+if [[ -d "$LOG_DIR" ]]; then
+    ls -1t "$LOG_DIR"/*.log 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
+fi
 
 # 写入日志最终摘要
 log_info "==========================================="

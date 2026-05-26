@@ -31,7 +31,7 @@ FAILURES=()
 
 # ── 日志支持（由 merge-and-publish.sh 通过 MERGE_LOG_FILE 环境变量注入）──
 _chk_log() {
-    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [CHECK] $*" >> "$MERGE_LOG_FILE"
+    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [CHECK] $*" >> "$MERGE_LOG_FILE"
 }
 
 # ── 辅助函数 ────────────────────────────────────────

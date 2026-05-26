@@ -16,7 +16,7 @@ set -euo pipefail
 
 # ── 日志支持（由 merge-and-publish.sh 通过 MERGE_LOG_FILE 环境变量注入）──
 _ci_log() {
-    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [CI] $*" >> "$MERGE_LOG_FILE"
+    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [CI] $*" >> "$MERGE_LOG_FILE"
 }
 
 REF="${1:?Usage: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>] [--verify-release <tag>]}"

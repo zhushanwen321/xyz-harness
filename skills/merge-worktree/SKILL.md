@@ -269,13 +269,13 @@ AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 
 每行一条日志，格式：
 
 ```
-[HH:MM:SS] [LEVEL] [CONTEXT] message
+[YYYY-MM-DDTHH:MM:SS] [LEVEL] [CONTEXT] message
 ```
 
 | 字段 | 说明 |
 |------|--------|
-| `HH:MM:SS` | 本地时间戳 |
-| `LEVEL` | `PHASE` / `INFO` / `WARN` / `ERROR` / `CMD` / `HOOK` |
+| `YYYY-MM-DDTHH:MM:SS` | ISO 格式本地时间戳 |
+| `LEVEL` | `PHASE` / `INFO` / `WARN` / `ERROR` / `CMD` / `HOOK` / `CHECK` / `CI` |
 | `CONTEXT` | 来源（阶段名、hook 名、CI 等） |
 | `message` | 纯文本（已去除 ANSI 颜色码） |
 
@@ -293,6 +293,20 @@ AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 
 | Hook | 每个 hook 的完整输出和退出码 |
 | 最终 | PR / 版本 / Release URL / 日志路径 |
 
+### 子脚本日志协议
+
+`merge-and-publish.sh` 通过 `MERGE_LOG_FILE` 环境变量将日志文件路径传递给子脚本。子脚本的日志函数约定：
+
+| 子脚本 | 环境变量 | 日志 LEVEL | 函数 |
+|--------|----------|-----------|------|
+| `pre-merge-check.sh` | `MERGE_LOG_FILE` | `CHECK` | `_chk_log()` |
+| `wait-for-ci.sh` | `MERGE_LOG_FILE` | `CI` | `_ci_log()` |
+
+**契约**：
+- `MERGE_LOG_FILE` 为空时，日志函数静默跳过（不报错）
+- 子脚本独立运行（无 `MERGE_LOG_FILE`）时不写日志，不影响功能
+- 时间戳使用 ISO 格式 `YYYY-MM-DDTHH:MM:SS`
+
 ### 自定义 hook 的日志规范
 
 项目级 hook（`.bare/custom-hooks/`）不需要额外配置。`merge-and-publish.sh` 的 `run_hook` 函数会自动捕获 hook 的 stdout+stderr 写入日志文件。
@@ -301,7 +315,16 @@ AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 
 
 ```bash
 # 在 hook 脚本中
-[[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [HOOK] my message" >> "$MERGE_LOG_FILE"
+[[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [HOOK] my message" >> "$MERGE_LOG_FILE"
+```
+
+### 日志轮转
+
+每次发布流程完成后，自动清理旧日志，只保留最近 30 个日志文件。
+
+```bash
+# 手动清理
+ls -1t .logs/merge-worktree/*.log | tail -n +31 | xargs rm -f
 ```
 
 ### 排查指南
@@ -313,7 +336,7 @@ AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 
 cat .logs/merge-worktree/2026-05-26_feat-slash-commands.log
 
 # 2. 关键词搜索
-grep -i "fallback\|手动创建\|无构建产物\|CI 未创建" .logs/merge-worktree/*.log
+grep -i "fallback\|手动创建\|无构建产物\|CI 未创建\|去重检查" .logs/merge-worktree/*.log
 
 # 3. 检查 release workflow 是否触发
 gh run list --workflow=release.yml --limit 5
@@ -328,6 +351,13 @@ gh workflow run release.yml --repo <owner/repo>
 grep "超时\|timeout" .logs/merge-worktree/*.log
 ```
 
+**Checkpoint 与日志交叉排查**：
+
+```bash
+# 查看阶段跳过原因
+grep "checkpoint:" .logs/merge-worktree/*.log
+```
+
 ## 教训记录（续）
 
 ### 2026-05-26: v0.2.8 Release 无构建产物
@@ -337,7 +367,10 @@ grep "超时\|timeout" .logs/merge-worktree/*.log
 **根因**：Release 不是通过 `git push --tags` 触发 CI workflow 创建的。tag 通过 `gh release create` 隐式创建到 GitHub，GitHub 只收到了 release API 调用，没有收到 tag push event，导致 `release.yml` workflow（`on: push: tags: ['v*']`）未被触发。
 
 **修复**：
-1. merge-and-publish.sh 阶段 5 改为优先等待 CI 创建 Draft Release（含构建产物），最多等 120 秒
-2. 只有 CI 确实没有创建 Release 时才 fallback 到手动创建，并输出明确警告
-3. 最终验证产物数量，产物为 0 时给出手动触发 workflow 的命令提示
-4. 所有决策路径写入日志文件（`.logs/merge-worktree/`），方便事后排查
+1. merge-and-publish.sh 阶段 5 先检查已有 Release 是否已含产物（Phase 4c 的 `--verify-release` 可能已确认）
+2. 若无产物，等待 CI 创建 Draft Release，每 5 秒轮询，最多 120 秒
+3. 等待结束后走更新或创建逻辑
+4. 手动创建前执行去重检查（`gh release view`），避免 API 延迟导致的重复 Release
+5. 只有去重检查确认不存在时才 fallback 到手动创建，并输出明确警告
+6. 最终验证产物数量，产物为 0 时给出手动触发 workflow 的命令提示
+7. 所有决策路径写入日志文件（`.logs/merge-worktree/`），方便事后排查

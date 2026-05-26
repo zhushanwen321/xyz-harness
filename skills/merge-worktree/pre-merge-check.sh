@@ -29,16 +29,23 @@ FAIL_COUNT=0
 SKIP_COUNT=0
 FAILURES=()
 
+# ── 日志支持（由 merge-and-publish.sh 通过 MERGE_LOG_FILE 环境变量注入）──
+_chk_log() {
+    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [CHECK] $*" >> "$MERGE_LOG_FILE"
+}
+
 # ── 辅助函数 ────────────────────────────────────────
 
 pass() {
     echo -e "  ${GREEN}✅ PASS${NC}: $1"
     PASS_COUNT=$((PASS_COUNT + 1))
+    _chk_log "PASS: $1"
 }
 
 fail() {
     echo -e "  ${RED}❌ FAIL${NC}: $1"
     FAIL_COUNT=$((FAIL_COUNT + 1))
+    _chk_log "FAIL: $1"
     FAILURES+=("$1")
 }
 
@@ -394,6 +401,7 @@ if [[ $FAIL_COUNT -gt 0 ]]; then
     echo -e "${RED}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     exit 1
 else
+    _chk_log "验证报告: $PASS_COUNT passed, $FAIL_COUNT failed, $SKIP_COUNT skipped"
     echo -e "${GREEN}${BOLD}✅ 本地验证全部通过！可以进入 merge 流程。${NC}"
     exit 0
 fi

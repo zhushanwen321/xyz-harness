@@ -250,3 +250,94 @@ AI 调用 `merge-and-publish.sh` 时，bash 工具的 `timeout` 参数必须 >= 
 ### 2025-05-05: 本地验证不完整 + Post-merge CI 未检查
 
 **修复**：pre-merge-check.sh（自动装依赖 + 5 步强制）+ wait-for-ci.sh（post-merge CI 等待）
+
+## 日志系统
+
+所有 merge-worktree 脚本自动输出结构化日志到 `$WS_ROOT/.logs/merge-worktree/` 目录。
+
+### 日志文件命名
+
+```
+.logs/merge-worktree/
+  2026-05-26_feat-slash-commands.log     # 一次发布流程的完整日志
+```
+
+格式：`<YYYY-MM-DD>_<branch-name-safe>.log`（分支名中的 `/` 替换为 `-`）。
+
+### 日志格式
+
+每行一条日志，格式：
+
+```
+[HH:MM:SS] [LEVEL] [CONTEXT] message
+```
+
+| 字段 | 说明 |
+|------|--------|
+| `HH:MM:SS` | 本地时间戳 |
+| `LEVEL` | `PHASE` / `INFO` / `WARN` / `ERROR` / `CMD` / `HOOK` |
+| `CONTEXT` | 来源（阶段名、hook 名、CI 等） |
+| `message` | 纯文本（已去除 ANSI 颜色码） |
+
+### 日志覆盖范围
+
+| 阶段 | 记录内容 |
+|------|----------|
+| 初始化 | branch / workspace / repo / 版本类型 / draft 模式 |
+| 阶段 1 | pre-merge-check 的每项 PASS/FAIL |
+| 阶段 2 | PR 状态、CI 等待结果 |
+| 阶段 3 | post-merge CI 结果 |
+| 阶段 4 | 版本 bump、tag push、release CI 等待 |
+| 阶段 5 | Release 创建路径（CI Draft / 手动 fallback）、产物验证 |
+| 阶段 6 | worktree 清理、同步结果 |
+| Hook | 每个 hook 的完整输出和退出码 |
+| 最终 | PR / 版本 / Release URL / 日志路径 |
+
+### 自定义 hook 的日志规范
+
+项目级 hook（`.bare/custom-hooks/`）不需要额外配置。`merge-and-publish.sh` 的 `run_hook` 函数会自动捕获 hook 的 stdout+stderr 写入日志文件。
+
+如果 hook 内部需要直接写日志，可以读取 `MERGE_LOG_FILE` 环境变量：
+
+```bash
+# 在 hook 脚本中
+[[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [HOOK] my message" >> "$MERGE_LOG_FILE"
+```
+
+### 排查指南
+
+**Release 无构建产物**（如 v0.2.8 事故）：
+
+```bash
+# 1. 查看日志
+cat .logs/merge-worktree/2026-05-26_feat-slash-commands.log
+
+# 2. 关键词搜索
+grep -i "fallback\|手动创建\|无构建产物\|CI 未创建" .logs/merge-worktree/*.log
+
+# 3. 检查 release workflow 是否触发
+gh run list --workflow=release.yml --limit 5
+
+# 4. 手动触发 release workflow
+gh workflow run release.yml --repo <owner/repo>
+```
+
+**CI 等待超时**：
+
+```bash
+grep "超时\|timeout" .logs/merge-worktree/*.log
+```
+
+## 教训记录（续）
+
+### 2026-05-26: v0.2.8 Release 无构建产物
+
+**事件**：v0.2.8 Release 创建后没有任何构建产物（dmg/exe/AppImage），只有 release notes body。
+
+**根因**：Release 不是通过 `git push --tags` 触发 CI workflow 创建的。tag 通过 `gh release create` 隐式创建到 GitHub，GitHub 只收到了 release API 调用，没有收到 tag push event，导致 `release.yml` workflow（`on: push: tags: ['v*']`）未被触发。
+
+**修复**：
+1. merge-and-publish.sh 阶段 5 改为优先等待 CI 创建 Draft Release（含构建产物），最多等 120 秒
+2. 只有 CI 确实没有创建 Release 时才 fallback 到手动创建，并输出明确警告
+3. 最终验证产物数量，产物为 0 时给出手动触发 workflow 的命令提示
+4. 所有决策路径写入日志文件（`.logs/merge-worktree/`），方便事后排查

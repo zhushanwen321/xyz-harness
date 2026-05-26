@@ -14,6 +14,11 @@
 
 set -euo pipefail
 
+# ── 日志支持（由 merge-and-publish.sh 通过 MERGE_LOG_FILE 环境变量注入）──
+_ci_log() {
+    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%H:%M:%S)] [CI] $*" >> "$MERGE_LOG_FILE"
+}
+
 REF="${1:?Usage: wait-for-ci.sh <commit-sha> [--timeout 600] [--workflow <name>] [--verify-release <tag>]}"
 shift || true
 
@@ -47,6 +52,7 @@ command -v gh >/dev/null 2>&1 || { echo "Error: gh CLI 未安装"; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "Error: gh CLI 未登录"; exit 1; }
 
 echo -e "${BOLD}等待 CI 完成...${NC}"
+_ci_log "等待 CI: commit=$REF, workflow=${WORKFLOW:-all}, timeout=${TIMEOUT}s"
 echo "  Commit: $REF"
 if [[ -n "$WORKFLOW" ]]; then
     echo "  Workflow: $WORKFLOW"
@@ -102,6 +108,7 @@ while true; do
         if [[ $FAILURES -gt 0 ]]; then
             echo ""
             echo -e "${RED}${BOLD}⛔ CI 有失败的检查项！${NC}"
+            _ci_log "CI 失败: $FAILURES failed, $SUCCESSES passed"
             echo ""
             echo "失败的 workflow runs:"
             echo "$RUNS_JSON" | jq -r '.[] | select(.status == "completed" and .conclusion != "success" and .conclusion != "skipped") | "  ❌ \(.workflowName // .name): \(.conclusion)"'
@@ -125,6 +132,7 @@ while true; do
         else
             echo ""
             echo -e "${GREEN}${BOLD}✅ CI 全部通过！${NC} ($SUCCESSES/$TOTAL)"
+            _ci_log "CI 通过: $SUCCESSES/$TOTAL (耗时 ${ELAPSED}s)"
             break
         fi
     fi
@@ -133,6 +141,7 @@ while true; do
     if [[ $ELAPSED -ge $TIMEOUT ]]; then
         echo ""
         echo -e "${YELLOW}${BOLD}⚠️  CI 等待超时（${TIMEOUT}s）${NC}"
+        _ci_log "CI 等待超时 (${TIMEOUT}s), $PENDING pending"
         echo "  仍有 $PENDING 个 workflow 在运行中"
         echo ""
         echo "  建议:"
@@ -194,6 +203,7 @@ if [[ -n "$VERIFY_RELEASE_TAG" ]]; then
     # 检查 tag 是否匹配
     if [[ "$RELEASE_TAG" != "$VERIFY_RELEASE_TAG" ]]; then
         echo -e "  ${RED}❌ Release tag 不匹配: 期望 $VERIFY_RELEASE_TAG, 实际 $RELEASE_TAG${NC}"
+        _ci_log "Release 验证失败: tag mismatch ($RELEASE_TAG != $VERIFY_RELEASE_TAG)"
         echo "  根因：CI 的 src-electron/package.json 版本号与根 package.json 不一致"
         echo "  修复：同步版本号后重新触发 CI"
         exit 1
@@ -202,12 +212,14 @@ if [[ -n "$VERIFY_RELEASE_TAG" ]]; then
     # 检查产物数量（至少应有 1 个非 source-code 产物）
     if [[ "$ASSET_COUNT" -eq 0 ]]; then
         echo -e "  ${YELLOW}⚠️  Release 无构建产物（只有 source code）${NC}"
+        _ci_log "Release 验证失败: 无构建产物"
         echo "  可能原因：build job 失败或 artifact upload 被跳过"
         echo "  排查：gh run list --workflow Release --limit 3"
         exit 1
     fi
 
     echo -e "  ${GREEN}✅ Release 验证通过${NC}"
+_ci_log "Release 验证通过: tag=$VERIFY_RELEASE_TAG, assets=$ASSET_COUNT"
 fi
 
 exit 0

@@ -1,0 +1,210 @@
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "integration",
+      "title": "嵌套 YAML frontmatter 被 gate-check.py 正确解析",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-1",
+      "verification_method": "automated",
+      "steps": [
+        "构造含嵌套 YAML（review.verdict/statistics.must_fix）的 review 文件",
+        "执行 python3 gate-check.py <topic_dir> 1 --json",
+        "验证 passed=true 且 verdict/must_fix 被正确提取"
+      ]
+    },
+    {
+      "id": "TC-1-02",
+      "type": "integration",
+      "title": "扁平 YAML frontmatter 被 gate-check.py 正确解析",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-1",
+      "verification_method": "automated",
+      "steps": [
+        "构造含扁平 YAML（顶层 verdict/must_fix）的 review 文件",
+        "执行 python3 gate-check.py <topic_dir> 1 --json",
+        "验证 passed=true"
+      ]
+    },
+    {
+      "id": "TC-2-01",
+      "type": "integration",
+      "title": "Phase 5 gate 检查 Phase 3/4 review 文件存在性",
+      "planTaskId": "Task 2",
+      "ac_ref": "AC-2",
+      "verification_method": "automated",
+      "steps": [
+        "构造缺少 code_review_v1.md 的 Phase 5 mock 目录",
+        "验证 index.ts 的 review 前置检查返回 BLOCKED",
+        "恢复 review 文件后验证检查通过"
+      ]
+    },
+    {
+      "id": "TC-3-01",
+      "type": "manual",
+      "title": "5 个 Phase Skill 都包含 Self-Check Checklist 章节",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-3",
+      "verification_method": "code_review",
+      "steps": [
+        "grep -l 'Self-Check Checklist' skills/xyz-harness-*/SKILL.md",
+        "验证返回 5 个文件",
+        "验证每个 checklist 至少 3 条检查项"
+      ]
+    },
+    {
+      "id": "TC-4-01",
+      "type": "integration",
+      "title": "Phase 2 gate 检查 plan.md verdict 字段",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-4",
+      "verification_method": "automated",
+      "steps": [
+        "构造 plan.md 缺少 verdict 字段",
+        "执行 python3 gate-check.py <topic_dir> 2 --json",
+        "验证 FAIL 且错误信息包含 verdict"
+      ]
+    },
+    {
+      "id": "TC-5-01",
+      "type": "manual",
+      "title": "Plan Skill 包含 Spec Metrics Traceability 章节",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-5",
+      "verification_method": "code_review",
+      "steps": [
+        "grep 'Spec Metrics Traceability' skills/xyz-harness-writing-plans/SKILL.md",
+        "验证包含 adopted/rejected/postponed 状态说明"
+      ]
+    },
+    {
+      "id": "TC-5-02",
+      "type": "manual",
+      "title": "Test Skill 包含 planTaskId 和 ac_ref 字段说明",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-5",
+      "verification_method": "code_review",
+      "steps": [
+        "grep 'planTaskId' skills/xyz-harness-phase-test/SKILL.md",
+        "grep 'ac_ref' skills/xyz-harness-phase-test/SKILL.md",
+        "验证两个字段说明都存在"
+      ]
+    },
+    {
+      "id": "TC-6-01",
+      "type": "manual",
+      "title": "Dev Skill 和 TDD Skill 包含量化验收标准规则",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-6",
+      "verification_method": "code_review",
+      "steps": [
+        "grep 验收标准 skills/xyz-harness-phase-dev/SKILL.md",
+        "grep 上下文传递 skills/xyz-harness-test-driven-development/SKILL.md",
+        "验证两者都包含相关规则"
+      ]
+    },
+    {
+      "id": "TC-7-01",
+      "type": "integration",
+      "title": "gate-check.py 接受 verification_method 字段并输出统计",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-7",
+      "verification_method": "automated",
+      "steps": [
+        "构造含 verification_method 的 test_execution.json",
+        "执行 python3 gate-check.py <topic_dir> 4 --json",
+        "验证输出包含 verification methods 统计",
+        "验证缺少 verification_method 不会导致 FAIL"
+      ]
+    },
+    {
+      "id": "TC-8-01",
+      "type": "integration",
+      "title": "gate-check.py 不扫描 topic_dir 之外的文件",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-8",
+      "verification_method": "automated",
+      "steps": [
+        "在 .xyz-harness/ 下创建两个 topic 目录",
+        "topic-a 的 spec.md 设为 verdict: fail",
+        "对 topic-b 执行 gate-check.py",
+        "验证 topic-a 不影响 topic-b 的检查"
+      ]
+    },
+    {
+      "id": "TC-9-01",
+      "type": "integration",
+      "title": "gate-check.py 不因 .xyz-harness/ 内变更报 dirty check",
+      "planTaskId": "Task 1",
+      "ac_ref": "AC-9",
+      "verification_method": "automated",
+      "steps": [
+        "修改 .xyz-harness/ 下的 workflow-state.json",
+        "执行 gate-check.py",
+        "验证不报 dirty check 失败"
+      ]
+    },
+    {
+      "id": "TC-10-01",
+      "type": "manual",
+      "title": "expert-reviewer 包含 LOW 分级收紧规则",
+      "planTaskId": "Task 4",
+      "ac_ref": "AC-10",
+      "verification_method": "code_review",
+      "steps": [
+        "grep 'LOW 分级收紧' skills/xyz-harness-expert-reviewer/SKILL.md",
+        "验证包含反例说明"
+      ]
+    },
+    {
+      "id": "TC-11-01",
+      "type": "manual",
+      "title": "expert-reviewer 包含增量审查模式章节",
+      "planTaskId": "Task 4",
+      "ac_ref": "AC-11",
+      "verification_method": "code_review",
+      "steps": [
+        "grep '增量审查模式' skills/xyz-harness-expert-reviewer/SKILL.md",
+        "验证包含 _v{N-1}.md 读取逻辑"
+      ]
+    },
+    {
+      "id": "TC-12-01",
+      "type": "manual",
+      "title": "Plan Skill 禁止实现代码规则",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-12",
+      "verification_method": "code_review",
+      "steps": [
+        "grep '禁止实现代码' skills/xyz-harness-writing-plans/SKILL.md",
+        "验证包含硬性规则说明"
+      ]
+    },
+    {
+      "id": "TC-13-01",
+      "type": "manual",
+      "title": "Spec/Plan Skill 数据模型预检规则",
+      "planTaskId": "Task 3",
+      "ac_ref": "AC-13",
+      "verification_method": "code_review",
+      "steps": [
+        "grep '数据模型预检' skills/xyz-harness-brainstorming/SKILL.md",
+        "grep '伪代码标注数据来源' skills/xyz-harness-writing-plans/SKILL.md",
+        "验证两者都包含相关规则"
+      ]
+    },
+    {
+      "id": "TC-14-01",
+      "type": "integration",
+      "title": "Retrospect 只在 review pass 后触发",
+      "planTaskId": "Task 2",
+      "ac_ref": "AC-14",
+      "verification_method": "code_review",
+      "steps": [
+        "代码审查 index.ts gate execute 函数",
+        "确认 buildRetrospectFollowUp 只在 mustFix==0 时被调用",
+        "确认 review fail 路径不调用 buildRetrospectFollowUp"
+      ]
+    }
+  ]
+}

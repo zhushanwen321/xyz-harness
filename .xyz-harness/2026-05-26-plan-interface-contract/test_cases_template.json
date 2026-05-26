@@ -1,0 +1,125 @@
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "integration",
+      "title": "gate-check.py L2 plan: interface_chain.json schema 校验通过",
+      "description": "Given L2 plan with valid interface_chain.json, gate-check.py Phase 2 passes all checks including JSON schema validation",
+      "steps": [
+        "create topic dir with plan.md (complexity: L2) and valid interface_chain.json",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify exit code 0 and all checks PASS"
+      ]
+    },
+    {
+      "id": "TC-1-02",
+      "type": "integration",
+      "title": "gate-check.py L2 plan: missing interface_chain.json causes FAIL",
+      "description": "Given L2 plan without interface_chain.json, gate-check.py Phase 2 fails",
+      "steps": [
+        "create topic dir with plan.md (complexity: L2) but no interface_chain.json",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify exit code 1 and interface_chain.json check FAIL"
+      ]
+    },
+    {
+      "id": "TC-1-03",
+      "type": "integration",
+      "title": "gate-check.py L1 plan: no interface_chain.json check",
+      "description": "Given L1 plan without interface_chain.json, gate-check.py Phase 2 passes",
+      "steps": [
+        "create topic dir with plan.md (complexity: L1) and no interface_chain.json",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify no interface_chain.json check is performed"
+      ]
+    },
+    {
+      "id": "TC-1-04",
+      "type": "integration",
+      "title": "gate-check.py backward compat: old plan without complexity field",
+      "description": "Given old plan.md without complexity field, gate-check.py behaves same as before",
+      "steps": [
+        "create topic dir with plan.md (no complexity field) and no interface_chain.json",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify no interface_chain.json check and no error for missing complexity"
+      ]
+    },
+    {
+      "id": "TC-1-05",
+      "type": "integration",
+      "title": "gate-check.py L2 plan: invalid JSON in interface_chain.json causes FAIL",
+      "description": "Given L2 plan with malformed JSON, gate-check.py Phase 2 fails",
+      "steps": [
+        "create topic dir with plan.md (complexity: L2) and invalid interface_chain.json",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify exit code 1 and JSON parse error reported"
+      ]
+    },
+    {
+      "id": "TC-1-06",
+      "type": "integration",
+      "title": "gate-check.py L2 plan: empty methods array causes FAIL",
+      "description": "Given L2 plan with interface_chain.json having empty methods array, gate fails",
+      "steps": [
+        "create topic dir with plan.md (complexity: L2) and interface_chain.json with methods: []",
+        "run: python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2",
+        "verify exit code 1 and methods empty check FAIL"
+      ]
+    },
+    {
+      "id": "TC-2-01",
+      "type": "manual",
+      "title": "writing-plans skill: Interface Contracts chapter present in plan.md",
+      "description": "After using updated writing-plans skill, plan.md contains Interface Contracts section with method signature tables grouped by module",
+      "steps": [
+        "use updated writing-plans skill to produce plan.md for a real topic",
+        "verify plan.md contains '## Interface Contracts' section",
+        "verify section contains at least one module-grouped method signature table",
+        "verify section contains Spec Coverage Matrix"
+      ]
+    },
+    {
+      "id": "TC-2-02",
+      "type": "manual",
+      "title": "writing-plans skill: complexity frontmatter set correctly",
+      "description": "plan.md frontmatter contains complexity field with value L1 or L2",
+      "steps": [
+        "produce plan.md using updated skill",
+        "verify frontmatter has complexity: 'L1' or complexity: 'L2'"
+      ]
+    },
+    {
+      "id": "TC-3-01",
+      "type": "manual",
+      "title": "phase-dev skill: TDD subagent receives interface signatures",
+      "description": "When Phase 3 TDD coder subagent is dispatched, task prompt includes method signatures from interface_chain.json (L2) or plan.md (L1)",
+      "steps": [
+        "run Phase 3 with a completed plan that has interface contracts",
+        "inspect TDD coder subagent task prompt",
+        "verify it contains method name, parameter types, and return type"
+      ]
+    },
+    {
+      "id": "TC-4-01",
+      "type": "manual",
+      "title": "expert-reviewer skill: cross-reference check catches dangling method references",
+      "description": "Plan review subagent detects when data_flows references methods not in methods table",
+      "steps": [
+        "create plan with interface_chain.json where data_flows references a non-existent method",
+        "dispatch plan review subagent",
+        "verify review flags this as must_fix"
+      ]
+    },
+    {
+      "id": "TC-4-02",
+      "type": "manual",
+      "title": "expert-reviewer skill: consistency check catches plan.md vs JSON drift",
+      "description": "Plan review subagent detects method signature mismatch between plan.md markdown table and interface_chain.json",
+      "steps": [
+        "create plan where plan.md method signature differs from interface_chain.json",
+        "dispatch plan review subagent",
+        "verify review flags this as must_fix"
+      ]
+    }
+  ]
+}

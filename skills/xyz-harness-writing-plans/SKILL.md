@@ -45,6 +45,46 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
+## Phase 2 Additional Deliverables
+
+除了 plan.md、e2e-test-plan.md、test_cases_template.json 之外，Phase 2 还需产出:
+
+### use-cases.md
+
+从 spec.md 的"业务用例"章节提取并细化的业务用例文档。
+
+**YAML frontmatter:**
+```yaml
+---
+verdict: pass
+---
+```
+
+**格式要求:**
+- 每个 UC 包含: Actor、Preconditions、Main Flow（编号步骤）、Alternative/Exception Paths、Postconditions、Module Boundaries
+- UC 编号格式: UC-{N}
+- 所有 UC 必须能追溯到 spec AC（覆盖映射表）
+
+### non-functional-design.md
+
+非功能性设计文档，覆盖五个维度:
+
+**YAML frontmatter:**
+```yaml
+---
+verdict: pass
+---
+```
+
+**五个维度:**
+1. **稳定性**: 改动对系统稳定性的影响，风险缓解
+2. **数据一致性**: 数据存储方案，并发控制，YAML frontmatter 修改的安全性
+3. **性能**: 文件扫描、YAML 解析的性能评估
+4. **业务安全**: Skill 文件作为 AI 行为指令的安全影响
+5. **数据安全**: 敏感信息处理，文件操作的权限控制
+
+**格式:** 每个维度 2-3 句话，聚焦于"为什么这样设计"而非实现细节。如果某维度不适用，标注"不适用"并说明原因。
+
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
 **Context:** If working in an isolated worktree, it should have been created via the `using-git-worktrees` skill at execution time.
@@ -551,6 +591,8 @@ verdict: pass
         - `{topic_dir}/spec.md`
         - `{topic_dir}/plan.md`
         - `{topic_dir}/e2e-test-plan.md`
+        - `{topic_dir}/use-cases.md`
+        - `{topic_dir}/non-functional-design.md`
      4. 按方法论逐项审查（spec 完整性、plan 可行性、spec-plan 一致性、Execution Groups 合理性），将结果写入：
         `{topic_dir}/changes/reviews/plan_review_v1.md`
      5. YAML frontmatter 必须包含:
@@ -609,6 +651,9 @@ verdict: pass
   python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2
   ```
 - [ ] Tasks cover all acceptance criteria from spec
+- [ ] use-cases.md 存在，YAML verdict: pass
+- [ ] non-functional-design.md 存在，YAML verdict: pass
+- [ ] use-cases.md 中所有 UC 与 spec AC 有覆盖映射
 
 ## Gate Handoff
 

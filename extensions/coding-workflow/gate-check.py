@@ -133,6 +133,11 @@ def _flatten_review_fields(data):
         if isinstance(review, dict):
             verdict = review.get("verdict")
 
+    if must_fix is None and isinstance(data, dict) and "review" in data:
+        review = data["review"]
+        if isinstance(review, dict):
+            must_fix = review.get("must_fix")
+
     if must_fix is None and isinstance(data, dict) and "statistics" in data:
         stats = data["statistics"]
         if isinstance(stats, dict):
@@ -162,6 +167,7 @@ class FileCheck:
 @dataclass
 class ReviewCheck:
     prefix: str  # e.g. "spec_review_v"
+    optional: bool = False  # if True, missing review is not a failure
 
 
 @dataclass
@@ -197,6 +203,92 @@ def validate_test_cases_template(topic_dir, checks):
         checks.append(("test_cases_template.json", FAIL, "; ".join(errors)))
     else:
         checks.append(("test_cases_template.json", PASS, f"{len(cases)} cases, all have id/type/title"))
+
+
+def validate_plan_bl_review(topic_dir, checks):
+    """Check plan_bl_review only when plan.md complexity is L2."""
+    plan_path = os.path.join(topic_dir, "plan.md")
+    if not os.path.exists(plan_path):
+        return
+
+    data, err = parse_yaml_frontmatter(plan_path)
+    if err:
+        return
+
+    complexity = data.get("complexity", "L1") if isinstance(data, dict) else "L1"
+    if complexity != "L2":
+        checks.append(("plan_bl_review", PASS, f"skipped (complexity={complexity})"))
+        return
+
+    review_dir = os.path.join(topic_dir, "changes", "reviews")
+    if not os.path.isdir(review_dir):
+        checks.append(("plan_bl_review", FAIL, "reviews directory not found"))
+        return
+
+    found = False
+    for f in os.listdir(review_dir):
+        if f.startswith("plan_bl_review") and f.endswith(".md"):
+            found = True
+            break
+
+    if not found:
+        checks.append(("plan_bl_review", FAIL, "file not found"))
+        return
+
+    # Validate frontmatter: verdict must be pass
+    review_path = find_latest_review(topic_dir, "plan_bl_review")
+    if review_path:
+        rdata, rerr = parse_yaml_frontmatter(review_path)
+        if rerr:
+            checks.append(("plan_bl_review", FAIL, rerr))
+            return
+        verdict, must_fix = _flatten_review_fields(rdata)
+        if verdict is None or verdict != "pass":
+            checks.append(("plan_bl_review", FAIL, f"verdict={repr(verdict)}, expected 'pass'"))
+            return
+        checks.append(("plan_bl_review", PASS, "found and verdict=pass"))
+    else:
+        checks.append(("plan_bl_review", PASS, "found"))
+
+
+def validate_taste_review_exists(topic_dir, checks):
+    """Ensure at least one taste review exists (ts_taste_review or rust_taste_review).
+
+    Both ReviewChecks are optional, but at least one must be present.
+    """
+    ts_path = find_latest_review(topic_dir, "ts_taste_review")
+    rust_path = find_latest_review(topic_dir, "rust_taste_review")
+    if not ts_path and not rust_path:
+        checks.append(("taste_review", FAIL, "no taste review found (need at least one of: ts_taste_review, rust_taste_review)"))
+    else:
+        name = os.path.basename(ts_path or rust_path).replace(".md", "")
+        checks.append(("taste_review", PASS, f"{name} found"))
+
+
+def validate_standards_linter(topic_dir, checks):
+    """Check standards_review linter_passed field based on project lint config.
+
+    If standards_review contains linter_passed=false, report failure.
+    If the field is absent or true, pass.
+    """
+    review_path = find_latest_review(topic_dir, "standards_review")
+    if not review_path:
+        return  # absence handled by ReviewCheck
+
+    data, err = parse_yaml_frontmatter(review_path)
+    if err:
+        return  # parse errors handled by ReviewCheck
+
+    if not isinstance(data, dict):
+        return
+
+    # Only check linter_passed if the field exists in the review
+    if "linter_passed" in data:
+        val = data["linter_passed"]
+        if isinstance(val, bool) and not val:
+            checks.append(("standards_review linter_passed", FAIL, "linter_passed=false"))
+        else:
+            checks.append(("standards_review linter_passed", PASS, f"linter_passed={val}"))
 
 
 def validate_test_execution(topic_dir, checks):
@@ -312,10 +404,13 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             FileCheck(path="plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
             FileCheck(path="e2e-test-plan.md", fields=[FieldCheck("verdict", "str", "pass")]),
             FileCheck(path="test_cases_template.json", validator=validate_test_cases_template),
+            FileCheck(path="use-cases.md"),
+            FileCheck(path="non-functional-design.md"),
         ],
         reviews=[
             ReviewCheck(prefix="plan_review_v"),
         ],
+        pre_checks=[validate_plan_bl_review],
     ),
     3: PhaseSpec(
         name="Dev",
@@ -330,8 +425,14 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             ),
         ],
         reviews=[
-            ReviewCheck(prefix="code_review_v"),
+            ReviewCheck(prefix="business_logic_review"),
+            ReviewCheck(prefix="integration_review"),
+            ReviewCheck(prefix="standards_review"),
+            ReviewCheck(prefix="ts_taste_review", optional=True),
+            ReviewCheck(prefix="rust_taste_review", optional=True),
+            ReviewCheck(prefix="robustness_review"),
         ],
+        pre_checks=[validate_taste_review_exists, validate_standards_linter],
     ),
     4: PhaseSpec(
         name="Test",
@@ -396,7 +497,10 @@ def run_phase_checks(topic_dir: str, spec: PhaseSpec) -> list:
     for rc in spec.reviews:
         review_path = find_latest_review(topic_dir, rc.prefix)
         if not review_path:
-            checks.append((f"{rc.prefix}*", FAIL, f"no {rc.prefix}*.md found"))
+            if rc.optional:
+                checks.append((f"{rc.prefix}*", PASS, f"{rc.prefix}*.md not found (optional, skipped)"))
+            else:
+                checks.append((f"{rc.prefix}*", FAIL, f"no {rc.prefix}*.md found"))
         else:
             data, err = parse_yaml_frontmatter(review_path)
             if err:

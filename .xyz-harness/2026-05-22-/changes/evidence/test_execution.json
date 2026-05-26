@@ -1,0 +1,191 @@
+{
+  "test_execution": [
+    {
+      "caseId": "TC-1-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "创建 mock topic 目录，构造嵌套 YAML review 文件（review.verdict/statistics.must_fix）",
+        "执行 python3 gate-check.py <topic_dir> 1 --json",
+        "验证 passed=true, 3/3 checks passed, verdict/must_fix 正确提取"
+      ],
+      "evidence": "gate output: passed=true, spec_review_v1 verdict='pass', spec_review_v1 must_fix=0"
+    },
+    {
+      "caseId": "TC-1-02",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "创建 mock topic 目录，构造扁平 YAML review 文件（顶层 verdict/must_fix）",
+        "执行 python3 gate-check.py <topic_dir> 1 --json",
+        "验证 passed=true, 3/3 checks passed"
+      ],
+      "evidence": "gate output: passed=true, spec_review_v1 verdict='pass', spec_review_v1 must_fix=0"
+    },
+    {
+      "caseId": "TC-2-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep index.ts 确认包含 'Verify ALL prior phases have review' 逻辑",
+        "确认 Phase 3+ 时检查前置 phase 的 reviewPrefix 文件存在性",
+        "确认缺少 review 时返回 BLOCKED + 'Reviews are mandatory' 错误信息"
+      ],
+      "evidence": "grep 确认 index.ts 第 322-355 行包含完整 review 前置检查逻辑"
+    },
+    {
+      "caseId": "TC-3-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep -l 'Self-Check Checklist' skills/xyz-harness-*/SKILL.md",
+        "验证返回 5 个文件（brainstorming, writing-plans, phase-dev, phase-test, phase-pr）",
+        "验证每个文件至少 3 条 checklist 项（实际: 15/20/14/12/14 项）"
+      ],
+      "evidence": "5 files matched, checklist items: brainstorming=15, writing-plans=20, phase-dev=14, phase-test=12, phase-pr=14"
+    },
+    {
+      "caseId": "TC-4-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "构造 plan.md 缺少 verdict 字段（空 frontmatter）",
+        "执行 python3 gate-check.py <topic_dir> 2 --json",
+        "验证 FAIL 且错误信息为 'YAML frontmatter is empty'"
+      ],
+      "evidence": "gate output: passed=false, plan.md check: 'YAML frontmatter is empty'"
+    },
+    {
+      "caseId": "TC-5-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep 'Spec Metrics Traceability' skills/xyz-harness-writing-plans/SKILL.md",
+        "验证包含 adopted/rejected/postponed 三种状态说明（6 处提及）"
+      ],
+      "evidence": "Found '## Spec Metrics Traceability (强制章节)' + '## Spec Metrics Traceability' 模板, 6 mentions of status values"
+    },
+    {
+      "caseId": "TC-5-02",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep 'planTaskId' skills/xyz-harness-phase-test/SKILL.md → found",
+        "grep 'ac_ref' skills/xyz-harness-phase-test/SKILL.md → found"
+      ],
+      "evidence": "Both planTaskId and ac_ref mentioned in Self-Check Checklist"
+    },
+    {
+      "caseId": "TC-6-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep '验收标准' skills/xyz-harness-phase-dev/SKILL.md → found '### Task 验收标准'",
+        "grep '上下文传递' skills/xyz-harness-test-driven-development/SKILL.md → found '## Task Prompt 上下文传递规则'"
+      ],
+      "evidence": "Both Dev Skill and TDD Skill contain the required rules"
+    },
+    {
+      "caseId": "TC-7-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "构造含 verification_method 的 test_execution.json 在 changes/evidence/",
+        "执行 python3 gate-check.py <topic_dir> 4 --json",
+        "验证输出包含 'verification methods' 统计：automated: 1 (100%)",
+        "构造不含 verification_method 的 test_execution.json",
+        "验证仍 passed=true，统计显示 unspecified: 1 (100%)"
+      ],
+      "evidence": "With method: 'verification methods' check shows 'automated: 1 (100%)'. Without method: shows 'unspecified: 1 (100%)'. Both passed=true."
+    },
+    {
+      "caseId": "TC-8-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "创建两个隔离的 mock topic 目录（topic-a: verdict=fail, topic-b: verdict=pass）",
+        "对 topic-b 执行 gate-check.py Phase 1",
+        "验证 topic-b passed=true（不受 topic-a 影响）",
+        "对 topic-a 执行 gate-check.py Phase 1",
+        "验证 topic-a passed=false, failures=3"
+      ],
+      "evidence": "topic-b: passed=true (3/3 checks). topic-a: passed=false (0/3 checks). No cross-contamination."
+    },
+    {
+      "caseId": "TC-9-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "automated",
+      "execute_steps": [
+        "grep -i 'dirty|git status|uncommitted|clean working' gate-check.py → no matches (exit code 1)",
+        "验证当前 topic 的 Phase 1 gate 不受 .xyz-harness 内变更影响 → passed=true"
+      ],
+      "evidence": "No dirty check code in gate-check.py. Current topic gate passed=true."
+    },
+    {
+      "caseId": "TC-10-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep 'LOW 分级收紧' expert-reviewer SKILL.md → found",
+        "grep '消除 X' expert-reviewer SKILL.md → found 反例说明"
+      ],
+      "evidence": "Found '## LOW 分级收紧规则' with example: '需求是\"消除 X 性能问题\"，评审发现 X 仍然存在 → MUST_FIX'"
+    },
+    {
+      "caseId": "TC-11-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep '增量审查模式' expert-reviewer SKILL.md → found",
+        "grep '_v{N-1}' expert-reviewer SKILL.md → found"
+      ],
+      "evidence": "Found '## 增量审查模式' with '找到 `_v{N-1}.md` 文件，提取 MUST_FIX 列表'"
+    },
+    {
+      "caseId": "TC-12-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep '禁止实现代码' skills/xyz-harness-writing-plans/SKILL.md → found '### 禁止实现代码'"
+      ],
+      "evidence": "Found '### 禁止实现代码' checklist section with 2 check items"
+    },
+    {
+      "caseId": "TC-13-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "grep '数据模型预检' skills/xyz-harness-brainstorming/SKILL.md → found",
+        "grep '伪代码' skills/xyz-harness-writing-plans/SKILL.md → found '### 伪代码数据来源'"
+      ],
+      "evidence": "Spec Skill: '### 数据模型预检（FR 涉及 DB/API 时）'. Plan Skill: '### 伪代码数据来源' with DB JSON field check."
+    },
+    {
+      "caseId": "TC-14-01",
+      "round": 1,
+      "passed": true,
+      "verification_method": "code_review",
+      "execute_steps": [
+        "检查 index.ts 中 buildRetrospectFollowUp 调用位置（第 481 行）",
+        "确认只在 state.phaseResults[params.phase]='passed' 之后调用（第 471 行）",
+        "确认 review fail 路径（mustFix>0，第 439 行）直接 return FAIL，不经过 481 行"
+      ],
+      "evidence": "buildRetrospectFollowUp at line 481, after 'passed' at line 471. Review fail at line 439 returns early. No path from fail to followUp."
+    }
+  ]
+}

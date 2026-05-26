@@ -55,13 +55,13 @@ const PHASES: PhaseConfig[] = [
 	},
 	{
 		phase: 3, name: "Dev", skillName: "xyz-harness-phase-dev",
-		reviewPrefix: "code_review", retrospectPrefix: "dev_retrospect",
+		reviewPrefix: "business_logic_review", retrospectPrefix: "dev_retrospect",
 		deliverables: ["changes/evidence/test_results.md"],
 		reviewMode: "模式二：编码评审（审查代码实现是否满足 spec）",
 	},
 	{
 		phase: 4, name: "Test", skillName: "xyz-harness-phase-test",
-		reviewPrefix: "test_review", retrospectPrefix: "test_retrospect",
+		reviewPrefix: "", retrospectPrefix: "test_retrospect",
 		deliverables: ["changes/evidence/test_execution.json"],
 		reviewMode: "模式三：测试评审（审查测试覆盖度和质量）",
 	},

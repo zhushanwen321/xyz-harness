@@ -45,6 +45,46 @@ Write comprehensive implementation plans assuming the engineer has zero context 
 
 Assume they are a skilled developer, but know almost nothing about our toolset or problem domain. Assume they don't know good test design very well.
 
+## Phase 2 Additional Deliverables
+
+除了 plan.md、e2e-test-plan.md、test_cases_template.json 之外，Phase 2 还需产出:
+
+### use-cases.md
+
+从 spec.md 的"业务用例"章节提取并细化的业务用例文档。
+
+**YAML frontmatter:**
+```yaml
+---
+verdict: pass
+---
+```
+
+**格式要求:**
+- 每个 UC 包含: Actor、Preconditions、Main Flow（编号步骤）、Alternative/Exception Paths、Postconditions、Module Boundaries
+- UC 编号格式: UC-{N}
+- 所有 UC 必须能追溯到 spec AC（覆盖映射表）
+
+### non-functional-design.md
+
+非功能性设计文档，覆盖五个维度:
+
+**YAML frontmatter:**
+```yaml
+---
+verdict: pass
+---
+```
+
+**五个维度:**
+1. **稳定性**: 改动对系统稳定性的影响，风险缓解
+2. **数据一致性**: 数据存储方案，并发控制，YAML frontmatter 修改的安全性
+3. **性能**: 文件扫描、YAML 解析的性能评估
+4. **业务安全**: Skill 文件作为 AI 行为指令的安全影响
+5. **数据安全**: 敏感信息处理，文件操作的权限控制
+
+**格式:** 每个维度 2-3 句话，聚焦于"为什么这样设计"而非实现细节。如果某维度不适用，标注"不适用"并说明原因。
+
 **Announce at start:** "I'm using the writing-plans skill to create the implementation plan."
 
 **Context:** If working in an isolated worktree, it should have been created via the `using-git-worktrees` skill at execution time.
@@ -148,6 +188,94 @@ File structure 表格必须包含 Group 列，标注每个文件属于哪个 Exe
 | `src/api/user.py` | create | BG1 | 用户 API |
 | `src/views/UserPage.vue` | create | FG1 | 用户管理页面 |
 | `tests/test_user.py` | create | BG1 | 用户模型测试 |
+
+## Interface Contracts
+
+接口契约填补 plan 和 code 之间的设计空白。传统 plan 只定义 Task 粒度（如"创建 UserService"），接口契约进一步明确每个 Task 产出的方法签名、数据流链和 AC 覆盖关系。这能在 plan 阶段就检测 AC 遗漏和逻辑断裂，而非等到 dev 或 test 阶段才发现。
+
+接口契约包含三类信息：
+- **方法签名表**：按模块分组的公有方法签名（方法名、参数类型、返回类型、边界条件）
+- **数据流链**：方法间的调用关系和类型传递链（A.method → B.method → C.method）
+- **AC 覆盖矩阵**：spec AC → interface method → data flow → task 的完整追踪
+
+### L1/L2 分级规则
+
+接口契约的强制程度根据 plan 复杂度分级（与 spec FR-3 对齐）：
+
+| 维度 | L1（简化版） | L2（完整版） |
+|------|-------------|-------------|
+| interface_chain.json | 可选 | 强制 |
+| methods 表 | 强制（plan.md markdown） | 强制（plan.md + JSON） |
+| data_flows | 可选 | 强制 |
+| AC 覆盖矩阵 | 强制 | 强制 |
+
+plan.md 的 YAML frontmatter 新增 `complexity` 字段（`"L1"` 或 `"L2"`），供 gate-check.py 做条件判断。L2 plan 缺失 interface_chain.json 时 gate FAIL；L1 plan 不产出此文件也能过 gate。
+
+### 方法签名表模板
+
+plan.md 中 Interface Contracts 章节按模块分组，格式如下：
+
+<!-- TEMPLATE-START: do not grep this code block as real section headings -->
+```markdown
+## Interface Contracts
+
+### Module: {module-name}
+
+#### Class: {ClassName}
+
+| Method | Signature | Returns | Edge Cases | Spec Ref |
+|--------|-----------|---------|------------|----------|
+| methodName | (param: Type) -> ReturnType | ReturnType | boundary condition | AC-N |
+
+#### Data: {CustomTypeName}
+
+| Field | Type | Description |
+|-------|------|-------------|
+| fieldName | FieldType | description |
+```
+<!-- TEMPLATE-END -->
+
+### AC 覆盖矩阵模板（强制章节）
+
+plan.md 必须包含 Spec Coverage Matrix 章节，追踪 spec AC 的完整覆盖：
+
+```markdown
+## Spec Coverage Matrix
+
+| Spec AC | Interface Method | Data Flow | Task |
+|---------|-----------------|-----------|------|
+| AC-N | Class.method | flow-id | Task N |
+| AC-M | [GAP] | [GAP] | [GAP] |
+```
+
+矩阵中任何 `[GAP]` 条目表示 plan 遗漏，必须在完成 plan 前解决或显式声明为 `[POSTPONED]`（附原因）。postponed 的 AC 不算 GAP。
+
+> **注意：** 此矩阵与 "Spec Metrics Traceability" 章节互补——Traceability 追踪采纳状态，Coverage Matrix 追踪接口级覆盖。两者都不可省略。
+
+### interface_chain.json 产出指引（仅 L2）
+
+L2 plan 额外产出 `interface_chain.json`，与 plan.md 同目录。JSON schema 参见 spec.md FR-1 定义。
+
+产出流程：
+1. 完成 plan.md 的 Interface Contracts 章节后，根据签名表和 data_flows 生成 JSON
+2. 确保 JSON 中每个 method 的 name、class、params、returns 与 plan.md markdown 表一致
+3. 确保 data_flows[].chain 中的方法名全部存在于 methods[] 表中
+4. 独立验证：`python3 -c "import json; json.load(open('interface_chain.json'))"`
+
+### 粒度边界
+
+**纳入接口契约：**
+- 公开接口类的公有方法
+- 数据类 / DTO / Model 的字段定义
+
+**不纳入接口契约：**
+- 私有方法 / 内部 helper 方法
+- 工具类（除非被多个模块共享，作为共享契约）
+- 框架 / 平台生成的代码（prisma、ORM 生成的方法等）
+
+### "禁止实现代码"豁免说明
+
+接口签名是设计契约（方法名 + 参数类型 + 返回类型），不是实现代码。plan 中的接口签名表不受 Self-Check Checklist 中"禁止实现代码"规则的限制。签名表中可以包含参数类型和返回类型的名称，但不允许包含方法体、算法逻辑或完整的类定义。
 
 ## Bite-Sized Task Granularity
 
@@ -463,6 +591,8 @@ verdict: pass
         - `{topic_dir}/spec.md`
         - `{topic_dir}/plan.md`
         - `{topic_dir}/e2e-test-plan.md`
+        - `{topic_dir}/use-cases.md`
+        - `{topic_dir}/non-functional-design.md`
      4. 按方法论逐项审查（spec 完整性、plan 可行性、spec-plan 一致性、Execution Groups 合理性），将结果写入：
         `{topic_dir}/changes/reviews/plan_review_v1.md`
      5. YAML frontmatter 必须包含:
@@ -521,6 +651,9 @@ verdict: pass
   python3 skills/xyz-harness-gate/scripts/check_gate.py {topic_dir} 2
   ```
 - [ ] Tasks cover all acceptance criteria from spec
+- [ ] use-cases.md 存在，YAML verdict: pass
+- [ ] non-functional-design.md 存在，YAML verdict: pass
+- [ ] use-cases.md 中所有 UC 与 spec AC 有覆盖映射
 
 ## Gate Handoff
 

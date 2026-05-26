@@ -243,6 +243,15 @@ verdict: pass
 ## Functional Requirements
 ## Acceptance Criteria
 ## Constraints
+## 业务用例
+
+> 初版简述（Phase 2 会在此基础上细化）。纯技术性需求可标注"无业务用例"。
+
+### UC-1: {用例名称}
+- **Actor**: {谁执行}
+- **场景**: {什么情况下}
+- **预期结果**: {成功后的状态}
+
 ## Complexity Assessment
 ```
 ````
@@ -261,6 +270,7 @@ Verify the spec answers all six questions. For each missing element, add a `[MIS
 | **Decisions made** | Are already-decided technical choices documented? | Add from quick overview / on-demand scan or ask user |
 | **Task breakdown** | Is the work decomposed into independently verifiable units? | Not needed at spec stage (plan handles this) |
 | **Verification** | Are there concrete acceptance criteria, not just "does it work"? | Add criteria or mark `[AMBIGUOUS]` |
+| **Business use cases** | Is there a "业务用例" section with at least one UC? Pure technical needs can be marked "无业务用例" | Add from FR descriptions or mark "无业务用例" |
 
 ## Ambiguity Marking
 

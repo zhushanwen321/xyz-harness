@@ -1,0 +1,130 @@
+{
+  "test_execution": [
+    {
+      "caseId": "TC-1-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create L1 test topic dir with plan.md (complexity: L1), use-cases.md, non-functional-design.md, plan_review_v1.md",
+        "Run gate-check.py /tmp/harness-test-phase4/topic-l1 2",
+        "Verify all 8 checks PASS, plan_bl_review skipped (complexity=L1)"
+      ],
+      "evidence": "Phase 2 gate: PASS — all 8 checks passed"
+    },
+    {
+      "caseId": "TC-1-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create L2 test topic dir with plan.md (complexity: L2), plan_bl_review_v1.md (verdict: pass, must_fix: 0)",
+        "Run gate-check.py /tmp/harness-test-phase4/topic-l2 2",
+        "Verify plan_bl_review check exists: 'found, verdict=pass, must_fix=0'",
+        "Delete plan_bl_review file and verify gate FAILs with 'plan_bl_review: file not found'",
+        "Restore plan_bl_review file"
+      ],
+      "evidence": "L2 with BLR: PASS — plan_bl_review found, verdict=pass, must_fix=0; L2 without BLR: FAIL — plan_bl_review: file not found"
+    },
+    {
+      "caseId": "TC-1-03",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create Phase 3 test topic with 5 review files (business_logic/integration/standards/taste/robustness)",
+        "Run gate-check.py /tmp/harness-test-phase4/topic-p3 3",
+        "Verify all 16 checks PASS: 5 reviews checked, ts/rust taste optional skipped, taste_review found, code_review_v not checked"
+      ],
+      "evidence": "Phase 3 gate: PASS — all 16 checks passed"
+    },
+    {
+      "caseId": "TC-2-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create 3 test retrospect files: absorbed=true, absorbed=false, no absorbed field",
+        "Run collect.py --root /tmp/harness-test-phase4/retrospect-dir/",
+        "Verify 2 files listed (unabsorbed + no-field), absorbed file excluded"
+      ],
+      "evidence": "Default scan output: 2 files shown (2026-01-02, 2026-01-03), absorbed=true file (2026-01-01) excluded"
+    },
+    {
+      "caseId": "TC-2-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create test retrospect file with absorbed: false",
+        "Run collect.py --absorb <file> --summary 'test absorption'",
+        "Read file and verify YAML: absorbed=true, absorbed_date=2026-05-26, absorption_summary='test absorption'"
+      ],
+      "evidence": "After absorb: absorbed=True, absorbed_date=2026-05-26, absorption_summary='test absorption'"
+    },
+    {
+      "caseId": "TC-2-03",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Create 2 retrospect files sharing 'shared issue A', plus unique issues",
+        "Run collect.py --aggregate --root /tmp/harness-test-phase4/retrospect-dir/",
+        "Verify 'shared issue A' frequency=2, other issues frequency=1, sorted descending"
+      ],
+      "evidence": "Aggregate output: 'shared issue A' Freq=2, 'unique issue 1' Freq=1, 'shared issue B' Freq=1 — correct dedup and sort"
+    },
+    {
+      "caseId": "TC-3-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Read xyz-harness-brainstorming SKILL.md",
+        "grep '业务用例' — found 3 occurrences",
+        "grep 'Business use cases' — found 1 occurrence in Six-Element Completeness table"
+      ],
+      "evidence": "Brainstorming SKILL.md contains business use case section in spec template and Six-Element Completeness table"
+    },
+    {
+      "caseId": "TC-3-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Read xyz-harness-writing-plans SKILL.md",
+        "grep 'use-cases.md' — found 4 occurrences",
+        "grep 'non-functional-design.md' — found 3 occurrences",
+        "grep 'Phase 2 Additional Deliverables' — found 1 section"
+      ],
+      "evidence": "Writing-plans SKILL.md documents both new deliverables with format requirements"
+    },
+    {
+      "caseId": "TC-3-03",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Read xyz-harness-phase-dev SKILL.md",
+        "grep 'Batch 1' — found 2 occurrences (heading + execution diagram)",
+        "grep 'Batch 2' — found 2 occurrences",
+        "grep 'code_review' — found 1 occurrence (explanatory text: '将传统单步 code_review 替换为...')"
+      ],
+      "evidence": "Phase-dev Step 4 contains Batch 1 (4 parallel) + Batch 2 (1 sequential), old code_review dispatch removed"
+    },
+    {
+      "caseId": "TC-4-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Read standards_review_v1.md from actual Phase 3 execution",
+        "Verify no linter_passed field in YAML frontmatter",
+        "Verify report notes: '项目未配置 lint/typecheck，跳过自动检查'"
+      ],
+      "evidence": "standards_review_v1.md correctly skipped Phase A, executed Phase B only, no linter_passed field"
+    },
+    {
+      "caseId": "TC-4-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "Read dev_retrospect.md YAML frontmatter",
+        "Verify absorbed: bool (False)",
+        "Verify topic: str (2026-05-26-harness-plan-dev-review-retrospect-enhancement)",
+        "Verify harness_issues: list (4 items)"
+      ],
+      "evidence": "dev_retrospect.md YAML: absorbed=bool False, topic=str, harness_issues=list with 4 items"
+    }
+  ]
+}

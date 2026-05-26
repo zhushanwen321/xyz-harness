@@ -24,6 +24,24 @@ BOLD='\033[1m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+# ── 日志系统 ──────────────────────────────────────
+LOG_FILE=""
+LOG_DIR=""
+
+# Strip ANSI escape codes for log file
+_strip_ansi() { sed "s/$(printf '\033')\\[[0-9;]*m//g"; }
+
+
+
+# Direct log functions (write to log file only, not stdout — use for metadata/decisions)
+_valid_log_level() { case "$1" in INFO|WARN|ERROR|PHASE|CMD|HOOK|CHECK|CI) return 0 ;; *) return 1 ;; esac; }
+log()       { [[ -n "$LOG_FILE" ]] && _valid_log_level "$1" && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [$1] $2" >> "$LOG_FILE"; }
+log_info()  { log "INFO" "$*"; }
+log_warn()  { log "WARN" "$*"; }
+log_error() { log "ERROR" "$*"; }
+log_phase() { log "PHASE" "$*"; }
+log_cmd()   { log "CMD" "$*"; }
+
 # ── 参数解析 ──────────────────────────────────────
 WORKTREE_DIR=""
 VERSION_TYPE="patch"
@@ -140,16 +158,27 @@ run_hook() {
     if [[ -x "$hook_script" ]]; then
         echo ""
         echo -e "  ${CYAN}🔧 执行项目钩子: $hook_name${NC}"
+        log_phase "执行钩子: $hook_name"
+        # Capture hook output to temp file for both display and logging
+        local hook_tmp="${CHECKPOINT_DIR:-/tmp}/hook-${hook_name}.tmp"
         local hook_exit=0
         WS_ROOT="${WS_ROOT}" BRANCH_NAME="${BRANCH_NAME:-}" \
         PR_NUMBER="${PR_NUMBER:-}" VERSION="${NEW_VERSION:-}" \
         COMMIT_FILE="${COMMIT_FILE:-}" \
-        "$hook_script" "$@" || hook_exit=$?
+        "$hook_script" "$@" > "$hook_tmp" 2>&1 || hook_exit=$?
+        # 确保 tmp 文件最终被清理
+        cat "$hook_tmp" 2>/dev/null || true
         if [[ $hook_exit -ne 0 ]]; then
+            [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (FAILED exit=$hook_exit) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE" 2>/dev/null; echo "---" >> "$LOG_FILE"; }
+            rm -f "$hook_tmp"
             echo -e "  ${RED}❌ 钩子 $hook_name 失败（退出码 $hook_exit）${NC}"
+            log_error "钩子 $hook_name 失败（退出码 $hook_exit）"
             return 1
         fi
+        [[ -n "$LOG_FILE" ]] && { echo "--- Hook: $hook_name (OK) ---" >> "$LOG_FILE"; cat "$hook_tmp" >> "$LOG_FILE" 2>/dev/null; echo "---" >> "$LOG_FILE"; }
+        rm -f "$hook_tmp"
         echo -e "  ${GREEN}✅ 钩子 $hook_name 完成${NC}"
+        log_info "钩子 $hook_name 完成"
     fi
 }
 
@@ -245,6 +274,34 @@ if [[ -z "${GH_REPO:-}" ]]; then
   fi
 fi
 
+# ── 日志初始化 ───────────────────────────────────
+LOG_DIR="$WS_ROOT/.logs/merge-worktree"
+mkdir -p "$LOG_DIR"
+BRANCH_SAFE="${BRANCH_NAME//\//-}"
+LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d)_${BRANCH_SAFE}.log"
+{
+    echo "=========================================="
+    echo "Merge Worktree Log"
+    echo "Started: $(date -Iseconds)"
+    echo "=========================================="
+    echo "Branch: $BRANCH_NAME"
+    echo "Workspace: $WS_ROOT"
+    echo "Main worktree: $MAIN_WT"
+    echo "GH_REPO: ${GH_REPO:-}"
+    echo "Version type: $VERSION_TYPE"
+    echo "Notes file: ${NOTES_FILE:-(auto)}"
+    echo "Draft mode: $DRAFT_MODE"
+    echo "=========================================="
+    echo ""
+} > "$LOG_FILE"
+export MERGE_LOG_FILE="$LOG_FILE"
+log_info "日志初始化完成: $LOG_FILE"
+# 验证日志文件可写
+if ! echo "test" >> "$LOG_FILE" 2>/dev/null; then
+    echo -e "${RED}Error: 无法写入日志文件 $LOG_FILE${NC}"
+    LOG_FILE=""
+fi
+
 # 断点文件
 CHECKPOINT_DIR="$WS_ROOT/.merge-checkpoints/${BRANCH_NAME//\//-}"
 mkdir -p "$CHECKPOINT_DIR" 2>/dev/null || true
@@ -291,9 +348,11 @@ echo "════════════════════════�
 if is_checkpoint "phase1-passed"; then
     echo ""
     echo -e "${YELLOW}⏭️  跳过阶段 1（已完成）${NC}"
+    log_info "跳过阶段 1（checkpoint: phase1-passed 存在）"
 else
     echo ""
     echo -e "${BOLD}═══ 阶段 1/6: 本地验证 ═══${NC}"
+    log_phase "阶段 1: 本地验证"
 
     run_hook "pre-merge.sh" "$WORKTREE_DIR"
 
@@ -311,6 +370,7 @@ fi
 
 echo ""
 echo -e "${BOLD}═══ 阶段 2/6: PR CI + 合并 ═══${NC}"
+log_phase "阶段 2: PR CI + 合并"
 echo "  PR: #$PR_NUMBER — $PR_TITLE"
 echo "  状态: $PR_STATE"
 
@@ -372,6 +432,7 @@ fi
 
 echo ""
 echo -e "${BOLD}═══ 阶段 3/6: Post-merge CI 验证 ═══${NC}"
+log_phase "阶段 3: Post-merge CI"
 
 git -C "$MAIN_WT" fetch "$GH_REMOTE" main 2>&1 | tail -1
 MAIN_SHA=$(git -C "$MAIN_WT" rev-parse "$GH_REMOTE/main")
@@ -403,6 +464,7 @@ echo -e "  ${GREEN}✅ Post-merge CI 通过${NC}"
 
 echo ""
 echo -e "${BOLD}═══ 阶段 4/6: 发布准备 ═══${NC}"
+log_phase "阶段 4: 发布准备"
 
 # 4a. 检查是否有项目发布脚本
 PUBLISH_SH=""
@@ -463,6 +525,7 @@ else
         NEW_VERSION=$(node -p "require('$OP_DIR/package.json').version")
         TAG="v$NEW_VERSION"
         echo "  版本: $CURRENT_VERSION → $NEW_VERSION"
+        log_info "版本 bump: $CURRENT_VERSION → $NEW_VERSION, tag=$TAG"
 
         # 自动同步子项目 package.json 版本（如 src-electron/package.json）
         # electron-builder 和 CI 从 src-electron/package.json 读版本号，必须和根保持一致
@@ -484,6 +547,7 @@ else
             git push "$GH_REMOTE" HEAD:refs/heads/main --tags 2>&1 | tail -1
         )
         TAG="v$NEW_VERSION"
+        log_info "Tag $TAG 已推送到 $GH_REMOTE"
         echo -e "  ${GREEN}✅ 版本 bump + tag + push 完成${NC}"
     else
         # 非 npm 项目：手动 tag
@@ -513,10 +577,12 @@ else
             }
         fi
         echo -e "  ${GREEN}✅ Release CI 完成${NC}"
+        log_info "Release CI 完成 (tag=$TAG)"
     fi
 fi
 
 echo "  版本: v${NEW_VERSION}"
+log_info "阶段 4 完成: v${NEW_VERSION}"
 
 # ═══════════════════════════════════════════════════
 # 阶段 5: Release Notes + 创建 Release
@@ -524,12 +590,15 @@ echo "  版本: v${NEW_VERSION}"
 
 echo ""
 echo -e "${BOLD}═══ 阶段 5/6: Release ═══${NC}"
+log_phase "阶段 5: Release (tag=$TAG)"
 
 TAG="v${NEW_VERSION}"
+log_info "准备 Release: tag=$TAG"
 REPO_URL=$(gh repo view $GH_FLAG --json url --jq '.url' 2>/dev/null || echo "")
 
 # 5a. 生成 commit 清单
 LAST_TAG=$(git -C "$MAIN_WT" describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+log_info "上一个 tag: ${LAST_TAG:-none}"
 
 if [[ -n "$LAST_TAG" ]]; then
     LOG_RANGE="$LAST_TAG..HEAD"
@@ -568,9 +637,45 @@ else
     fi
 fi
 
-# 5c. 创建或更新 Release
-EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body --jq '.' 2>/dev/null || echo "")
+# 5c. Release 创建策略：优先等 CI 创建 Draft Release（含构建产物），fallback 到手动创建
+RELEASE_CREATED_BY_CI=false
 
+# 检查 CI 是否已创建 Draft Release（Phase 4c 的 --verify-release 应已确认）
+EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body,assets --jq '.' 2>/dev/null || echo "")
+
+if [[ -n "$EXISTING_RELEASE" ]]; then
+    ASSET_COUNT=$(echo "$EXISTING_RELEASE" | jq -r '.assets | length')
+    log_info "发现已有 Release (assets=$ASSET_COUNT, draft=$(echo "$EXISTING_RELEASE" | jq -r '.isDraft'))"
+
+    if [[ "$ASSET_COUNT" -gt 0 ]]; then
+        RELEASE_CREATED_BY_CI=true
+        echo -e "  ${GREEN}CI 已创建 Draft Release（含 $ASSET_COUNT 个产物）${NC}"
+    fi
+fi
+
+# 如果 CI 还没创建 Release（产物为 0 或不存在），等待最多 120 秒
+if ! $RELEASE_CREATED_BY_CI; then
+    log_info "等待 CI 创建 Draft Release (最多 120s)..."
+    echo "  ⏳ 等待 Release CI 创建 Draft Release..."
+    WAIT_ELAPSED=0
+    while [[ $WAIT_ELAPSED -lt 120 ]]; do
+        sleep 5
+        WAIT_ELAPSED=$((WAIT_ELAPSED + 5))
+        EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body,assets --jq '.' 2>/dev/null || echo "")
+        if [[ -n "$EXISTING_RELEASE" ]]; then
+            ASSET_COUNT=$(echo "$EXISTING_RELEASE" | jq -r '.assets | length')
+            if [[ "$ASSET_COUNT" -gt 0 ]]; then
+                RELEASE_CREATED_BY_CI=true
+                echo -e "  ${GREEN}✅ CI 已创建 Draft Release（含 $ASSET_COUNT 个产物，等待 ${WAIT_ELAPSED}s）${NC}"
+                log_info "CI 创建 Draft Release 成功 (assets=$ASSET_COUNT, wait=${WAIT_ELAPSED}s)"
+                break
+            fi
+        fi
+        echo "  ⏳ 等待中... (${WAIT_ELAPSED}s/120s)"
+    done
+fi
+
+# 更新或创建 Release
 if [[ -n "$EXISTING_RELEASE" ]]; then
     EXISTING_BODY=$(echo "$EXISTING_RELEASE" | jq -r '.body // ""' 2>/dev/null || echo "")
     if [[ -z "$EXISTING_BODY" ]] || [[ ${#EXISTING_BODY} -lt 20 ]]; then
@@ -578,6 +683,7 @@ if [[ -n "$EXISTING_RELEASE" ]]; then
     else
         echo "  更新已有 Release: $TAG"
     fi
+    log_info "更新 Release notes"
     gh release edit "$TAG" $GH_FLAG --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
     RELEASE_URL="${REPO_URL}/releases/tag/$TAG"
 
@@ -585,33 +691,68 @@ if [[ -n "$EXISTING_RELEASE" ]]; then
     IS_DRAFT=$(echo "$EXISTING_RELEASE" | jq -r '.isDraft')
     if [[ "$IS_DRAFT" == "true" ]] && ! $DRAFT_MODE; then
         echo "  发布 Draft Release..."
+        log_info "发布 Draft Release (draft=false)"
         gh release edit "$TAG" $GH_FLAG --draft=false 2>&1 || true
     fi
 else
-    echo "  创建 Release: $TAG"
-    if $DRAFT_MODE; then
-        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
-            --title "v$NEW_VERSION" \
-            --notes-file "$FINAL_NOTES_FILE" \
-            --draft \
-            --target main 2>&1 | tail -1) || {
-            echo -e "  ${RED}❌ Release 创建失败${NC}"
-            exit 1
-        }
-        echo -e "  ${GREEN}✅ Draft Release 已创建${NC}"
+    # Fallback: CI 没有创建 Release，手动创建（将不含构建产物）
+    if ! $RELEASE_CREATED_BY_CI; then
+        echo -e "  ${YELLOW}⚠️  CI 未在预期时间内创建 Draft Release，手动创建（将无构建产物）${NC}"
+        echo -e "  ${YELLOW}如需构建产物，请手动触发: gh workflow run release.yml --repo $GH_REPO${NC}"
+        log_warn "CI 未创建 Draft Release，fallback 到手动创建（无构建产物）"
+    fi
+
+    # 去重检查：CI 可能在等待循环中创建了但 API 延迟返回空
+    EXISTING_RELEASE=$(gh release view "$TAG" $GH_FLAG --json isDraft,id,body,assets --jq '.' 2>/dev/null || echo "")
+    if [[ -n "$EXISTING_RELEASE" ]]; then
+        echo -e "  ${GREEN}⚠️  Release 已存在（可能由 CI 在上一轮创建），更新 release notes${NC}"
+        log_info "Release 已存在，更新 notes"
+        gh release edit "$TAG" $GH_FLAG --notes-file "$FINAL_NOTES_FILE" 2>&1 || true
+        IS_DRAFT=$(echo "$EXISTING_RELEASE" | jq -r '.isDraft')
+        if [[ "$IS_DRAFT" == "true" ]] && ! $DRAFT_MODE; then
+            echo "  发布 Draft Release..."
+            gh release edit "$TAG" $GH_FLAG --draft=false 2>&1 || true
+        fi
+        RELEASE_URL="${REPO_URL}/releases/tag/$TAG"
     else
-        RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
-            --title "v$NEW_VERSION" \
-            --notes-file "$FINAL_NOTES_FILE" \
-            --target main 2>&1 | tail -1) || {
-            echo -e "  ${RED}❌ Release 创建失败${NC}"
-            exit 1
-        }
-        echo -e "  ${GREEN}✅ Release 已发布${NC}"
+        echo "  创建 Release: $TAG"
+        log_info "手动创建 Release: $TAG"
+        if $DRAFT_MODE; then
+            RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
+                --title "v$NEW_VERSION" \
+                --notes-file "$FINAL_NOTES_FILE" \
+                --draft \
+                --target main 2>&1 | tail -1) || {
+                echo -e "  ${RED}❌ Release 创建失败${NC}"
+                log_error "Release 创建失败"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ Draft Release 已创建${NC}"
+        else
+            RELEASE_URL=$(gh release create "$TAG" $GH_FLAG \
+                --title "v$NEW_VERSION" \
+                --notes-file "$FINAL_NOTES_FILE" \
+                --target main 2>&1 | tail -1) || {
+                echo -e "  ${RED}❌ Release 创建失败${NC}"
+                log_error "Release 创建失败"
+                exit 1
+            }
+            echo -e "  ${GREEN}✅ Release 已发布${NC}"
+        fi
     fi
 fi
 
+# 最终产物验证
+FINAL_ASSETS=$(gh release view "$TAG" $GH_FLAG --json assets --jq '.assets | length' 2>/dev/null || echo "0")
+log_info "最终产物数量: $FINAL_ASSETS"
+if [[ "$FINAL_ASSETS" -eq 0 ]] && ! $DRAFT_MODE; then
+    echo -e "  ${YELLOW}⚠️  Release 无构建产物（dmg/exe/AppImage）${NC}"
+    echo -e "  ${YELLOW}手动触发构建: gh workflow run release.yml --repo $GH_REPO${NC}"
+    log_warn "Release 无构建产物"
+fi
+
 echo "  URL: $RELEASE_URL"
+log_info "Release URL: $RELEASE_URL"
 
 # 执行 post-release.sh 钩子
 run_hook "post-release.sh" "$RELEASE_URL" || true
@@ -666,6 +807,20 @@ done
 # 清理临时文件和断点
 rm -f "$WS_ROOT/.release-notes-auto.md" "$COMMIT_FILE"
 clear_checkpoints
+
+# 日志轮转：保留最近 30 个日志文件
+if [[ -d "$LOG_DIR" ]]; then
+    ls -1t "$LOG_DIR"/*.log 2>/dev/null | tail -n +31 | xargs rm -f 2>/dev/null || true
+fi
+
+# 写入日志最终摘要
+log_info "==========================================="
+log_info "流程完成"
+log_info "  PR: #$PR_NUMBER"
+log_info "  版本: v$NEW_VERSION"
+log_info "  Release: $RELEASE_URL"
+log_info "  日志文件: $LOG_FILE"
+log_info "==========================================="
 
 echo ""
 echo "══════════════════════════════════════════════════"

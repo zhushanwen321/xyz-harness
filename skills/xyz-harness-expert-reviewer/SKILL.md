@@ -74,11 +74,18 @@ description: >
 - **上下文充分性**：注入上下文是否足够让 subagent 独立完成（不含糊引用）
 - **文件数预估**：每组文件数标注是否合理（对比 Task 的文件变更表）
 
+**5. 接口契约审查（当 plan.md 包含 Interface Contracts 时启用）**
+
+- **plan.md ↔ interface_chain.json 一致性**（仅 L2）：方法名、参数类型、返回值在两处是否一致。如不一致，标记 MUST_FIX。
+- **data_flows cross-reference**（仅 L2）：data_flows[].chain 中的每个方法名是否存在于 methods[] 表中。如有悬空引用，标记 MUST_FIX。
+- **AC 覆盖矩阵完整性**（L1/L2 均强制）：spec 中所有 adopted AC 是否在矩阵中有对应行。遗漏的 AC 标记 MUST_FIX。postponed AC 须注明原因。
+- **类型传递一致性**（仅 L2，建议检查）：data_flows chain 中相邻方法的输出/输入类型是否兼容。
+
 **L1 后端检查清单（plan.md 中涉及后端的 task）：**
 
 当 plan.md 中有后端 task（API、数据库、业务逻辑）时，额外检查：
 
-**5. 后端设计充分性（L1）**
+**6. 后端设计充分性（L1）**
 - 后端 task 是否说明了"为什么"这样实现，而不只是"做什么"？
 - 存储变更是否有选型理由（新增字段/表的原因）？
 - API 端点设计是否与业务场景对应？

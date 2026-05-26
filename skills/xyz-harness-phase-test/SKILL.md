@@ -62,6 +62,15 @@ For each test case (by ID group):
 - Frontend tests: Playwright or manual verification
 - Integration tests: service-level tests
 
+#### Data Flows 消费（仅 L2 plan）
+
+当 interface_chain.json 存在于 topic 目录时：
+
+1. Read interface_chain.json，提取 data_flows 数组
+2. 集成测试验证应覆盖每条 data_flow 的完整调用链
+3. 验证方式：相邻方法之间的数据传递正确性（输出类型匹配输入类型）
+4. 不改 test_cases_template.json schema —— data_flow 覆盖在执行步骤描述中体现
+
 ### 3. Record Results
 
 Create or update `{topic}/changes/evidence/test_execution.json` with format:

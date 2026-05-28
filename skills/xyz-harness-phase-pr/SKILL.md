@@ -156,7 +156,19 @@ All CI checks passed.
 - ruff lint: passed ✅
 ```
 
-### 4. Self-Check
+### 4. 阶段完成提交
+
+**阶段完成时，必须提交并推送所有代码和文档到远程仓库。**
+
+```bash
+git add -A
+git commit -m "ci: PR and CI evidence for {topic}"
+git push
+```
+
+确保 `.xyz-harness/` 目录下的所有产出文件都被 git 跟踪。
+
+### 5. Self-Check
 
 **铁律：禁止在未实际运行验证命令的情况下声称完成。**
 

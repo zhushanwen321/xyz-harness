@@ -165,7 +165,19 @@ If any test fails: diagnose → fix → re-run → update execution json.
 - [ ] 读取输出，确认所有检查项 PASS
 - [ ] test_results.md still accurate
 
-### 6. Gate Handoff
+### 6. 阶段完成提交
+
+**阶段完成时，必须提交并推送所有代码和文档到远程仓库。**
+
+```bash
+git add -A
+git commit -m "test: test execution for {topic}"
+git push
+```
+
+确保 `.xyz-harness/` 目录下的测试产出文件都被 git 跟踪。
+
+### 7. Gate Handoff
 
 When opening a separate gate check conversation, submit this file:
 

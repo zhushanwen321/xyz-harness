@@ -464,6 +464,18 @@ must_fix: 0
 - [ ] All constraints are documented
 - [ ] All [AMBIGUOUS] markers resolved
 
+## 阶段完成提交
+
+**阶段完成时，必须提交并推送所有代码和文档到远程仓库。**
+
+```bash
+git add -A
+git commit -m "docs: spec for {topic}"
+git push
+```
+
+确保 `.xyz-harness/` 和 `docs/` 目录下的所有产出文件都被 git 跟踪。
+
 ## Gate Handoff
 
 在独立 Pi session 中检查 gate：

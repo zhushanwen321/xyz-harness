@@ -58,6 +58,22 @@ Gate FAIL 后不是从头开始，而是回到循环起点继续：
 
 Implement the feature according to plan.md, following TDD methodology, then get code review.
 
+## 阶段完成要求
+
+**每个阶段完成时，必须提交并推送所有代码和文档到远程仓库。** 包括：
+- 源代码变更
+- `.xyz-harness/` 目录下的所有产出（spec、plan、review、retrospect 等）
+- `docs/` 目录下的设计文档
+- 测试文件和测试结果
+
+```bash
+git add -A
+git commit -m "feat: {description}"
+git push
+```
+
+确保 `git status --short` 无未跟踪文件（特别是 `.xyz-harness/` 和 `docs/`）后再提交。
+
 ## Prerequisites
 
 - plan.md exists with verdict: pass
@@ -338,6 +354,18 @@ Build successful.
   ```
 - [ ] 读取输出，确认所有检查项 PASS
 - [ ] No unintended modifications
+
+### 6b. 阶段完成提交
+
+**阶段完成时，必须提交并推送所有代码和文档到远程仓库。**
+
+```bash
+git add -A
+git commit -m "feat: implementation for {topic}"
+git push
+```
+
+确保 `.xyz-harness/`、`docs/` 和源代码目录下的所有变更都被 git 跟踪。
 
 ### 7. Gate Handoff
 

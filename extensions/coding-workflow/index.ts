@@ -1137,7 +1137,8 @@ function checkProjectProtection(projectRoot: string): string[] {
 			`- ONLY do what the skill below tells you to do\n` +
 			`- Do NOT skip ahead, plan ahead, or do anything outside the skill scope\n` +
 			`- If gate returns FAIL: fix the specific items listed, then retry\n` +
-			`- If gate returns PASS: follow the instructions in the gate result message exactly\n\n` +
+			`- If gate returns PASS: follow the instructions in the gate result message exactly\n` +
+			`- 每个阶段完成时，必须提交并推送所有代码和文档（特别是 .xyz-harness/ 和 docs/ 目录）。确保 git status --short 无未跟踪文件后再提交\n\n` +
 			`--- Skill Instructions ---\n${skillContent}\n--- End Skill Instructions ---`;
 
 		// Phase 5 special constraint

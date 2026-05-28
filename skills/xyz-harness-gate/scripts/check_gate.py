@@ -15,12 +15,72 @@ Exit code:
 
 import json
 import os
+import subprocess
 import sys
 import yaml
 import glob
 
 PASS = "✅ PASS"
 FAIL = "❌ FAIL"
+
+
+def check_untracked_files(topic_dir, checks):
+    """Check for git-untracked files in critical project directories.
+
+    Scans the whole repo for files not tracked by git. Files under
+    .xyz-harness/ and docs/ are treated as FAIL (critical artifacts
+    must be committed). Other untracked files are informational only.
+    """
+    abs_topic = os.path.abspath(topic_dir)
+    cwd = abs_topic if os.path.isdir(abs_topic) else os.path.dirname(abs_topic)
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd,
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        checks.append(("untracked files", FAIL, f"git status error: {e}"))
+        return
+
+    if result.returncode != 0:
+        checks.append(("untracked files", FAIL, f"git status failed: {result.stderr.strip()}"))
+        return
+
+    untracked = [
+        line[3:].strip()
+        for line in result.stdout.splitlines()
+        if line.startswith("?? ")
+    ]
+
+    if not untracked:
+        checks.append(("untracked files", PASS, "all files tracked"))
+        return
+
+    critical_prefixes = (".xyz-harness/", "docs/")
+    critical = [f for f in untracked if any(f.startswith(p) for p in critical_prefixes)]
+    other = [f for f in untracked if not any(f.startswith(p) for p in critical_prefixes)]
+
+    if critical:
+        display = critical[:10]
+        suffix = f" (+{len(critical) - 10} more)" if len(critical) > 10 else ""
+        checks.append((
+            "untracked files (critical)",
+            FAIL,
+            f"{len(critical)} untracked in .xyz-harness/ or docs/: {', '.join(display)}{suffix}",
+        ))
+    else:
+        checks.append(("untracked files (critical)", PASS, ".xyz-harness/ and docs/ fully tracked"))
+
+    if other:
+        display = other[:5]
+        suffix = f" (+{len(other) - 5} more)" if len(other) > 5 else ""
+        checks.append((
+            "untracked files (other)",
+            PASS,
+            f"{len(other)} other untracked (non-blocking): {', '.join(display)}{suffix}",
+        ))
 
 
 def parse_yaml_frontmatter(filepath):
@@ -136,6 +196,9 @@ def _flatten_review_fields(data):
 
 def check_phase_1(topic_dir):
     checks = []
+
+    # Pre-check: untracked files
+    check_untracked_files(topic_dir, checks)
 
     # 1.1 spec.md exists
     spec_path = os.path.join(topic_dir, "spec.md")
@@ -299,6 +362,9 @@ def validate_plan_bl_review(topic_dir, checks):
 def check_phase_2(topic_dir):
     checks = []
 
+    # Pre-check: untracked files
+    check_untracked_files(topic_dir, checks)
+
     # 2.1 plan.md
     plan_path = os.path.join(topic_dir, "plan.md")
     data, err = parse_yaml_frontmatter(plan_path)
@@ -445,6 +511,9 @@ def validate_standards_linter(topic_dir, checks):
 def check_phase_3(topic_dir):
     checks = []
 
+    # Pre-check: untracked files
+    check_untracked_files(topic_dir, checks)
+
     # Pre-checks
     validate_taste_review_exists(topic_dir, checks)
     validate_standards_linter(topic_dir, checks)
@@ -546,6 +615,9 @@ def check_phase_3(topic_dir):
 def check_phase_4(topic_dir):
     checks = []
 
+    # Pre-check: untracked files
+    check_untracked_files(topic_dir, checks)
+
     # 4.1 test_cases_template.json 存在（用于跨引用）
     template_path = os.path.join(topic_dir, "test_cases_template.json")
     if not os.path.exists(template_path):
@@ -625,6 +697,9 @@ def check_phase_4(topic_dir):
 
 def check_phase_5(topic_dir):
     checks = []
+
+    # Pre-check: untracked files
+    check_untracked_files(topic_dir, checks)
 
     # 5.1 pr_evidence.md
     pr_path = os.path.join(topic_dir, "changes", "evidence", "pr_evidence.md")

@@ -16,6 +16,7 @@ Exit code:
 
 import json
 import os
+import subprocess
 import sys
 import yaml
 import glob
@@ -352,6 +353,65 @@ def validate_plan_bl_review(topic_dir, checks):
         checks.append(("plan_bl_review", PASS, "found"))
 
 
+def check_untracked_files(topic_dir, checks):
+    """Check for git-untracked files in critical project directories.
+
+    Scans the whole repo for files not tracked by git. Files under
+    .xyz-harness/ and docs/ are treated as FAIL (critical artifacts
+    must be committed). Other untracked files are informational only.
+    """
+    abs_topic = os.path.abspath(topic_dir)
+    cwd = abs_topic if os.path.isdir(abs_topic) else os.path.dirname(abs_topic)
+
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=cwd,
+            capture_output=True, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        checks.append(("untracked files", FAIL, f"git status error: {e}"))
+        return
+
+    if result.returncode != 0:
+        checks.append(("untracked files", FAIL, f"git status failed: {result.stderr.strip()}"))
+        return
+
+    untracked = [
+        line[3:].strip()
+        for line in result.stdout.splitlines()
+        if line.startswith("?? ")
+    ]
+
+    if not untracked:
+        checks.append(("untracked files", PASS, "all files tracked"))
+        return
+
+    critical_prefixes = (".xyz-harness/", "docs/")
+    critical = [f for f in untracked if any(f.startswith(p) for p in critical_prefixes)]
+    other = [f for f in untracked if not any(f.startswith(p) for p in critical_prefixes)]
+
+    if critical:
+        display = critical[:10]
+        suffix = f" (+{len(critical) - 10} more)" if len(critical) > 10 else ""
+        checks.append((
+            "untracked files (critical)",
+            FAIL,
+            f"{len(critical)} untracked in .xyz-harness/ or docs/: {', '.join(display)}{suffix}",
+        ))
+    else:
+        checks.append(("untracked files (critical)", PASS, ".xyz-harness/ and docs/ fully tracked"))
+
+    if other:
+        display = other[:5]
+        suffix = f" (+{len(other) - 5} more)" if len(other) > 5 else ""
+        checks.append((
+            "untracked files (other)",
+            PASS,
+            f"{len(other)} other untracked (non-blocking): {', '.join(display)}{suffix}",
+        ))
+
+
 def validate_taste_review_exists(topic_dir, checks):
     """Ensure at least one taste review exists (ts_taste_review, rust_taste_review, or generic taste_review).
 
@@ -523,6 +583,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
         reviews=[
             ReviewCheck(prefix="spec_review_v"),
         ],
+        pre_checks=[check_untracked_files],
     ),
     2: PhaseSpec(
         name="Plan",
@@ -536,7 +597,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
         reviews=[
             ReviewCheck(prefix="plan_review_v"),
         ],
-        pre_checks=[validate_interface_chain, validate_plan_bl_review],
+        pre_checks=[check_untracked_files, validate_interface_chain, validate_plan_bl_review],
     ),
     3: PhaseSpec(
         name="Dev",
@@ -559,7 +620,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             ReviewCheck(prefix="taste_review", optional=True),
             ReviewCheck(prefix="robustness_review"),
         ],
-        pre_checks=[validate_taste_review_exists, validate_standards_linter],
+        pre_checks=[check_untracked_files, validate_taste_review_exists, validate_standards_linter],
     ),
     4: PhaseSpec(
         name="Test",
@@ -567,6 +628,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             FileCheck(path="changes/evidence/test_execution.json", validator=validate_test_execution),
         ],
         reviews=[],
+        pre_checks=[check_untracked_files],
     ),
     5: PhaseSpec(
         name="PR",
@@ -581,6 +643,7 @@ PHASE_SPECS: dict[int, PhaseSpec] = {
             FileCheck(path="changes/evidence/ci_results.md", fields=[FieldCheck("ci_passed", "bool", True)]),
         ],
         reviews=[],
+        pre_checks=[check_untracked_files],
     ),
 }
 

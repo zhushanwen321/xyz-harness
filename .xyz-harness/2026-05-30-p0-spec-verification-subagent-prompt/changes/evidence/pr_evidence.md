@@ -1,6 +1,6 @@
 ---
-pr_created: true
-pr_url: https://github.com/zhushanwen321/xyz-harness/compare/main
+pr_created: false
+pr_url: null
 pr_title: "feat: P0 spec verification + subagent prompt standardization"
 branch: main
 ---

@@ -1,0 +1,104 @@
+{
+  "test_cases": [
+    {
+      "id": "TC-1-01",
+      "type": "manual",
+      "title": "Assumption Audit 章节存在于 brainstorming skill",
+      "description": "验证 skills/xyz-harness-brainstorming/SKILL.md 中包含 Step 5a Assumption Audit 章节",
+      "steps": [
+        "grep -n 'Step 5a.*Assumption Audit' skills/xyz-harness-brainstorming/SKILL.md",
+        "确认章节存在且位于 ## After the Design 之前"
+      ]
+    },
+    {
+      "id": "TC-1-02",
+      "type": "manual",
+      "title": "Assumption Audit 包含 grep 命令模板",
+      "description": "验证 Assumption Audit 章节包含具体的 grep 命令模板",
+      "steps": [
+        "grep -A 20 'Step 5a' skills/xyz-harness-brainstorming/SKILL.md",
+        "确认包含 grep 命令模板（接口签名、枚举值、DB 字段）"
+      ]
+    },
+    {
+      "id": "TC-1-03",
+      "type": "manual",
+      "title": "Checklist Step 5 引用 Step 5a",
+      "description": "验证 Checklist 中 Step 5 描述包含对 Step 5a 的引用",
+      "steps": [
+        "grep -n 'Step 5a\\|Assumption Audit' skills/xyz-harness-brainstorming/SKILL.md | head -5",
+        "确认 Checklist 和 Process Flow 中都有引用"
+      ]
+    },
+    {
+      "id": "TC-2-01",
+      "type": "manual",
+      "title": "Self-Check Checklist 包含代码假设验证区块",
+      "description": "验证 Self-Check Checklist 新增'代码假设验证'检查区块",
+      "steps": [
+        "grep -n '代码假设验证' skills/xyz-harness-brainstorming/SKILL.md",
+        "确认区块存在且在数据模型预检之后"
+      ]
+    },
+    {
+      "id": "TC-3-01",
+      "type": "manual",
+      "title": "Pre-Dispatch Checklist 章节存在",
+      "description": "验证 subagent skill 包含 Pre-Dispatch Checklist 章节",
+      "steps": [
+        "grep -n 'Pre-Dispatch Checklist' skills/xyz-harness-subagent-driven-development/SKILL.md",
+        "确认章节存在且包含 5 项必填表格"
+      ]
+    },
+    {
+      "id": "TC-3-02",
+      "type": "manual",
+      "title": "Pre-Dispatch Checklist 包含强制性声明",
+      "description": "验证包含'不满足任一项 → 禁止派遣'的强制性声明",
+      "steps": [
+        "grep '禁止派遣' skills/xyz-harness-subagent-driven-development/SKILL.md",
+        "确认声明存在"
+      ]
+    },
+    {
+      "id": "TC-4-01",
+      "type": "manual",
+      "title": "Prohibition Block 包含标准 6 条禁止事项",
+      "description": "验证禁止事项块包含 unsafe cast、变更签名、TODO/no-op、虚构测试、新依赖、NEEDS_CONTEXT 共 6 条",
+      "steps": [
+        "grep -c '禁止' skills/xyz-harness-subagent-driven-development/SKILL.md",
+        "确认至少 6 条禁止事项"
+      ]
+    },
+    {
+      "id": "TC-5-01",
+      "type": "manual",
+      "title": "Post-Dispatch Verification 章节存在",
+      "description": "验证 subagent skill 包含 Post-Dispatch Verification 章节",
+      "steps": [
+        "grep -n 'Post-Dispatch' skills/xyz-harness-subagent-driven-development/SKILL.md",
+        "确认章节存在且包含文件存在性、编译、测试 3 步验证"
+      ]
+    },
+    {
+      "id": "TC-6-01",
+      "type": "manual",
+      "title": "Wave 模式包含依赖安全检查",
+      "description": "验证 Wave 模式章节增加并行依赖安全检查",
+      "steps": [
+        "grep -B 5 -A 10 '接口依赖' skills/xyz-harness-subagent-driven-development/SKILL.md",
+        "确认依赖扫描逻辑存在"
+      ]
+    },
+    {
+      "id": "TC-7-01",
+      "type": "manual",
+      "title": "两个 SKILL.md YAML frontmatter 格式正确",
+      "description": "验证修改后的 YAML frontmatter 仍可正常解析",
+      "steps": [
+        "python3 -c \"import yaml; [yaml.safe_load(open(f).read().split('---')[2]) for f in ['skills/xyz-harness-brainstorming/SKILL.md', 'skills/xyz-harness-subagent-driven-development/SKILL.md']]\"",
+        "两个文件都解析成功"
+      ]
+    }
+  ]
+}

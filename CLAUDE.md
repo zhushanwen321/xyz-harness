@@ -315,7 +315,10 @@ git commit --no-verify -m "message"
 docs/
 ├── CONTEXT.md                                    # 核心术语表
 ├── adr/                                          # 架构决策记录
-│   └── 0001-six-dimension-evaluation-framework.md # 为什么用六维度框架
+│   ├── 0001-six-dimension-evaluation-framework.md # 为什么用六维度框架
+│   └── 0002-integrate-grill-with-docs-as-steps.md # grill-with-docs 集成为 Step
+├── improvement/                                  # brainstorming 与长远改进分析
+│   └── 2026-05-31-retrospect-analysis-spec-execution-quality.md  # 复盘分析：需求澄清+执行质量
 ├── research/                                     # 业界调研
 │   ├── 00-summary.md                              # 调研汇总（跨维度发现 + 改进优先级）
 │   ├── 01-context-management.md                   # 上下文管理最佳实践
@@ -338,3 +341,5 @@ docs/
 | [docs/research/00-summary.md](./docs/research/00-summary.md) | 业界调研汇总：3 个跨维度发现 + P0/P1/P2 改进建议 |
 | [docs/adr/0001-six-dimension-evaluation-framework.md](./docs/adr/0001-six-dimension-evaluation-framework.md) | ADR：为什么选择六维度评估框架 |
 | [docs/adr/0002-integrate-grill-with-docs-as-steps.md](./docs/adr/0002-integrate-grill-with-docs-as-steps.md) | ADR：grill-with-docs 集成为 Step 而非独立 Phase |
+| [docs/improvement/](./docs/improvement/) | Brainstorming 与长远改进分析 |
+| [docs/improvement/2026-05-31-retrospect-analysis-spec-execution-quality.md](./docs/improvement/2026-05-31-retrospect-analysis-spec-execution-quality.md) | 复盘分析：需求澄清不清晰+执行不理想的根因与改进建议（15+ topic 数据支撑） |

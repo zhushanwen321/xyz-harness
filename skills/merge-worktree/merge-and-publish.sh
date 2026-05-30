@@ -475,10 +475,21 @@ for search_dir in "$MAIN_WT" "$WORKTREE_DIR"; do
     fi
 done
 
+# 辅助函数：读取项目版本号
+# 优先使用 read-version.sh hook（项目可自定义版本来源），否则从根 package.json 读取
+read_project_version() {
+    local dir="${1:-$MAIN_WT}"
+    local hook_path="$WS_ROOT/.bare/custom-hooks/read-version.sh"
+    if [[ -f "$hook_path" ]]; then
+        bash "$hook_path" "$dir" 2>/dev/null && return
+    fi
+    node -p "require('$dir/package.json').version" 2>/dev/null || echo ""
+}
+
 if [[ -n "$PUBLISH_SH" ]]; then
     # 幂等检查：当前版本 release 已存在则跳过（防止超时重跑触发空版本）
-    _CUR_VER=$(node -p "require('$MAIN_WT/package.json').version")
-    if gh release view "v$_CUR_VER" $GH_FLAG --json tagName >/dev/null 2>&1; then
+    _CUR_VER=$(read_project_version "$MAIN_WT")
+    if [[ -n "$_CUR_VER" ]] && gh release view "v$_CUR_VER" $GH_FLAG --json tagName >/dev/null 2>&1; then
         echo -e "  ${GREEN}⏭️  Release v$_CUR_VER 已存在，跳过发布脚本${NC}"
         NEW_VERSION="$_CUR_VER"
     else
@@ -500,8 +511,18 @@ if [[ -n "$PUBLISH_SH" ]]; then
                 exit 1
             }
         fi
-        # 发布脚本自行处理版本 bump 和 tag，读取版本号
-        NEW_VERSION=$(node -p "require('$MAIN_WT/package.json').version")
+        # CI 发布脚本在远程 bump 版本，需 pull 最新代码后读取版本号
+        # 优先使用 read-version.sh hook（项目可自定义版本来源）
+        if [[ -d "$MAIN_WT" ]]; then
+            git -C "$MAIN_WT" fetch "$GH_REMOTE" main 2>&1 | tail -1
+            git -C "$MAIN_WT" merge --ff-only "$GH_REMOTE/main" 2>&1 | tail -1 || true
+        fi
+        NEW_VERSION=$(read_project_version "$MAIN_WT")
+        if [[ -z "$NEW_VERSION" ]]; then
+            # fallback: 从最新 release tag 获取版本号
+            NEW_VERSION=$(gh release list --limit 1 $GH_FLAG --json tagName -q '.[0].tagName' 2>/dev/null | sed 's/^v//' || echo "")
+            echo -e "  ${YELLOW}⚠️  本地版本读取为空，从 release tag 获取: $NEW_VERSION${NC}"
+        fi
     fi
 else
     # 4b. 没有项目发布脚本 → 自行 bump 版本 + tag + push
@@ -511,7 +532,7 @@ else
     OP_DIR="$MAIN_WT"
 
     if [[ -n "$OP_DIR" ]] && [[ -f "$OP_DIR/package.json" ]]; then
-        CURRENT_VERSION=$(node -p "require('$OP_DIR/package.json').version")
+        CURRENT_VERSION=$(read_project_version "$OP_DIR")
 
         # 始终执行 bump：合并了新代码后需要新版本号，
         # 旧 tag 存在不代表不需要新版本，而是当前版本已发布过需要 bump
@@ -590,9 +611,9 @@ log_info "阶段 4 完成: v${NEW_VERSION}"
 
 echo ""
 echo -e "${BOLD}═══ 阶段 5/6: Release ═══${NC}"
+TAG="v${NEW_VERSION}"
 log_phase "阶段 5: Release (tag=$TAG)"
 
-TAG="v${NEW_VERSION}"
 log_info "准备 Release: tag=$TAG"
 REPO_URL=$(gh repo view $GH_FLAG --json url --jq '.url' 2>/dev/null || echo "")
 

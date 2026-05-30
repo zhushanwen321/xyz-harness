@@ -31,7 +31,8 @@ FAILURES=()
 
 # ── 日志支持（由 merge-and-publish.sh 通过 MERGE_LOG_FILE 环境变量注入）──
 _chk_log() {
-    [[ -n "${MERGE_LOG_FILE:-}" ]] && echo "[$(date +%Y-%m-%dT%H:%M:%S)] [CHECK] $*" >> "$MERGE_LOG_FILE"
+    [[ -n "${MERGE_LOG_FILE:-}" ]] || return 0
+    echo "[$(date +%Y-%m-%dT%H:%M:%S)] [CHECK] $*" >> "$MERGE_LOG_FILE"
 }
 
 # ── 辅助函数 ────────────────────────────────────────
@@ -142,11 +143,41 @@ if [[ -f "package.json" ]]; then
     fi
 
     # 通用扫描：安装有独立 package.json 但缺 node_modules 的子目录
+    # workspace 成员的依赖被 hoist 到根 node_modules，子目录只剩少量残留包
+    # 所以不能只看 node_modules 是否存在，需要检测关键类型定义是否可解析
     for _subdir in */; do
         [[ -f "${_subdir}package.json" ]] || continue
-        [[ -e "${_subdir}node_modules" ]] && continue
-        echo "  📦 安装 ${_subdir%/} 依赖中..."
-        (cd "$_subdir" && { npm ci 2>&1 || npm install 2>&1; })
+        # 跳过根 node_modules 自身
+        [[ "${_subdir%/}" == "node_modules" ]] && continue
+
+        if [[ ! -e "${_subdir}node_modules" ]]; then
+            echo "  📦 安装 ${_subdir%/} 依赖中..."
+            (cd "$_subdir" && { npm ci 2>&1 || npm install 2>&1; })
+        else
+            # node_modules 存在：检查关键依赖是否可解析
+            # 如果 package.json 有 devDependencies 且包含 @types 或 typescript，
+            # 说明是独立子项目，需要 node_modules 相对完整
+            _has_types=$(node -e "
+                try {
+                    const p = require('./${_subdir}package.json');
+                    const all = {...(p.dependencies||{}), ...(p.devDependencies||{})};
+                    console.log(Object.keys(all).some(k => k.includes('typescript') || k.includes('fastify') || k.includes('sqlite')) ? 'yes' : 'no');
+                } catch { console.log('no'); }
+            " 2>/dev/null || echo 'no')
+
+            if [[ "$_has_types" == "yes" ]]; then
+                # 有类型依赖的子项目：验证 tsc 能否解析（用 --listFiles 不编译）
+                _tsconfig="${_subdir}tsconfig.json"
+                if [[ -f "$_tsconfig" ]]; then
+                    # pipefail + grep 返回 1 会导致 set -e 退出，用 || true 保护
+                    _tsc_output=$(cd "$_subdir" && npx tsc --noEmit --pretty false 2>&1 || true)
+                    if echo "$_tsc_output" | grep -q "TS2307"; then
+                        echo "  📦 ${_subdir%/} tsc 找不到模块，重新安装..."
+                        (cd "$_subdir" && npm install 2>&1)
+                    fi
+                fi
+            fi
+        fi
     done
 
     pass "依赖已就绪"

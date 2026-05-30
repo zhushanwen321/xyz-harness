@@ -395,6 +395,45 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				};
 			}
 
+			// Idempotency: if gate already passed, check retrospect status and guide accordingly
+			if (state.phaseResults[params.phase] === "passed") {
+				const phaseConfig = PHASES[params.phase - 1]!;
+				const retrospectPath = path.join(
+					state.topicDir, "changes", "reviews",
+					`${phaseConfig.retrospectPrefix}.md`,
+				);
+				const retrospectExists = fs.existsSync(retrospectPath) && (() => {
+					const content = fs.readFileSync(retrospectPath, "utf8");
+					const fmFirst = content.indexOf("---");
+					const fmSecond = content.indexOf("---", fmFirst + 3);
+					if (fmFirst < 0 || fmSecond < 0) return false;
+					try {
+						const fmData = yaml.load(content.slice(fmFirst + 3, fmSecond)) as Record<string, unknown>;
+						return typeof fmData?.verdict === "string";
+					} catch { return false; }
+				})();
+
+				if (retrospectExists) {
+					// Gate passed + retrospect done — just need phase-start
+					return {
+						content: [{
+							type: "text",
+							text: `Gate 已通过，复盘已存在（${retrospectPath}）。直接调用 coding-workflow-phase-start() 进入下一阶段。`,
+						}],
+					};
+				} else {
+					// Gate passed but retrospect missing (steer was lost) — re-send steer
+					const retrospectFollowUp = buildRetrospectFollowUp(phaseConfig, state.topicDir, skillResolver, PHASES);
+					pi.sendUserMessage(retrospectFollowUp, { deliverAs: "steer" });
+					return {
+						content: [{
+							type: "text",
+							text: `Gate 已通过，但复盘缺失。按 steer 指令写复盘，然后调用 coding-workflow-phase-start()。`,
+						}],
+					};
+				}
+			}
+
 			state.gateInProgress = true;
 			state.gateRetryCount += 1;
 			persistState(pi, state);
@@ -786,8 +825,8 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 					updateWidget(ctx, state);
 					pi.sendUserMessage(
 						`Compact failed (attempt ${state.compactRetryCount}/${MAX_COMPACT_RETRIES}): ${error.message}\n\n` +
-						`Phase advancement was rolled back. Call coding-workflow-phase-start() to retry, ` +
-						`or use /coding-workflow-abort to cancel.`,
+						`Gate 已通过，复盘已完成。只需调用 coding-workflow-phase-start() 重试 compact。\n` +
+						`不需要重新做 phase 工作，也不需要重新调 gate。`,
 						{ deliverAs: "steer" },
 					);
 				},
@@ -1063,6 +1102,22 @@ function checkProjectProtection(projectRoot: string): string[] {
 			filePath: string;
 		}>;
 		skillResolver.setSkills(loadedSkills);
+
+		// Check if current phase has already passed gate — compact failed and rolled back
+		if (state.phaseResults[state.currentPhase] === "passed") {
+			// Intermediate state: gate passed, retrospect done (or pending), waiting for phase-start
+			return {
+				message: {
+					customType: "coding-workflow-context",
+					content:
+						`[CODING WORKFLOW — WAITING]\n\n` +
+						`Phase ${state.currentPhase} (${phaseConfig.name}) 的 gate 已通过。\n` +
+						`当前目标：调用 coding-workflow-phase-start() 进入下一阶段。\n\n` +
+						`不需要做其他事情。`,
+					display: true,
+				},
+			};
+		}
 
 		// HARD BLOCK: check ALL prior phases' retrospects before allowing current phase
 		const missingRetrospects: string[] = [];

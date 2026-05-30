@@ -1,17 +1,115 @@
 ---
 name: chrome-automation
-description: "替代 chrome-devtools MCP 的 CDP 浏览器自动化工具。当需要自动化 Chrome 浏览器操作（导航、点击、填写、截图、执行 JS、获取页面快照、网络请求监控）时使用此 skill。通过 CDP (Chrome DevTools Protocol) 直接与 Chrome 通信，使用 curl + Node.js 脚本，无需 npx 启动 MCP 进程。触发词：chrome 自动化、浏览器操作、网页截图、网页点击、页面快照、CDP、debugging。"
+description: "底层 CDP 浏览器自动化工具，作为 playwright-automation 的补充。日常操作（截图、点击、样式检查）优先用 playwright-automation。本 skill 仅用于 Playwright 不支持的场景：网络请求拦截/监控、控制台日志捕获、Performance/Profiler 分析、Heap Snapshot、Accessibility Tree 原始数据、对话框处理、文件上传。触发词：CDP、网络监控、性能分析、内存快照、a11y tree、chrome-devtools。"
 ---
 
-# Chrome Automation
+# Chrome Automation（底层 CDP 补充工具）
 
-通过 CDP (Chrome DevTools Protocol) 替代 `chrome-devtools-mcp`。
+> **优先使用 `playwright-automation`。** 本 skill 是 Playwright 的补充，仅用于 Playwright connectOverCDP 模式无法支持的场景。
+>
+> **日常操作（截图、点击、填写、样式检查、DOM 快照）→ 用 playwright-automation**
+>
+> **以下场景 → 用本 skill**
+
+## 本 skill 的专属场景
+
+| 场景 | 为什么 Playwright 做不了 |
+|------|------------------------|
+| 网络请求拦截/监控 | Playwright 连接模式无法拦截已有上下文的请求 |
+| 控制台日志实时捕获 | 需要持久 WebSocket 连接接收事件流 |
+| Performance/Profiler 分析 | Playwright 不封装这些底层 API |
+| Heap Snapshot（内存快照） | Playwright 不提供内存分析工具 |
+| Accessibility Tree 原始数据 | 需要浏览器原生 a11y 树（含 disabled/checked/expanded 状态） |
+| 对话框处理（alert/confirm） | Playwright skill 暂未实现 |
+| 文件上传 | Playwright skill 暂未实现 |
+
+简单规则：**"看页面、点元素、查样式" → Playwright；"监听事件、分析性能、调试底层" → 本 skill。**
+
+---
 
 本 skill 使用两种方式与 Chrome 通信：
 1. **HTTP API**（curl）— 页面列表、新建/关闭/切换标签
-2. **WebSocket API**（附带的 `scripts/cdp.js`）— 导航、点击、截图、执行 JS 等
+2. **WebSocket API**（附带的 `scripts/cdp.js`）— 底层 CDP 命令
+
+> **提示**：页面列表（`list_pages`）、新建/关闭标签等 HTTP API 操作，本 skill 和 playwright-automation 都能做。Playwright 的 `list-pages` / `select-page` 更方便（直接输出结构化 JSON）。这里保留 curl 方式是为了不依赖 Playwright 的后备方案。
 
 ## 前置条件
+
+## ⚠️ 进程管理规范（必须遵守）
+
+### 规则 1：明确用户的意图
+
+- 用户说"看看我的 xxx 应用"、"调试页面" → **连接用户已有的进程**
+- 用户说"打开一个新页面"、"访问 xxx 网址" → **新开进程**
+- 不确定时 → **问用户**，不要自作主张
+
+### 规则 2：连接已有进程（优先）
+
+用户已经在运行 Chrome/Electron 时，直接连接，**不要另开新进程**：
+
+```bash
+# 先检测用户是否有进程在监听调试端口
+lsof -i :9222 2>/dev/null
+
+# 如果端口已被占用 → 直接连接（用户已有的浏览器）
+curl -s http://localhost:9222/json/list
+
+# 如果用户的 Electron 用了其他端口，用用户指定的端口
+curl -s http://localhost:<用户端口>/json/list
+```
+
+### 规则 3：新开进程（仅在需要时）
+
+需要新开浏览器时，记录 PID，用完精准关闭：
+
+```bash
+# 启动并记录 PID
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/cdp-chrome-profile &
+CHROME_PID=$!
+echo "Chrome PID: $CHROME_PID"
+
+# ... 使用完毕后 ...
+
+# 精准关闭：只杀你启动的那个进程
+kill $CHROME_PID
+```
+
+### 规则 4：用完必关，精准关闭
+
+```
+严禁以下操作：
+❌ pkill chrome / pkill Google Chrome   — 会杀掉用户所有 Chrome 窗口
+❌ pkill electron                       — 会杀掉用户所有 Electron 应用
+❌ killall Chrome                       — 同上
+❌ pkill -f "vite" / pkill -f "node"     — 会杀掉所有相关进程
+❌ pkill -f "python"                     — 会杀掉所有 Python 进程
+
+正确做法：
+✅ kill $PID                             — 只杀你启动的那个进程（用 $! 或 lsof 获取的 PID）
+✅ 用完立即关闭，不要留后台进程
+```
+
+**获取精准 PID 的方法：**
+
+```bash
+# 方法 1：启动时用 $! 记录
+command &
+MY_PID=$!
+
+# 方法 2：通过端口查找
+PID=$(lsof -ti :9222)
+kill $PID
+
+# 方法 3：通过精确命令匹配
+PID=$(pgrep -f "--remote-debugging-port=9222.*user-data-dir=/tmp/cdp-chrome")
+kill $PID
+```
+
+---
+
+### Chrome 远程调试
 
 Chrome 需以远程调试模式启动：
 
@@ -261,33 +359,36 @@ node scripts/cdp.js "$WS_URL" Network.setUserAgentOverride '{"userAgent":"Mozill
 
 ## 完整工具对照
 
-| chrome-devtools MCP | 替代方式 |
-|-------------------|---------|
-| list_pages | `curl localhost:9222/json/list` |
-| new_page | `curl localhost:9222/json/new?<url>` |
-| close_page | `curl localhost:9222/json/close/<id>` |
-| select_page | `curl localhost:9222/json/activate/<id>` |
-| navigate_page | `cdp.js navigate <url>` |
-| take_screenshot | `cdp.js Page.captureScreenshot` |
-| take_snapshot | `cdp.js Accessibility.getFullAXTree` (精简版: + python3 过滤) |
-| click(uid) | `cdp.js Runtime.evaluate` + `querySelector.click()` |
-| fill(uid, value) | `cdp.js Runtime.evaluate` + `querySelector.value=` |
-| fill_form(elements) | `cdp.js Runtime.evaluate` + 批量 JS |
-| evaluate_script(fn) | `cdp.js Runtime.evaluate` |
-| type_text(text) | `cdp.js Input.insertText` |
-| press_key(key) | `cdp.js Input.dispatchKeyEvent` |
-| hover(uid) | `cdp.js Runtime.evaluate` + mouse events |
-| wait_for(text) | 轮询 `cdp.js Runtime.evaluate` |
-| handle_dialog | `cdp.js Page.handleJavaScriptDialog` |
-| upload_file | `cdp.js DOM.setFileInputFiles` |
-| resize_page | `cdp.js Emulation.setDeviceMetricsOverride` |
-| emulate | `cdp.js Emulation.*` + `Network.setUserAgentOverride` |
-| drag | `cdp.js Input.dispatchMouseEvent` 序列 |
-| list_network_requests | `cdp.js Network.enable` + 事件监听脚本 |
-| list_console_messages | `cdp.js Runtime.enable` + 事件监听脚本 |
-| lighthouse_audit | `lighthouse <url> --output json` CLI |
-| performance_* | `cdp.js Performance.*` + `cdp.js Profiler.*` |
-| take_memory_snapshot | `cdp.js HeapProfiler.takeHeapSnapshot` |
+下表列出所有 chrome-devtools MCP 工具在本 skill 中的替代方式。
+标记了 **[用 Playwright]** 的操作表示 `playwright-automation` 也能完成且体验更好，应优先使用。
+
+| chrome-devtools MCP | 替代方式 | Playwright 优先? |
+|-------------------|---------|:---:|
+| list_pages | `curl localhost:9222/json/list` | **[用 Playwright]** |
+| new_page | `curl localhost:9222/json/new?<url>` | **[用 Playwright]** |
+| close_page | `curl localhost:9222/json/close/<id>` | **[用 Playwright]** |
+| select_page | `curl localhost:9222/json/activate/<id>` | **[用 Playwright]** |
+| navigate_page | `cdp.js navigate <url>` | **[用 Playwright]** |
+| take_screenshot | `cdp.js Page.captureScreenshot` | **[用 Playwright]** |
+| take_snapshot | `cdp.js Accessibility.getFullAXTree` (精简版: + python3 过滤) | CDP 专属（原生 a11y 树含 disabled/checked 状态） |
+| click(uid) | `cdp.js Runtime.evaluate` + `querySelector.click()` | **[用 Playwright]** |
+| fill(uid, value) | `cdp.js Runtime.evaluate` + `querySelector.value=` | **[用 Playwright]** |
+| fill_form(elements) | `cdp.js Runtime.evaluate` + 批量 JS | **[用 Playwright]** |
+| evaluate_script(fn) | `cdp.js Runtime.evaluate` | **[用 Playwright]** |
+| type_text(text) | `cdp.js Input.insertText` | **[用 Playwright]** |
+| press_key(key) | `cdp.js Input.dispatchKeyEvent` | **[用 Playwright]** |
+| hover(uid) | `cdp.js Runtime.evaluate` + mouse events | **[用 Playwright]** |
+| wait_for(text) | 轮询 `cdp.js Runtime.evaluate` | **[用 Playwright]** |
+| handle_dialog | `cdp.js Page.handleJavaScriptDialog` | CDP 专属 |
+| upload_file | `cdp.js DOM.setFileInputFiles` | CDP 专属 |
+| resize_page | `cdp.js Emulation.setDeviceMetricsOverride` | 均可 |
+| emulate | `cdp.js Emulation.*` + `Network.setUserAgentOverride` | 均可 |
+| drag | `cdp.js Input.dispatchMouseEvent` 序列 | 均可 |
+| list_network_requests | `cdp.js Network.enable` + 事件监听脚本 | CDP 专属 |
+| list_console_messages | `cdp.js Runtime.enable` + 事件监听脚本 | CDP 专属 |
+| lighthouse_audit | `lighthouse <url> --output json` CLI | CDP 专属 |
+| performance_* | `cdp.js Performance.*` + `cdp.js Profiler.*` | CDP 专属 |
+| take_memory_snapshot | `cdp.js HeapProfiler.takeHeapSnapshot` | CDP 专属 |
 
 ## 注意事项
 

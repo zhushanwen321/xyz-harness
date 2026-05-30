@@ -6,3 +6,5 @@ package-lock.json
 
 # Harness working state (auto-generated, should not be committed to gate checks)
 .xyz-harness/gate/
+.pi/
+.pi/infinite-context/

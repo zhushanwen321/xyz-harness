@@ -1,0 +1,104 @@
+{
+  "test_execution": [
+    {
+      "caseId": "TC-1-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n 'Step 5a.*Assumption Audit' skills/xyz-harness-brainstorming/SKILL.md → found at line 35 and 214",
+        "grep -n '## After the Design' → found at line 251, Step 5a (line 214) is before it"
+      ],
+      "evidence": "Step 5a chapter exists at line 214, before ## After the Design at line 251"
+    },
+    {
+      "caseId": "TC-1-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -c 'grep -rn' → 7 occurrences of grep command templates",
+        "Verified 4 templates: interface signature (line 232), enum values (line 235), DB fields (line 238), component duties (line 241)"
+      ],
+      "evidence": "4 grep command templates present in Step 5a section"
+    },
+    {
+      "caseId": "TC-1-03",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n 'Step 5a|Assumption Audit' → found at lines 35 (Agent table), 64 (Checklist), 91-92 (dot graph), 214 (chapter)",
+        "Checklist (line 64), Process Flow dot graph (lines 91-92), Agent table (line 35) all reference Step 5a"
+      ],
+      "evidence": "4 locations reference Step 5a: Agent table, Checklist, dot graph, chapter"
+    },
+    {
+      "caseId": "TC-2-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n '代码假设验证' → found at line 579",
+        "grep -n '数据模型预检' → found at line 575",
+        "代码假设验证 (579) is after 数据模型预检 (575)"
+      ],
+      "evidence": "代码假设验证 block at line 579, after 数据模型预检 at line 575"
+    },
+    {
+      "caseId": "TC-3-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n 'Pre-Dispatch Checklist' → found at line 492",
+        "grep -c '必填项' → 1 occurrence (5-item table header)"
+      ],
+      "evidence": "Pre-Dispatch Checklist chapter at line 492 with 5-item required fields table"
+    },
+    {
+      "caseId": "TC-3-02",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep '禁止派遣' → found: '不满足任一项 → 禁止派遣，必须先补充信息。'"
+      ],
+      "evidence": "Mandatory declaration present with clear '禁止派遣' statement"
+    },
+    {
+      "caseId": "TC-4-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -c '禁止' → 14 total (includes chapter headers and body)",
+        "Verified 6 prohibition items: unsafe cast (line 518), interface signature change (519), TODO/placeholder (520), fabricated tests (521), new dependencies (522), NEEDS_CONTEXT (523)"
+      ],
+      "evidence": "6 standard prohibitions present in Prohibition Block section (lines 517-523)"
+    },
+    {
+      "caseId": "TC-5-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n 'Post-Dispatch' → found at line 528 (chapter), 561 (Handling Implementer distinction)",
+        "3-step verification: file existence (532), compilation (537), testing (542)"
+      ],
+      "evidence": "Post-Dispatch Verification chapter at line 528 with 3-step verification flow"
+    },
+    {
+      "caseId": "TC-6-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "grep -n '接口依赖|并行依赖安全|拒绝并行|has_interface_dependency' → found at lines 144, 146, 148, 154, 156, 161",
+        "Dependency scanning logic present with rejection rule and boundary notes (circular deps, indirect deps, compile-time deps)"
+      ],
+      "evidence": "Parallel dependency safety check at line 144 with scanning logic, rejection rules, and boundary notes"
+    },
+    {
+      "caseId": "TC-7-01",
+      "round": 1,
+      "passed": true,
+      "execute_steps": [
+        "python3 yaml parser → both files parsed successfully",
+        "brainstorming: ['name', 'description'], subagent: ['name', 'description']"
+      ],
+      "evidence": "Both YAML frontmatter blocks parse correctly with expected keys"
+    }
+  ]
+}

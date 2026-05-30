@@ -141,8 +141,25 @@ digraph process {
 
 当 plan.md 定义了 Execution Groups 和 Wave Schedule 时，主 agent 按 Wave 派遣：
 
+**并行依赖安全检查（Wave 派遣前必须执行）：**
+
+在 Wave 派遣前，主 agent 必须扫描同一 Wave 内 Group 间的接口依赖：
+1. 检查同 Wave 内是否有 Group 引用了另一个 Group 产出的函数/类型/接口
+2. 如存在接口依赖 → **拒绝并行**，将依赖方拆到下一个 Wave（被依赖方在前）
+3. 仅当同 Wave 内所有 Group 的产出互相独立时，才允许并行
+
+**注意：**
+- 循环依赖（A↔B）是 plan 缺陷，不是 dev 应处理的问题。发现时标记 BLOCKED 并报告用户，不要自行拆分
+- 只检查直接接口引用（函数调用、类型引用），不追踪间接依赖（A→B→C 中 A 和 C 的间接关系）
+- 编译时依赖（共享类型文件 import）不算接口依赖，允许并行
+
+**背景：** 复盘数据显示，并行 Task 间的接口依赖会导致 placeholder 代码（一方引用另一方未产出的函数，只能写 placeholder 假装通过测试）。这是系统性的质量隐患。
+
 ```
 for each Wave:
+  // SAFETY CHECK: verify no interface dependencies between Groups in this Wave
+  if has_interface_dependency(Groups in Wave):
+    split dependent Group to next Wave
   for each Group in Wave (parallel if Semaphore allows):
   dispatch subagent for this Group:
     1. subagent processes all Tasks in this Group sequentially
@@ -471,6 +488,77 @@ Done!
 
 **文档精简：** 单次写入超过 1000 字时优先拆分子文档，主文档保留概述和索引。使用 agent 并行编写各模块文档（并发度 ≤ 2），最后合成精简主文档。
 <!-- LOCAL-OVERRIDE:END -->
+
+## Pre-Dispatch Checklist（强制执行）
+
+主 agent 每次派遣 subagent 前必须确认以下 5 项信息已在 task prompt 中。**不满足任一项 → 禁止派遣，必须先补充信息。**
+
+| 必填项 | 说明 | 来源 |
+|--------|------|------|
+| 完整方法签名 | 从代码 grep 提取，不从文档推断 | `grep -n "export.*function\|export.*interface\|export.*type" {file}` |
+| 实际枚举值/import 路径 | 从代码提取实际值，不编造 | `grep -n "enum\|const.*=" {file}` |
+| 已知约束 | null guard 策略、错误处理方式、并发模型 | spec + plan |
+| 禁止事项 | 标准 6 条禁止清单（见下方 Prohibition Block） | 固定模板 |
+| 必须产出的文件列表 | subagent 完成后校验 | plan task 描述 |
+
+**铁律：** 信息不足的 task prompt 是 subagent 产出质量问题的第一根因（复盘数据：53% 的 topic 存在此问题）。宁可多花 30 秒提取代码信息，也不要让 subagent 自行假设。
+
+**信息缺失时的补全顺序：**
+
+1. `grep` 代码提取 → 优先（最可靠）
+2. 读 spec/plan 文档 → 次选（可能有偏差）
+3. 标记 `[UNVERIFIED]` 并在 task prompt 中声明 → 最后手段（仅适用于枚举值/import 路径，不适用于完整方法签名——方法签名缺失必须回 Step 1）
+
+## Prohibition Block（标准禁止事项）
+
+每个 task prompt 末尾**必须**附加以下标准禁止事项块。主 agent 无需每次手写，直接复制：
+
+```
+## 禁止事项（Prohibitions）
+1. 禁止使用 `as unknown as X` 等 unsafe cast 绕过类型检查
+2. 禁止擅自变更接口签名（包括返回类型、参数类型、参数顺序）
+3. 禁止留 TODO/FIXME/placeholder/no-op 实现
+4. 禁止虚构测试结果或文件列表
+5. 禁止引入 plan 未列出的新依赖
+6. 如遇到信息不足，返回 NEEDS_CONTEXT 而非自行假设
+```
+
+**背景：** 复盘数据显示，unsafe cast 占 dev 返工的 15%，placeholder/no-op 占 20%，虚构测试占 10%。这 6 条禁止事项直接针对最高频的 subagent 失败模式。
+
+## Post-Dispatch Verification（派遣后验证）
+
+subagent 返回 DONE 后，主 agent 必须执行以下轻量验证。**验证失败 → subagent 产出不可信，必须修复或重新派遣。**
+
+1. **文件存在性检查**：验证 task prompt 中列出的文件是否实际创建/修改
+   ```bash
+   ls -la {expected_output_files}
+   ```
+
+2. **编译检查**（如适用）：
+   ```bash
+   npx tsc --noEmit
+   ```
+
+3. **测试检查**（如适用，仅验证 subagent 产出的测试文件）：
+   ```bash
+   npx vitest run {test_file}
+   ```
+
+**原则：** 不信任 subagent 的 "DONE" 状态。AI 会伪造结果、声称已完成但实际跳过了步骤。验证是必须的。
+
+**修复流程（验证失败时）：**
+
+| 失败类型 | 处理方式 |
+|----------|----------|
+| 文件不存在 | dispatch fix subagent，传入原始 task prompt + 缺失文件列表 |
+| 编译失败 | dispatch fix subagent，附加编译错误输出 |
+| 测试失败（新增测试） | dispatch fix subagent 修复实现 |
+| 测试失败（已有回归） | dispatch fix subagent，标注为回归修复 |
+
+- 修复后重新执行验证（最多 2 轮重试）
+- 2 轮后仍失败 → 标记 task 为 BLOCKED，记录到 memory.md，跳过当前 task 继续下一个
+
+**与 Handling Implementer Status 的区别：** Handling Implementer Status 处理 subagent 自报告的状态（DONE/BLOCKED/NEEDS_CONTEXT），Post-Dispatch Verification 是主 agent 对产出的独立验证。验证失败时走修复流程，不走 Handling Implementer Status 的状态处理。
 
 ## Task Prompt 验收标准规则
 

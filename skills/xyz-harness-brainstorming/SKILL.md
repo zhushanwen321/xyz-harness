@@ -32,6 +32,7 @@ description: >-
 | Step 1: Quick Overview | 主 agent | — | 无 | 几个文件，无 subagent |
 | Step 2-4: Brainstorming + Terminology + On-demand Scan | 主 agent | — | brainstorming (本 skill) | 按需 dispatch subagent 深入扫描 |
 | On-demand Deep Scan | subagent | general-purpose | 无 | 按需触发，精准范围 |
+| Step 5a: Assumption Audit | 主 agent | — | brainstorming (本 skill) | 主 agent 直接执行 |
 | Step 5: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
 | Step 7: Terminology & ADR | 主 agent | — | 无 | MUST + Nullable |
 | Step 9: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
@@ -60,11 +61,12 @@ You MUST create a task for each of these items and complete them in order:
 2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. **On-demand scan:** 当用户回答涉及具体模块或技术细节时，按需 dispatch subagent 深入扫描相关代码。**Terminology Step (MUST + Nullable):** 在提问过程中，主动识别 spec 中的模糊术语并提议精确定义（见 Terminology Step 章节）
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
-6. **Spec completeness check** — verify all six elements are covered, mark ambiguities as `[AMBIGUOUS]`, fix or confirm each with user (see below)
-7. **Terminology & ADR Step (MUST + Nullable)** — 从 spec 中提取术语写入/更新 `CONTEXT.md`，评估 spec 中的决策是否需要创建 ADR（见 Terminology & ADR Step 章节）
-8. **User reviews written spec** — ask user to review the spec file before proceeding
-9. **Transition to implementation** — invoke writing-plans skill to create implementation plan
+5. **Assumption Audit** — 从用户确认的设计中提取所有对现有代码的假设，逐一验证。验证通过才能继续（详见 Step 5a 章节）
+6. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
+7. **Spec completeness check** — verify all six elements are covered, mark ambiguities as `[AMBIGUOUS]`, fix or confirm each with user (see below)
+8. **Terminology & ADR Step (MUST + Nullable)** — 从 spec 中提取术语写入/更新 `CONTEXT.md`，评估 spec 中的决策是否需要创建 ADR（见 Terminology & ADR Step 章节）
+9. **User reviews written spec** — ask user to review the spec file before proceeding
+10. **Transition to implementation** — invoke writing-plans skill to create implementation plan
 
 ## Process Flow
 
@@ -86,7 +88,8 @@ digraph brainstorming {
     "Propose 2-3 approaches" -> "Present design sections";
     "Present design sections" -> "User approves design?";
     "User approves design?" -> "Present design sections" [label="no, revise"];
-    "User approves design?" -> "Write design doc" [label="yes"];
+    "User approves design?" -> "Assumption Audit" [label="yes"];
+    "Assumption Audit" -> "Write design doc";
     "Write design doc" -> "Six-element check\n+ Ambiguity marking";
     "Six-element check\n+ Ambiguity marking" -> "Ambiguities resolved?";
     "Ambiguities resolved?" -> "Six-element check\n+ Ambiguity marking" [label="fix & recheck"];
@@ -207,6 +210,43 @@ If the project is too large for a single spec, help the user decompose into sub-
 - Explore the current structure before proposing changes. Follow existing patterns.
 - Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
 - Don't propose unrelated refactoring. Stay focused on what serves the current goal.
+
+### Step 5a: Assumption Audit（嵌入 Step 5）
+
+**触发时机：** 用户确认设计后、写 spec 前。这是 Step 5 的前置子步骤，不是独立 Step。
+
+**目的：** 消除 spec 中基于文档假设而非代码事实的错误。40% 的 spec 返工源于引用了不存在的接口、错误的枚举值、虚构的 RPC 方法。
+
+**执行步骤：**
+
+1. **假设提取**：从用户确认的设计中，提取所有对现有代码的假设。假设类型：
+   - 引用的接口/API/RPC 是否存在
+   - 引用的类型定义/枚举值是否与代码一致
+   - 引用的 DB 字段/API 响应体是否真实
+   - 前端组件的现有职责分工是否如设计所述
+
+2. **代码验证**：对每个提取的假设，执行代码验证。使用以下命令模板：
+
+   ```bash
+   # 接口签名验证
+   grep -rn "export.*interface\|export.*type\|export.*function" {file_or_dir}
+
+   # 枚举/常量值验证
+   grep -rn "enum\s*\w*\s*{" {file_or_dir} --include="*.ts"
+
+   # DB 字段验证
+   grep -rn "{field_name}" {model_file}
+
+   # 组件职责验证
+   grep -rn "export.*defineComponent\|export default" src/components/
+   ```
+
+3. **结果处理**：
+   - 验证通过 → 写入 spec 时标注 `[VERIFIED]`
+   - 验证失败（接口不存在/枚举值不匹配/字段名错误）→ 修正设计或与用户确认后写入 spec
+   - 无法验证（代码不在此项目/第三方依赖）→ 标记 `[UNVERIFIED]`，在 spec 完成后与用户确认
+
+**铁律：** 禁止在 spec 中写入未经代码验证的接口签名、枚举值或 RPC 方法名。如果无法验证，必须标记 `[UNVERIFIED]`。
 
 ## After the Design
 
@@ -535,3 +575,19 @@ Phase 1 完成后，告知用户：
 ### 数据模型预检（FR 涉及 DB/API 时）
 - [ ] FR 引用的 DB 字段或 API 响应体——是否 grep 了真实代码确认字段存在和类型？
 - [ ] 是否有凭记忆而非实证写出的字段名或数值？
+
+### 代码假设验证
+- [ ] spec 中引用的每个接口/RPC，是否 grep 确认存在？
+  ```bash
+  grep -rn "interface_name\|rpc_method" src/
+  ```
+- [ ] spec 中引用的枚举值/常量，是否从代码提取而非凭记忆？
+  ```bash
+  grep -rn "enum\s*\w*\s*{" src/ --include="*.ts"
+  ```
+- [ ] 前端 FR 涉及的组件职责分工，是否扫描现有代码确认？
+  ```bash
+  grep -rn "export.*component\|export.*defineComponent" src/components/
+  ```
+- [ ] 后端 FR 涉及的 DB/API 字段，是否 grep 确认字段名和类型？
+- [ ] 是否存在 `[UNVERIFIED]` 标记未与用户确认？

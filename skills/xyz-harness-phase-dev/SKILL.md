@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-phase-dev
 description: >-
-  Phase 3 (dev) of the manual xyz-harness workflow. Use when the user says
-  "start Phase 3", "dev phase", "implement", "write code", or after plan is done
-  to produce code changes, test results, and code review.
+  Phase 3 (dev) of the manual xyz-harness workflow. Use when the user says "start Phase 3", "dev phase", "implement", "write code", or after plan is done to produce code changes, test results, and code review.
 ---
 
 # Phase 3: Dev

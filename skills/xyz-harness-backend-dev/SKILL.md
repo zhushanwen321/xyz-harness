@@ -1,6 +1,6 @@
 ---
 name: xyz-harness-backend-dev
-description: 后端编码规范和方法论。基于 Clean Architecture 的分层编码规范，涵盖领域驱动设计、API 设计、数据层实现等。当当前 task 涉及后端编码（API、数据库、业务逻辑）且需要参考编码规范时由主 AI 加载。
+description: "后端编码规范和方法论。基于 Clean Architecture 的分层编码规范，涵盖领域驱动设计、API 设计、数据层实现等。当当前 task 涉及后端编码（API、数据库、业务逻辑）且需要参考编码规范时由主 AI 加载。"
 ---
 
 # 后端编码规范

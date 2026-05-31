@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-robustness-reviewer
 description: >-
-  Robustness reviewer for xyz-harness. Checks error handling, exception
-  management, logging, fail-fast, testability, and debug-friendliness.
-  Trigger: "robustness review", "check error handling", "resilience check".
+  Robustness reviewer for xyz-harness. Checks error handling, exception management, logging, fail-fast, testability, and debug-friendliness. Trigger: "robustness review", "check error handling", "resilience check".
 tools:
   - read
   - write

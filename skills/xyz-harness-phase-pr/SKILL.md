@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-phase-pr
 description: >-
-  Phase 5 (pr) of the manual xyz-harness workflow. Use when the user says
-  "start Phase 5", "pr phase", "create PR", "push code", "release", or after
-  testing is done to submit and merge code.
+  Phase 5 (pr) of the manual xyz-harness workflow. Use when the user says "start Phase 5", "pr phase", "create PR", "push code", "release", or after testing is done to submit and merge code.
 ---
 
 # Phase 5: PR

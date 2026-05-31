@@ -1,10 +1,7 @@
 ---
 name: xyz-harness-writing-plans
 description: >-
-  Phase 2 (plan) of the xyz-harness workflow. Creates implementation plan,
-  E2E test plan, and test case templates from an approved spec. Use when the
-  user says "start Phase 2", "plan phase", "write plan", or after spec.md
-  is done to produce plan.md + E2E test plan + test cases template.
+  Phase 2 (plan) of the xyz-harness workflow. Creates implementation plan, E2E test plan, and test case templates from an approved spec. Use when the user says "start Phase 2", "plan phase", "write plan", or after spec.md is done to produce plan.md + E2E test plan + test cases template.
 ---
 
 ## Dev-flow 上下文

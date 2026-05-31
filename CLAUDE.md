@@ -244,40 +244,38 @@ gate check pass
 
 SKILL.md 文件的 YAML frontmatter 由 Pi 读取解析，以下陷阱会导致启动报错：
 
-### 描述值必须加引号的场景
+### Description 引号规则
 
-如果 `description` 或其他字段的值包含以下内容，**必须**用单引号或双引号包裹：
-
-- **冒号后跟空格**：如 `Trigger: "run gate check"` 中的 `: "`，YAML 会误判为 mapping 嵌套
-- **特殊 YAML 字符**：`{}`, `[]`, `>`, `|`, `!`, `&`, `*` 等
-- **以 YAML 保留字开头**：`true`, `false`, `yes`, `no`, `null`, `on`, `off` 等
-
-### 推荐用 `>-` 块标量
+SKILL.md 的 `description` 字段默认用双引号包裹，因为值中几乎必然包含冒号、引号等 YAML 特殊字符。不加引号会导致 YAML 解析失败（"Nested mappings are not allowed"）。
 
 ```yaml
-description: >-
-  Gate check for harness. Trigger: "run gate check",
-  "verify deliverables", "check gate".
+# 默认方式：双引号（无内部引号或仅少量引号时）
+description: "Gate check for harness. Trigger: run gate check, verify deliverables."
+
+# 错误 — 冒号被解析为 mapping key
+description: Gate check for harness. Trigger: run gate check.
 ```
+
+#### 什么情况必须用 `>-`
+
+当 description 中包含**大量中文触发词引号**（如 `\"提交PR\"`、`\"快速改动\"`）时，双引号字符串内部的转义引号容易因配对问题导致 YAML 解析报错：`Missing closing "quote`。此时必须改用 `>-` 折叠块标量。
+
+```yaml
+# 必须用 >- 的场景：大量内部双引号
+description: >-
+  在当前 worktree 中提交所有变更、推送到远程、创建 Pull Request。
+  当用户说"提交PR"、"创建PR"、"pr-worktree"时使用此 skill。
+```
+
+`>-` 使用约束：
+1. 块标量内容**不能包含单独一行的 `---`**，否则会被解析为 YAML 文档结束标记
+2. 内容中的 `"` 不需要转义，直接写中文引号即可
+3. 下一行必须是另一个 frontmatter 字段（如 `user-invocable:`）或 `---` 闭合标记，不能紧贴正文
 
 ### 验证命令
 
 ```bash
-python3 -c "
-import yaml
-with open('{path}') as f:
-    content = f.read()
-first = content.find('---')
-second = content.find('---', first + 3)
-if first >= 0 and second > first:
-    data = yaml.safe_load(content[first+3:second])
-    if data:
-        print('OK:', list(data.keys()))
-    else:
-        print('Parse error: empty')
-else:
-    print('No valid YAML frontmatter')
-"
+python3 scripts/validate-skill-yaml.py skills/*/SKILL.md
 ```
 
 ## Pre-commit Hook

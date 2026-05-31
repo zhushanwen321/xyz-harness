@@ -1,10 +1,7 @@
 ---
 name: xyz-harness-phase-test
 description: >-
-  Phase 4 (test) of the manual xyz-harness workflow. Use when the user says
-  "start Phase 4", "test phase", "run tests", "execute test cases", or after
-  dev is done to execute integration/functional tests (verifying module
-  collaboration and API contracts, not UI-level E2E).
+  Phase 4 (test) of the manual xyz-harness workflow. Use when the user says "start Phase 4", "test phase", "run tests", "execute test cases", or after dev is done to execute integration/functional tests (verifying module collaboration and API contracts, not UI-level E2E).
 ---
 
 # Phase 4: Test

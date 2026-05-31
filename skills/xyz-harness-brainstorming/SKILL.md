@@ -1,10 +1,7 @@
 ---
 name: xyz-harness-brainstorming
 description: >-
-  Phase 1 (spec) of the xyz-harness workflow. Explores user intent, requirements
-  and design before implementation, produces spec.md with independent review.
-  Use when the user says "start Phase 1", "spec phase", "write spec",
-  "brainstorm", or at the beginning of a harness workflow.
+  Phase 1 (spec) of the xyz-harness workflow. Explores user intent, requirements and design before implementation, produces spec.md with independent review. Use when the user says "start Phase 1", "spec phase", "write spec", "brainstorm", or at the beginning of a harness workflow.
 ---
 
 ## Dev-flow 上下文

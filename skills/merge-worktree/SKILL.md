@@ -1,11 +1,7 @@
 ---
 name: merge-worktree
-description: >
-  完成 worktree 的完整合并流程：本地验证 → PR CI → merge → post-merge CI
-  → 发布准备 → Release Notes → 创建 Release → 清理。
-  使用 git merge --no-ff 保留完整分支历史。
-  支持项目级钩子（.bare/custom-hooks/）实现个性化发布流程。
-  触发词："合并worktree"、"merge-worktree"、"合并PR"、"发布"、"release"、"上线"。
+description: >-
+  完成 worktree 的完整合并流程：本地验证 → PR CI → merge → post-merge CI → 发布准备 → Release Notes → 创建 Release → 清理。 使用 git merge --no-ff 保留完整分支历史。 支持项目级钩子（.bare/custom-hooks/）实现个性化发布流程。 触发词："合并worktree"、"merge-worktree"、"合并PR"、"发布"、"release"、"上线"。
 ---
 
 # Merge Worktree

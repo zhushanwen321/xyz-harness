@@ -1,10 +1,7 @@
 ---
 name: xyz-harness-gate-reviewer
 description: >-
-  Gate anti-fraud reviewer. Verifies that deliverables are genuine, not fabricated by AI.
-  Dispatched automatically by coding-workflow gate tool after GL1 script check passes.
-  Do NOT use for content quality review — that is the job of xyz-harness-expert-reviewer.
-  Trigger: "gate review", "anti-fraud check", "verify deliverable authenticity".
+  Gate anti-fraud reviewer. Verifies that deliverables are genuine, not fabricated by AI. Dispatched automatically by coding-workflow gate tool after GL1 script check passes. Do NOT use for content quality review — that is the job of xyz-harness-expert-reviewer. Trigger: "gate review", "anti-fraud check", "verify deliverable authenticity".
 ---
 
 # Gate Anti-Fraud Reviewer

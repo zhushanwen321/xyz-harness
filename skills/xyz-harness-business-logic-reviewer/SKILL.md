@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-business-logic-reviewer
 description: >-
-  Business logic reviewer for xyz-harness. Validates business use case coverage
-  against plan design (plan mode, L2 only) or actual code (dev mode, L1+L2).
-  Trigger: "business logic review", "BLR", "verify business coverage".
+  Business logic reviewer for xyz-harness. Validates business use case coverage against plan design (plan mode, L2 only) or actual code (dev mode, L1+L2). Trigger: "business logic review", "BLR", "verify business coverage".
 tools:
   - read
   - write

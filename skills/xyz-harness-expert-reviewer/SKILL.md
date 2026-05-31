@@ -1,8 +1,6 @@
 ---
 name: xyz-harness-expert-reviewer
-description: >
-  统一评审 skill，支持三种模式：计划评审（审 spec+plan）、编码评审（审代码变更）、测试评审（审测试代码）。
-  当需要进行 spec/plan 评审、代码评审、或测试评审时使用。
+description: "统一评审 skill，支持三种模式：计划评审（审 spec+plan）、编码评审（审代码变更）、测试评审（审测试代码）。 当需要进行 spec/plan 评审、代码评审、或测试评审时使用。 "
 ---
 
 ## 适用场景

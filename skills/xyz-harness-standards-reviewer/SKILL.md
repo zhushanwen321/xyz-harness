@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-standards-reviewer
 description: >-
-  Standards reviewer for xyz-harness. Runs project lint/typecheck and checks
-  code against CLAUDE.md coding conventions. Trigger: "standards review",
-  "check coding standards", "lint check".
+  Standards reviewer for xyz-harness. Runs project lint/typecheck and checks code against CLAUDE.md coding conventions. Trigger: "standards review", "check coding standards", "lint check".
 tools:
   - read
   - write

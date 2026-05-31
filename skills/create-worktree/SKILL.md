@@ -1,10 +1,7 @@
 ---
 name: create-worktree
-description: >
-  在 bare repo + worktree 结构中创建隔离的工作目录。自动检测 workspace、同步配置、
-  安装依赖和 git hooks。当用户说"创建 worktree"、"新 worktree"、"create worktree"、
-  "新建分支"、"开个新分支"时使用此 skill。即使用户只是说"我要做一个新功能"或
-  "帮我开个分支做 xxx"，也应考虑触发此 skill。
+description: >-
+  在 bare repo + worktree 结构中创建隔离的工作目录。自动检测 workspace、同步配置、 安装依赖和 git hooks。当用户说"创建 worktree"、"新 worktree"、"create worktree"、 "新建分支"、"开个新分支"时使用此 skill。即使用户只是说"我要做一个新功能"或 "帮我开个分支做 xxx"，也应考虑触发此 skill。
 ---
 
 # Create Worktree

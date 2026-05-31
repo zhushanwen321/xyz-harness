@@ -1,9 +1,7 @@
 ---
 name: xyz-harness-integration-reviewer
 description: >-
-  Integration reviewer for xyz-harness. Checks module boundary correctness
-  using simulated data paths from business_logic_review. Trigger:
-  "integration review", "check module boundaries".
+  Integration reviewer for xyz-harness. Checks module boundary correctness using simulated data paths from business_logic_review. Trigger: "integration review", "check module boundaries".
 tools:
   - read
   - write

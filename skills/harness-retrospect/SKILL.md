@@ -1,10 +1,6 @@
 ---
 name: harness-retrospect
-description: >-
-  Phase retrospective analyst for xyz-harness workflow. Writes structured
-  retrospectives covering phase execution quality and harness usability.
-  Triggered automatically by coding-workflow after each phase gate passes.
-  Can also be triggered manually with "run retrospect for phase X".
+description: "Phase retrospective analyst for xyz-harness workflow. Writes structured retrospectives covering phase execution quality and harness usability. Triggered automatically by coding-workflow after each phase gate passes. Can also be triggered manually with \"run retrospect for phase X\"."
 tools:
   - read
   - write

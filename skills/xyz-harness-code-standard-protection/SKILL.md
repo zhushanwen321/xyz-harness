@@ -1,13 +1,7 @@
 ---
 name: xyz-harness-code-standard-protection
 description: >-
-  为项目设计并实施代码规范防护体系。基于五层防护模型（AI Hooks → Linter →
-  Custom Rules → Git Hooks → CI/CD），根据项目技术栈推荐合适的防护层组合，
-  并提供可复用的实现模板。触发场景：用户想给项目添加代码防护、设置 git hooks、
-  添加自定义 lint 规则、配置 Claude/Pi hooks、搭建 CI 检查、评估项目防护水平，
-  或提到"代码防护"、"代码规范"、"githook"、"pre-commit"、"taste-lint"、
-  "Claude hooks"、"代码品味"。即使用户只是说"帮我加强这个项目的代码质量检查"
-  或"防止 AI 乱写代码"，也应考虑触发此 skill。
+  为项目设计并实施代码规范防护体系。基于五层防护模型（AI Hooks → Linter → Custom Rules → Git Hooks → CI/CD），根据项目技术栈推荐合适的防护层组合， 并提供可复用的实现模板。触发场景：用户想给项目添加代码防护、设置 git hooks、 添加自定义 lint 规则、配置 Claude/Pi hooks、搭建 CI 检查、评估项目防护水平， 或提到"代码防护"、"代码规范"、"githook"、"pre-commit"、"taste-lint"、 "Claude hooks"、"代码品味"。即使用户只是说"帮我加强这个项目的代码质量检查" 或"防止 AI 乱写代码"，也应考虑触发此 skill。
 ---
 
 # Code Standard Protection

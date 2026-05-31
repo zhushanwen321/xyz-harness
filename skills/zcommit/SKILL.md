@@ -1,6 +1,6 @@
 ---
 name: zcommit
-description: 执行 git commit 操作，智能分析变更并创建规范的提交信息。触发词："zcommit"、"提交"、"commit"、"提交代码"。
+description: "执行 git commit 操作，智能分析变更并创建规范的提交信息。触发词：zcommit、提交、commit、提交代码。"
 user-invocable: true
 argument-hint: "[--style=simple|full] [--type=feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert] [path/to/file or directory]"
 model: sonnet

@@ -1,9 +1,6 @@
 ---
 name: xyz-harness-subagent-driven-development
-description: >-
-  Subagent-driven-development 编码模式参考。主 agent 按 plan.md 的 task 逐个派遣独立的执行/评审
-  subagent，实现上下文隔离和 TDD 质量保障。不作为 skill 加载到 subagent 上下文中，仅由主 agent
-  参考使用。
+description: "Subagent-driven-development 编码模式参考。主 agent 按 plan.md 的 task 逐个派遣独立的执行/评审 subagent，实现上下文隔离和 TDD 质量保障。不作为 skill 加载到 subagent 上下文中，仅由主 agent 参考使用。"
 ---
 
 ## 架构说明

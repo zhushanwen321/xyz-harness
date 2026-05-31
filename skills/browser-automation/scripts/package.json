@@ -1,0 +1,8 @@
+{
+  "name": "playwright-automation-scripts",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

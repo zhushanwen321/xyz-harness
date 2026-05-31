@@ -32,7 +32,7 @@ interface PhaseConfig {
 	phase: number;
 	name: string;
 	skillName: string;
-	reviewPrefix: string;
+	reviewPrefix: string | string[];
 	retrospectPrefix: string;
 	/** Phase-specific deliverable file paths (relative to topicDir) */
 	deliverables: string[];
@@ -50,12 +50,12 @@ const PHASES: PhaseConfig[] = [
 	{
 		phase: 2, name: "Plan", skillName: "xyz-harness-writing-plans",
 		reviewPrefix: "plan_review", retrospectPrefix: "plan_retrospect",
-		deliverables: ["plan.md", "e2e-test-plan.md", "test_cases_template.json"],
+		deliverables: ["plan.md", "e2e-test-plan.md", "test_cases_template.json", "use-cases.md", "non-functional-design.md"],
 		reviewMode: "模式一：计划评审（审查 plan 可行性）",
 	},
 	{
 		phase: 3, name: "Dev", skillName: "xyz-harness-phase-dev",
-		reviewPrefix: "business_logic_review", retrospectPrefix: "dev_retrospect",
+		reviewPrefix: ["business_logic_review", "standards_review", "robustness_review", "integration_review", "taste_review"], retrospectPrefix: "dev_retrospect",
 		deliverables: ["changes/evidence/test_results.md"],
 		reviewMode: "模式二：编码评审（审查代码实现是否满足 spec）",
 	},
@@ -338,15 +338,18 @@ export default function codingWorkflowExtension(pi: ExtensionAPI) {
 				const missingReviews: string[] = [];
 				for (let p = 1; p < state.currentPhase; p++) {
 					const prevConfig = PHASES[p - 1]!;
-					if (prevConfig.reviewPrefix) {
+					const prefixes = Array.isArray(prevConfig.reviewPrefix) ? prevConfig.reviewPrefix : prevConfig.reviewPrefix ? [prevConfig.reviewPrefix] : [];
+					if (prefixes.length > 0) {
 						const reviewsDir = path.join(state.topicDir, "changes", "reviews");
 						if (fs.existsSync(reviewsDir)) {
 							const files = fs.readdirSync(reviewsDir);
-							const hasReview = files.some(f =>
-								f.startsWith(prevConfig.reviewPrefix + "_v") && f.endsWith(".md"),
-							);
-							if (!hasReview) {
-								missingReviews.push(`Phase ${p} (${prevConfig.name}): no ${prevConfig.reviewPrefix}_v*.md found`);
+							for (const prefix of prefixes) {
+								const hasReview = files.some(f =>
+									f.startsWith(prefix + "_v") && f.endsWith(".md"),
+								);
+								if (!hasReview) {
+									missingReviews.push(`Phase ${p} (${prevConfig.name}): no ${prefix}_v*.md found`);
+								}
 							}
 						} else {
 							missingReviews.push(`Phase ${p} (${prevConfig.name}): reviews/ directory not found`);

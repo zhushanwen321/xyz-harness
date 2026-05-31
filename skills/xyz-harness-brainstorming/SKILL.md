@@ -19,7 +19,7 @@ description: >-
 
 ## Phase Loop 机制
 
-- **Gate FAIL（spec 不完整）**：回到 Step 5（Write spec），根据 gate 反馈补充缺失内容
+- **Gate FAIL（spec 不完整）**：回到 Step 6（Write spec），根据 gate 反馈补充缺失内容
 - **Review FAIL（must_fix > 0）**：根据 review 反馈修改 spec，重新 dispatch review subagent
 - **用户要求修改**：直接修改 spec，不需要回退到特定步骤
 
@@ -32,10 +32,10 @@ description: >-
 | Step 1: Quick Overview | 主 agent | — | 无 | 几个文件，无 subagent |
 | Step 2-4: Brainstorming + Terminology + On-demand Scan | 主 agent | — | brainstorming (本 skill) | 按需 dispatch subagent 深入扫描 |
 | On-demand Deep Scan | subagent | general-purpose | 无 | 按需触发，精准范围 |
-| Step 5a: Assumption Audit | 主 agent | — | brainstorming (本 skill) | 主 agent 直接执行 |
-| Step 5: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
-| Step 7: Terminology & ADR | 主 agent | — | 无 | MUST + Nullable |
-| Step 9: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
+| Step 5: Assumption Audit | 主 agent | — | brainstorming (本 skill) | 主 agent 直接执行 |
+| Step 6: Write spec.md | 主 agent | — | brainstorming (本 skill) | 主 agent 上下文加载 |
+| Step 8: Terminology & ADR | 主 agent | — | 无 | MUST + Nullable |
+| Step 10: Transition | 主 agent | — | writing-plans | 主 agent 加载下一 skill |
 | Spec Review | subagent | general-purpose | expert-reviewer | task prompt 指定 read |
 | Retrospect | subagent | general-purpose | harness-retrospect | task prompt 指定 read |
 
@@ -61,7 +61,7 @@ You MUST create a task for each of these items and complete them in order:
 2. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria. **On-demand scan:** 当用户回答涉及具体模块或技术细节时，按需 dispatch subagent 深入扫描相关代码。**Terminology Step (MUST + Nullable):** 在提问过程中，主动识别 spec 中的模糊术语并提议精确定义（见 Terminology Step 章节）
 3. **Propose 2-3 approaches** — with trade-offs and your recommendation
 4. **Present design** — in sections scaled to their complexity, get user approval after each section
-5. **Assumption Audit** — 从用户确认的设计中提取所有对现有代码的假设，逐一验证。验证通过才能继续（详见 Step 5a 章节）
+5. **Assumption Audit** — 从用户确认的设计中提取所有对现有代码的假设，逐一验证。验证通过才能继续（详见 Step 5 章节）
 6. **Write design doc** — save to `.xyz-harness/${主题}/spec.md` and commit. Must include all six-element sections (see below)
 7. **Spec completeness check** — verify all six elements are covered, mark ambiguities as `[AMBIGUOUS]`, fix or confirm each with user (see below)
 8. **Terminology & ADR Step (MUST + Nullable)** — 从 spec 中提取术语写入/更新 `CONTEXT.md`，评估 spec 中的决策是否需要创建 ADR（见 Terminology & ADR Step 章节）
@@ -211,7 +211,7 @@ If the project is too large for a single spec, help the user decompose into sub-
 - Where existing code has problems that affect the work (e.g., a file that's grown too large, unclear boundaries, tangled responsibilities), include targeted improvements as part of the design - the way a good developer improves code they're working in.
 - Don't propose unrelated refactoring. Stay focused on what serves the current goal.
 
-### Step 5a: Assumption Audit（嵌入 Step 5）
+### Step 5: Assumption Audit（嵌入 Step 6）
 
 **触发时机：** 用户确认设计后、写 spec 前。这是 Step 5 的前置子步骤，不是独立 Step。
 
@@ -373,7 +373,7 @@ Scan the spec for ambiguous language and mark each with `[AMBIGUOUS]`:
 
 **产出可为空：** 如果需求非常简单，讨论中未出现模糊术语且代码无矛盾，跳过写入。但必须过一遍这个检查。
 
-## Terminology & ADR Step (Step 7)
+## Terminology & ADR Step (Step 8)
 
 **MUST + Nullable：** 必须执行，但产出可为空。
 

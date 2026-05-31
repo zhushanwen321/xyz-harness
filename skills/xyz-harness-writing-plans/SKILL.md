@@ -209,7 +209,16 @@ File structure 表格必须包含 Group 列，标注每个文件属于哪个 Exe
 | data_flows | 可选 | 强制 |
 | AC 覆盖矩阵 | 强制 | 强制 |
 
-plan.md 的 YAML frontmatter 新增 `complexity` 字段（`"L1"` 或 `"L2"`），供 gate-check.py 做条件判断。L2 plan 缺失 interface_chain.json 时 gate FAIL；L1 plan 不产出此文件也能过 gate。
+plan.md 的 YAML frontmatter 必须包含 `verdict` 和 `complexity` 字段：
+
+```yaml
+---
+verdict: pass
+complexity: L1  # 或 L2
+---
+```
+
+`complexity` 供 gate-check.py 做条件判断。L2 plan 缺失 interface_chain.json 时 gate FAIL；L1 plan 不产出此文件也能过 gate。
 
 ### 方法签名表模板
 
@@ -604,6 +613,35 @@ verdict: pass
    - must_fix == 0 → 通过
    - must_fix > 0 → 修复 plan 后重新 dispatch（产出 plan_review_v2.md），最多 3 轮
    - 3 轮后仍有 must_fix > 0 → 停止，记录未解决问题，由用户决定
+
+### plan_bl_review（仅 L2，独立审查）
+
+L2 复杂度的 plan 在 `plan_review` 之外，还需要 `plan_bl_review`（业务逻辑审查）。验证 plan 中的接口定义、数据流、前后端契约是否与 spec 一致。
+
+1. Dispatch subagent（**仅在 complexity=L2 时**）：
+   - **Agent**: general-purpose
+   - **Model**: 由 coding-workflow 扩展按 taskComplexity 自动选择（review: medium）
+   - **Task prompt**:
+     ```
+     你是独立审查专家。按以下步骤执行 L2 业务逻辑审查：
+
+     1. read `skills/xyz-harness-expert-reviewer/SKILL.md`，找到「模式一：计划评审」章节
+     2. read 以下文件：
+        - `{topic_dir}/spec.md`
+        - `{topic_dir}/plan.md`
+        - `{topic_dir}/interface_chain.json`（L2 专属）
+        - `{topic_dir}/use-cases.md`
+     3. 重点审查：
+        - interface_chain.json 中的每个 method 是否在 spec 中有对应的 AC 覆盖
+        - 前后端 plan 子文档的接口契约是否一致（参数类型、返回类型、edge_cases）
+        - use-cases 的业务流程是否被 plan 的 Execution Groups 完整覆盖
+     4. 将结果写入：`{topic_dir}/changes/reviews/plan_bl_review_v1.md`
+     5. YAML frontmatter 必须包含:
+        - `verdict`: "pass" 或 "fail"
+        - `must_fix`: 数字
+     ```
+
+2. 审查轮次：同 plan_review（must_fix > 0 → 修复 → 重新 dispatch，最多 3 轮）
 
 ### plan_review 输出格式
 

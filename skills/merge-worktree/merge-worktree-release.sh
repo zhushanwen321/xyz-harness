@@ -141,7 +141,7 @@ PR_BRANCH=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
 echo "标题: $PR_TITLE"
 echo "分支: $PR_BRANCH"
 
-gh pr merge "$PR_NUMBER" --no-ff --delete-branch 2>&1
+gh pr merge "$PR_NUMBER" --merge --delete-branch 2>&1
 echo "PR 已合并（保留完整分支历史）。"
 
 # --- 步骤 3: 更新 main ---

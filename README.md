@@ -1,3 +1,13 @@
+# ⚠️ ARCHIVED
+
+This repository has been merged into [xyz-pi-extensions](https://github.com/zhushanwen321/xyz-pi-extensions).
+
+All extensions, skills, and documentation have been migrated to the monorepo structure under `packages/` and `skills/` directories.
+No further development will occur in this repository.
+
+---
+
+# xyz-harness-engineering
 # xyz-harness-engineering
 
 基于 Harness Engineering 的 AI 编码工作流引擎 —— 以 Pi（AI 编码 Agent）为载体，实现 5-phase 需求开发流水线。

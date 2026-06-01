@@ -9,6 +9,11 @@ code_link.py — 从入口点出发，串联前后端所有相关代码文件。
   python3 code_link.py --project /path/to/project --entry "/api/task/runs" --bridge both
   python3 code_link.py --project /path/to/project --entry "/api/task/runs" --bridge backend
 
+graph.db 生命周期管理：
+  - 首次使用自动 build（全量解析）
+  - build 后自动启动 watch（后台监听文件变化，增量更新）
+  - 后续使用检测 watch 进程，未运行则自动重启
+
 输出：JSON 格式的完整文件列表。
 """
 
@@ -18,8 +23,10 @@ import argparse
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -75,26 +82,101 @@ def _resolve_handler_qn(tracer: GraphTracer, handler: str, file_path: str, proje
     return None
 
 
-def ensure_graph_built(project: str) -> None:
-    """确保 code-review-graph 已构建。"""
-    db_path = os.path.join(project, ".code-review-graph", "graph.db")
-    if os.path.exists(db_path):
-        return
-    logger.info("Building code graph for %s...", project)
+def _pid_is_running(pid: int) -> bool:
+    """检查指定 PID 的进程是否仍在运行。"""
     try:
-        result = subprocess.run(
-            ["code-review-graph", "build", "--repo", project],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        if result.returncode != 0:
-            logger.error("Graph build failed: %s", result.stderr)
-            sys.exit(1)
-    except subprocess.TimeoutExpired:
-        logger.error("Graph build timed out after 60s")
-        sys.exit(1)
+        os.kill(pid, 0)  # signal 0: 不发信号，只检查存在性
+        return True
+    except (OSError, ProcessLookupError):
+        return False
 
+
+def _watch_pid_file(project: str) -> Path:
+    """返回 watch 进程的 PID 文件路径。"""
+    return Path(project) / ".code-review-graph" / ".watch.pid"
+
+
+def ensure_watch_running(project: str) -> None:
+    """确保 code-review-graph watch 进程正在运行。
+
+    通过 PID 文件跟踪进程状态：
+    - PID 文件存在且进程存活 → 已在监听，跳过
+    - PID 文件不存在或进程已死 → 启动新的 watch 进程
+    """
+    pid_file = _watch_pid_file(project)
+
+    # 检查已有 watch 进程
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+            if _pid_is_running(old_pid):
+                logger.debug("Watch already running (pid=%d)", old_pid)
+                return
+            else:
+                logger.debug("Watch pid=%d is dead, restarting", old_pid)
+        except (ValueError, OSError):
+            logger.debug("Invalid pid file, restarting watch")
+
+    # 启动 watch 进程（后台，脱离终端）
+    logger.info("Starting code-review-graph watch for %s...", project)
+    try:
+        proc = subprocess.Popen(
+            ["code-review-graph", "watch", "--repo", project],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # 脱离父进程会话
+        )
+        pid_file.write_text(str(proc.pid))
+        logger.info("Watch started (pid=%d)", proc.pid)
+    except FileNotFoundError:
+        logger.warning("code-review-graph not found, skipping watch")
+    except Exception as e:
+        logger.warning("Failed to start watch: %s", e)
+
+
+def ensure_graph_built(project: str) -> None:
+    """确保 code-review-graph 已构建，并启动后台监听。
+
+    流程：
+    1. graph.db 不存在 → 全量 build
+    2. graph.db 存在但为空（0 nodes）→ 重新 build
+    3. build 完成后 → 确保 watch 进程运行
+    """
+    db_path = Path(project) / ".code-review-graph" / "graph.db"
+    need_build = False
+
+    if not db_path.exists():
+        need_build = True
+    else:
+        # 检查 db 是否为空（可能 build 过但没数据）
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            count = conn.execute("SELECT count(*) FROM nodes").fetchone()[0]
+            conn.close()
+            if count == 0:
+                need_build = True
+        except Exception:
+            need_build = True
+
+    if need_build:
+        logger.info("Building code graph for %s...", project)
+        try:
+            result = subprocess.run(
+                ["code-review-graph", "build", "--repo", project],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                logger.error("Graph build failed: %s", result.stderr)
+                sys.exit(1)
+        except subprocess.TimeoutExpired:
+            logger.error("Graph build timed out after 120s")
+            sys.exit(1)
+
+    # 确保 watch 进程运行
+    ensure_watch_running(project)
 
 def _trace_by_resolver(
     resolvers: list, project: str, entry_query: str, tracer: GraphTracer, max_depth: int,

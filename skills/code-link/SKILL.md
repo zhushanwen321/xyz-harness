@@ -24,11 +24,26 @@ description: "Trace code call chains from entry points (HTTP routes, WebSocket m
 ## Quick Start
 
 ```bash
-# 项目需先有 .code-review-graph/graph.db（code-review-graph build 自动生成）
-python3 scripts/code_link.py --project /path/to/project --entry "/api/task/runs"
-python3 scripts/code_link.py --project /path/to/project --entry "session.create"
-python3 scripts/code_link.py --project /path/to/project --entry "TaskRunService.cancel_run" --bridge backend
+# 脚本位于 skill 目录的 scripts/ 下，通过 --project 指定目标项目
+# 首次使用自动 build graph.db + 启动 watch 后台监听
+SKILL_DIR="~/.pi/agent/skills/code-link"
+python3 "$SKILL_DIR/scripts/code_link.py" --project /path/to/project --entry "/api/task/runs"
+python3 "$SKILL_DIR/scripts/code_link.py" --project /path/to/project --entry "session.create"
+python3 "$SKILL_DIR/scripts/code_link.py" --project /path/to/project --entry "TaskRunService.cancel_run" --bridge backend
 ```
+
+## Graph DB 生命周期
+
+脚本自动管理 `.code-review-graph/graph.db`：
+
+| 场景 | 行为 |
+|------|------|
+| graph.db 不存在 | 自动全量 build + 启动 watch |
+| graph.db 为空（0 nodes） | 重新 build + 启动 watch |
+| graph.db 有数据 + watch 未运行 | 启动 watch 后台监听 |
+| graph.db 有数据 + watch 运行中 | 直接使用 |
+
+watch 进程通过 PID 文件 (`.code-review-graph/.watch.pid`) 跟踪，使用 watchdog 监听文件变化并增量更新。
 
 ## Entry Types
 
